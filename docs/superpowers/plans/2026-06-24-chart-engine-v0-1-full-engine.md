@@ -1327,7 +1327,7 @@ git commit -m "feat: render synthetic chart types"
 - Modify: `apps/playground/src/styles.css`
 - Create: `apps/playground/tests/chart-types.spec.ts`
 
-- [ ] **Step 1: Write failing chart type E2E**
+- [x] **Step 1: Write failing chart type E2E**
 
 Create `apps/playground/tests/chart-types.spec.ts`:
 
@@ -1378,7 +1378,7 @@ test("can switch every v0.1 chart type", async ({ page }) => {
 });
 ```
 
-- [ ] **Step 2: Verify the test fails**
+- [x] **Step 2: Verify the test fails**
 
 Run:
 
@@ -1388,7 +1388,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/chart-types.
 
 Expected: FAIL because `series-type` and `active-series-type` controls are missing.
 
-- [ ] **Step 3: Add playground state**
+- [x] **Step 3: Add playground state**
 
 Create `apps/playground/src/playgroundState.ts`:
 
@@ -1404,7 +1404,7 @@ export const playgroundState: PlaygroundState = {
 };
 ```
 
-- [ ] **Step 4: Add chart type selector**
+- [x] **Step 4: Add chart type selector**
 
 Modify `apps/playground/src/main.ts`:
 
@@ -1414,7 +1414,7 @@ Modify `apps/playground/src/main.ts`:
 - on select change, update `playgroundState.seriesType`, update label text, and re-render static + overlay canvases.
 - pass `seriesType: playgroundState.seriesType` into `RenderState`.
 
-- [ ] **Step 5: Style selector**
+- [x] **Step 5: Style selector**
 
 Add to `apps/playground/src/styles.css`:
 
@@ -1441,7 +1441,7 @@ Add to `apps/playground/src/styles.css`:
 }
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -1453,7 +1453,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/playground/src apps/playground/tests/chart-types.spec.ts

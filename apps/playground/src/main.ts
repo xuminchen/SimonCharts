@@ -9,7 +9,8 @@ import {
   renderOverlay,
   fixtureDailyCandleSeries,
   renderStaticChart,
-  resizeCanvas
+  resizeCanvas,
+  supportedSeriesTypes
 } from "@simoncharts/chart-engine";
 import type {
   ChartCrosshairState,
@@ -17,8 +18,10 @@ import type {
   InteractionEngine,
   InteractionEvent,
   LayerRenderContext,
+  SeriesType,
   ViewportState
 } from "@simoncharts/chart-engine";
+import { playgroundState } from "./playgroundState";
 import "./styles.css";
 
 declare global {
@@ -38,11 +41,20 @@ if (!appElement) {
 
 const app = appElement;
 const chartSurface = document.createElement("div");
+const topControls = document.createElement("div");
+const seriesTypeLabel = document.createElement("label");
+const seriesTypeSelect = document.createElement("select");
+const activeSeriesType = document.createElement("span");
 const canvas = document.createElement("canvas");
 const overlayCanvas = document.createElement("canvas");
 const resetButton = document.createElement("button");
 
 chartSurface.className = "chart-surface";
+topControls.className = "top-controls";
+seriesTypeLabel.textContent = "Type";
+seriesTypeSelect.dataset.testid = "series-type";
+activeSeriesType.dataset.testid = "active-series-type";
+activeSeriesType.textContent = playgroundState.seriesType;
 canvas.dataset.testid = "chart-canvas";
 canvas.setAttribute("aria-label", "SimonCharts static chart");
 overlayCanvas.dataset.testid = "chart-overlay";
@@ -52,7 +64,17 @@ resetButton.className = "reset-view";
 resetButton.dataset.testid = "reset-view";
 resetButton.textContent = "Reset";
 
-chartSurface.replaceChildren(canvas, overlayCanvas, resetButton);
+for (const type of supportedSeriesTypes) {
+  const option = document.createElement("option");
+  option.value = type;
+  option.textContent = type;
+  option.selected = type === playgroundState.seriesType;
+  seriesTypeSelect.append(option);
+}
+
+seriesTypeLabel.append(seriesTypeSelect);
+topControls.append(seriesTypeLabel, activeSeriesType);
+chartSurface.replaceChildren(canvas, overlayCanvas, topControls, resetButton);
 app.replaceChildren(chartSurface);
 
 const movingAverages = Object.values(calculateDefaultMovingAverages(fixtureDailyCandleSeries));
@@ -144,7 +166,8 @@ function createRenderContext(context: CanvasRenderingContext2D): LayerRenderCont
       theme: defaultChartTheme,
       layout,
       movingAverages,
-      crosshair
+      crosshair,
+      seriesType: playgroundState.seriesType
     }
   };
 }
@@ -215,6 +238,12 @@ overlayCanvas.addEventListener("lostpointercapture", finishPointerInteraction);
 
 resetButton.addEventListener("click", () => {
   interactionEngine?.resetView();
+});
+
+seriesTypeSelect.addEventListener("change", () => {
+  playgroundState.seriesType = seriesTypeSelect.value as SeriesType;
+  activeSeriesType.textContent = playgroundState.seriesType;
+  render();
 });
 
 function render(): void {
