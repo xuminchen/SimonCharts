@@ -2,6 +2,7 @@ import type { MovingAveragePoint } from "../indicators/movingAverage";
 import type { CandleSeries } from "../model/market";
 import type { ChartCrosshairState as CrosshairState, ViewportState } from "../model/runtime";
 import type { ChartTheme } from "../model/theme";
+import type { SeriesType } from "../series/seriesTypes";
 
 export interface ChartLayout {
   width: number;
@@ -30,6 +31,7 @@ export interface ChartLayout {
 
 export interface RenderState {
   series: CandleSeries;
+  seriesType?: SeriesType;
   viewport: ViewportState;
   theme: ChartTheme;
   layout: ChartLayout;

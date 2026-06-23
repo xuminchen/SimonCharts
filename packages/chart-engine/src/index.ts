@@ -17,6 +17,8 @@ export * from "./render/layers/movingAverageLayer";
 export * from "./render/layers/tooltipLayer";
 export * from "./render/layers/volumeLayer";
 export * from "./render/renderTypes";
+export * from "./render/series/renderers/defaultSeriesRenderers";
+export * from "./render/series/seriesLayer";
 export * from "./render/staticRenderer";
 export * from "./series/autoscale";
 export * from "./series/hitTest";

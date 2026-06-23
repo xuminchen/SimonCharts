@@ -1,17 +1,20 @@
 import { createAxisLayer } from "./layers/axisLayer";
-import { createCandlestickLayer } from "./layers/candlestickLayer";
 import { createCrosshairLayer } from "./layers/crosshairLayer";
 import { createGridLayer } from "./layers/gridLayer";
 import { createMovingAverageLayer } from "./layers/movingAverageLayer";
 import { createTooltipLayer } from "./layers/tooltipLayer";
 import { createVolumeLayer } from "./layers/volumeLayer";
+import { createSeriesLayer } from "./series/seriesLayer";
+import { createDefaultSeriesRendererRegistry } from "./series/renderers/defaultSeriesRenderers";
 import type { ChartLayer, LayerRenderContext } from "./renderTypes";
+
+const defaultSeriesRegistry = createDefaultSeriesRendererRegistry();
 
 export function createStaticLayers(): ChartLayer[] {
   return [
     createGridLayer(),
     createAxisLayer(),
-    createCandlestickLayer(),
+    createSeriesLayer(defaultSeriesRegistry),
     createVolumeLayer(),
     createMovingAverageLayer()
   ];

@@ -1,0 +1,55 @@
+import {
+  bodyWidth,
+  createRenderer,
+  getVisibleBounds,
+  getVisiblePriceRange,
+  pointColor,
+  withPlotClip,
+  xForIndex,
+  yForPrice
+} from "./rendererHelpers";
+
+export function createHollowCandlesRenderer() {
+  return createRenderer("hollowCandles", (renderContext) => {
+    const bounds = getVisibleBounds(renderContext);
+
+    if (!bounds) {
+      return;
+    }
+
+    const range = getVisiblePriceRange(renderContext.model, bounds);
+    const width = bodyWidth(renderContext);
+    const { context } = renderContext;
+
+    context.lineWidth = renderContext.state.theme.lineWidths.candleWick;
+
+    withPlotClip(renderContext, () => {
+      for (let index = bounds.from; index <= bounds.to; index += 1) {
+        const point = renderContext.model.points[index];
+        const x = xForIndex(renderContext, index);
+        const open = point.open ?? point.close;
+        const openY = yForPrice(renderContext, range, open);
+        const highY = yForPrice(renderContext, range, point.high ?? point.close);
+        const lowY = yForPrice(renderContext, range, point.low ?? point.close);
+        const closeY = yForPrice(renderContext, range, point.close);
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        const color = pointColor(renderContext, point);
+
+        context.strokeStyle = color;
+        context.beginPath();
+        context.moveTo(x, highY);
+        context.lineTo(x, lowY);
+        context.stroke();
+
+        context.beginPath();
+        context.rect(x - width / 2, bodyTop, width, bodyHeight);
+        if (point.close < open) {
+          context.fillStyle = color;
+          context.fill();
+        }
+        context.stroke();
+      }
+    });
+  });
+}

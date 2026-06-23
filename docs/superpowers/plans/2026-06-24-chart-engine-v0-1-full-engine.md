@@ -744,7 +744,7 @@ git commit -m "feat: add series autoscale hit-test and tooltips"
 - Modify: `packages/chart-engine/src/index.ts`
 - Modify: `packages/chart-engine/src/render/staticRenderer.ts`
 
-- [ ] **Step 1: Write failing renderer order and smoke tests**
+- [x] **Step 1: Write failing renderer order and smoke tests**
 
 Create `packages/chart-engine/src/__tests__/seriesRenderers.test.ts` with fake canvas tests for the direct types:
 
@@ -876,7 +876,7 @@ describe("direct series renderers", () => {
 });
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run:
 
@@ -886,7 +886,7 @@ npm run test -- packages/chart-engine/src/__tests__/seriesRenderers.test.ts
 
 Expected: FAIL because direct renderers and `seriesType` render state are missing.
 
-- [ ] **Step 3: Extend render state**
+- [x] **Step 3: Extend render state**
 
 Modify `packages/chart-engine/src/render/renderTypes.ts`:
 
@@ -904,7 +904,7 @@ export interface RenderState {
 }
 ```
 
-- [ ] **Step 4: Implement `createSeriesLayer`**
+- [x] **Step 4: Implement `createSeriesLayer`**
 
 Create `packages/chart-engine/src/render/series/seriesLayer.ts`:
 
@@ -932,7 +932,7 @@ export function createSeriesLayer(registry: SeriesRendererRegistry): ChartLayer 
 }
 ```
 
-- [ ] **Step 5: Implement default direct renderers**
+- [x] **Step 5: Implement default direct renderers**
 
 Create one renderer file per direct type under `packages/chart-engine/src/render/series/renderers/`. Each renderer must satisfy `SeriesRenderer` and draw using `CanvasRenderingContext2D`. Keep implementations small:
 
@@ -980,7 +980,7 @@ export function createDefaultSeriesRendererRegistry(): SeriesRendererRegistry {
 }
 ```
 
-- [ ] **Step 6: Wire series layer into static renderer**
+- [x] **Step 6: Wire series layer into static renderer**
 
 Modify `packages/chart-engine/src/render/staticRenderer.ts` so the old candlestick layer is replaced by the registry-backed series layer:
 
@@ -1003,7 +1003,7 @@ export function createStaticLayers(): ChartLayer[] {
 
 Keep existing `createCandlestickLayer` export temporarily for compatibility with existing tests until Task 5 updates static renderer tests.
 
-- [ ] **Step 7: Update static renderer tests for the series layer**
+- [x] **Step 7: Update static renderer tests for the series layer**
 
 Modify `packages/chart-engine/src/__tests__/staticRenderer.test.ts` so deterministic layer order expects `series` instead of `candlestick`:
 
@@ -1019,7 +1019,7 @@ expect(createStaticLayers().map((layer) => layer.id)).toEqual([
 
 Keep the existing direct `createCandlestickLayer()` unit test until all old layer-specific tests are moved to `seriesRenderers.test.ts`.
 
-- [ ] **Step 8: Export direct renderer API**
+- [x] **Step 8: Export direct renderer API**
 
 Add exports to `packages/chart-engine/src/index.ts` for:
 
@@ -1028,7 +1028,7 @@ export * from "./render/series/seriesLayer";
 export * from "./render/series/renderers/defaultSeriesRenderers";
 ```
 
-- [ ] **Step 9: Verify**
+- [x] **Step 9: Verify**
 
 Run:
 
@@ -1041,7 +1041,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add packages/chart-engine/src/render packages/chart-engine/src/__tests__/seriesRenderers.test.ts packages/chart-engine/src/__tests__/staticRenderer.test.ts packages/chart-engine/src/index.ts

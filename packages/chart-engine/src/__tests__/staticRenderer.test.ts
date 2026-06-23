@@ -173,7 +173,7 @@ describe("static renderer", () => {
     expect(createStaticLayers().map((layer) => layer.id)).toEqual([
       "grid",
       "axis",
-      "candlestick",
+      "series",
       "volume",
       "movingAverage"
     ]);
