@@ -58,6 +58,42 @@ describe("source series render model", () => {
     expect(hit?.sourceCandle?.time).toBe(2);
   });
 
+  it("returns undefined for x before the visible series slots", () => {
+    const model = createSourceSeriesRenderModel("line", createSeries());
+
+    expect(
+      hitTestSeriesPoint(model, -1, {
+        plotLeft: 0,
+        candleWidth: 10,
+        visibleRange: { from: 0, to: 1 }
+      })
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for x beyond the last visible series slot", () => {
+    const model = createSourceSeriesRenderModel("line", createSeries());
+
+    expect(
+      hitTestSeriesPoint(model, 20, {
+        plotLeft: 0,
+        candleWidth: 10,
+        visibleRange: { from: 0, to: 1 }
+      })
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for nonpositive hit-test candle width", () => {
+    const model = createSourceSeriesRenderModel("line", createSeries());
+
+    expect(
+      hitTestSeriesPoint(model, 0, {
+        plotLeft: 0,
+        candleWidth: 0,
+        visibleRange: { from: 0, to: 1 }
+      })
+    ).toBeUndefined();
+  });
+
   it("formats neutral tooltip rows from a hit-test result", () => {
     const model = createSourceSeriesRenderModel("candles", createSeries());
     const hit = hitTestSeriesPoint(model, 2, {

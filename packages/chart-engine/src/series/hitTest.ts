@@ -21,9 +21,12 @@ export function hitTestSeriesPoint(
   }
 
   const rawIndex = from + Math.floor((x - input.plotLeft) / input.candleWidth);
-  const index = Math.max(from, Math.min(to, rawIndex));
-  const point = model.points[index];
-  const centerX = input.plotLeft + (index - from) * input.candleWidth + input.candleWidth / 2;
+  if (rawIndex < from || rawIndex > to) {
+    return undefined;
+  }
+
+  const point = model.points[rawIndex];
+  const centerX = input.plotLeft + (rawIndex - from) * input.candleWidth + input.candleWidth / 2;
   const sourceCandle = getSourceCandle(model, point.sourceIndex);
 
   return {
