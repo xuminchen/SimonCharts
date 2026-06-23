@@ -18,5 +18,7 @@ export * from "./render/layers/tooltipLayer";
 export * from "./render/layers/volumeLayer";
 export * from "./render/renderTypes";
 export * from "./render/staticRenderer";
+export * from "./series/seriesRegistry";
+export * from "./series/seriesTypes";
 export * from "./viewport/priceRange";
 export * from "./viewport/viewport";
