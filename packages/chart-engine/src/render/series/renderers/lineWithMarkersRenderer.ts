@@ -18,11 +18,11 @@ export function createLineWithMarkersRenderer() {
     const range = getVisiblePriceRange(renderContext.model, bounds);
     const { context, state } = renderContext;
 
-    context.strokeStyle = state.theme.colors.text;
-    context.fillStyle = state.theme.colors.text;
-    context.lineWidth = state.theme.lineWidths.indicator;
-
     withPlotClip(renderContext, () => {
+      context.strokeStyle = state.theme.colors.text;
+      context.fillStyle = state.theme.colors.text;
+      context.lineWidth = state.theme.lineWidths.indicator;
+
       context.beginPath();
       for (let index = bounds.from; index <= bounds.to; index += 1) {
         const point = renderContext.model.points[index];

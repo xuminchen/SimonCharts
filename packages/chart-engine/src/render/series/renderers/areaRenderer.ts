@@ -19,11 +19,11 @@ export function createAreaRenderer() {
     const { context, state } = renderContext;
     const baselineY = yForPrice(renderContext, range, range.min);
 
-    context.strokeStyle = state.theme.colors.text;
-    context.fillStyle = state.theme.colors.volume;
-    context.lineWidth = state.theme.lineWidths.indicator;
-
     withPlotClip(renderContext, () => {
+      context.strokeStyle = state.theme.colors.text;
+      context.fillStyle = state.theme.colors.volume;
+      context.lineWidth = state.theme.lineWidths.indicator;
+
       context.beginPath();
       context.moveTo(xForIndex(renderContext, bounds.from), baselineY);
       for (let index = bounds.from; index <= bounds.to; index += 1) {

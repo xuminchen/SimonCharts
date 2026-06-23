@@ -20,9 +20,8 @@ export function createBaselineRenderer() {
     const baseline = renderContext.model.points[bounds.from].close;
     const baselineY = yForPrice(renderContext, range, baseline);
 
-    context.lineWidth = state.theme.lineWidths.indicator;
-
     withPlotClip(renderContext, () => {
+      context.lineWidth = state.theme.lineWidths.indicator;
       context.strokeStyle = state.theme.colors.grid;
       context.beginPath();
       context.moveTo(renderContext.layout.plotArea.x, baselineY);

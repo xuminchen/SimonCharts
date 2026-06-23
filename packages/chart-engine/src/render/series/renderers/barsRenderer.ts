@@ -20,9 +20,9 @@ export function createBarsRenderer() {
     const tickWidth = Math.max(1, renderContext.state.viewport.candleWidth * 0.35);
     const { context } = renderContext;
 
-    context.lineWidth = renderContext.state.theme.lineWidths.candleWick;
-
     withPlotClip(renderContext, () => {
+      context.lineWidth = renderContext.state.theme.lineWidths.candleWick;
+
       for (let index = bounds.from; index <= bounds.to; index += 1) {
         const point = renderContext.model.points[index];
         const x = xForIndex(renderContext, index);

@@ -118,9 +118,12 @@ export function withPlotClip(context: SeriesRendererContext, draw: () => void): 
   const plot = context.layout.plotArea;
 
   context.context.save();
-  context.context.beginPath();
-  context.context.rect(plot.x, plot.y, plot.width, plot.height);
-  context.context.clip();
-  draw();
-  context.context.restore();
+  try {
+    context.context.beginPath();
+    context.context.rect(plot.x, plot.y, plot.width, plot.height);
+    context.context.clip();
+    draw();
+  } finally {
+    context.context.restore();
+  }
 }

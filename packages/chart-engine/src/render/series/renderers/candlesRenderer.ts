@@ -21,9 +21,9 @@ export function createCandlesRenderer() {
     const width = bodyWidth(renderContext);
     const { context } = renderContext;
 
-    context.lineWidth = renderContext.state.theme.lineWidths.candleWick;
-
     withPlotClip(renderContext, () => {
+      context.lineWidth = renderContext.state.theme.lineWidths.candleWick;
+
       for (let index = bounds.from; index <= bounds.to; index += 1) {
         const point = renderContext.model.points[index];
         const x = xForIndex(renderContext, index);

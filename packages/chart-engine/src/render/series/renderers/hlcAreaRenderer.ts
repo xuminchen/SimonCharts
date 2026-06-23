@@ -18,11 +18,11 @@ export function createHlcAreaRenderer() {
     const range = getVisiblePriceRange(renderContext.model, bounds);
     const { context, state } = renderContext;
 
-    context.strokeStyle = state.theme.colors.text;
-    context.fillStyle = state.theme.colors.volume;
-    context.lineWidth = state.theme.lineWidths.candleWick;
-
     withPlotClip(renderContext, () => {
+      context.strokeStyle = state.theme.colors.text;
+      context.fillStyle = state.theme.colors.volume;
+      context.lineWidth = state.theme.lineWidths.candleWick;
+
       context.beginPath();
       for (let index = bounds.from; index <= bounds.to; index += 1) {
         const point = renderContext.model.points[index];

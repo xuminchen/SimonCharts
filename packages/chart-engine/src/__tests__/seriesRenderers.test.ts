@@ -19,6 +19,12 @@ interface DrawCall {
 
 class FakeCanvasContext {
   calls: DrawCall[] = [];
+  private styleStack: Array<{
+    fillStyle: string;
+    strokeStyle: string;
+    lineWidth: number;
+    globalAlpha: number;
+  }> = [];
 
   fillStyle = "";
   strokeStyle = "";
@@ -58,10 +64,24 @@ class FakeCanvasContext {
   }
 
   save(): void {
+    this.styleStack.push({
+      fillStyle: this.fillStyle,
+      strokeStyle: this.strokeStyle,
+      lineWidth: this.lineWidth,
+      globalAlpha: this.globalAlpha
+    });
     this.record("save");
   }
 
   restore(): void {
+    const style = this.styleStack.pop();
+
+    if (style) {
+      this.fillStyle = style.fillStyle;
+      this.strokeStyle = style.strokeStyle;
+      this.lineWidth = style.lineWidth;
+      this.globalAlpha = style.globalAlpha;
+    }
     this.record("restore");
   }
 
@@ -166,5 +186,46 @@ describe("direct source series renderers", () => {
     createSeriesLayer(registry).render(layerContext);
 
     expect((layerContext.context as unknown as FakeCanvasContext).calls.length).toBeGreaterThan(0);
+  });
+
+  it("restores the caller canvas styles after direct renderer drawing", () => {
+    const registry = createDefaultSeriesRendererRegistry();
+    const renderContext = createRenderContext("area");
+    const fakeContext = renderContext.context as unknown as FakeCanvasContext;
+    const model = createSourceSeriesRenderModel("area", renderContext.state.series);
+
+    fakeContext.fillStyle = "original-fill";
+    fakeContext.strokeStyle = "original-stroke";
+    fakeContext.lineWidth = 9;
+    fakeContext.globalAlpha = 0.25;
+
+    registry.require("area").render({
+      ...renderContext,
+      model,
+      layout: renderContext.state.layout
+    });
+
+    expect(fakeContext.fillStyle).toBe("original-fill");
+    expect(fakeContext.strokeStyle).toBe("original-stroke");
+    expect(fakeContext.lineWidth).toBe(9);
+    expect(fakeContext.globalAlpha).toBe(0.25);
+  });
+
+  it("does not draw embedded volume bars for volumeCandles", () => {
+    const registry = createDefaultSeriesRendererRegistry();
+    const renderContext = createRenderContext("volumeCandles");
+    const model = createSourceSeriesRenderModel("volumeCandles", renderContext.state.series);
+
+    registry.require("volumeCandles").render({
+      ...renderContext,
+      model,
+      layout: renderContext.state.layout
+    });
+
+    const fillRects = (renderContext.context as unknown as FakeCanvasContext).calls.filter(
+      (call) => call.name === "fillRect"
+    );
+
+    expect(fillRects).toHaveLength(renderContext.state.series.candles.length);
   });
 });
