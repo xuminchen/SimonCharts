@@ -9,29 +9,43 @@ export interface CreatePanelLayoutInput {
 }
 
 export function createPanelLayout(input: CreatePanelLayoutInput): PanelArea[] {
-  const chartHeight = Math.max(0, input.height - input.bottomAxisHeight);
-  const plotWidth = Math.max(0, input.width - input.rightAxisWidth);
+  const width = Math.max(0, input.width);
+  const height = Math.max(0, input.height);
+  const rightAxisWidth = Math.min(width, Math.max(0, input.rightAxisWidth));
+  const bottomAxisHeight = Math.min(height, Math.max(0, input.bottomAxisHeight));
+  const chartHeight = height - bottomAxisHeight;
+  const plotWidth = width - rightAxisWidth;
   const totalRatio = input.panels.reduce((sum, panel) => sum + Math.max(0, panel.heightRatio), 0);
 
   if (input.panels.length === 0 || totalRatio <= 0) {
     return [];
   }
 
+  let lastPositivePanelIndex = -1;
+  for (let index = input.panels.length - 1; index >= 0; index -= 1) {
+    if (input.panels[index].heightRatio > 0) {
+      lastPositivePanelIndex = index;
+      break;
+    }
+  }
   let y = 0;
 
   return input.panels.map((panel, index) => {
     const remainingHeight = chartHeight - y;
+    const panelRatio = Math.max(0, panel.heightRatio);
     const rawHeight =
-      index === input.panels.length - 1
+      panelRatio <= 0
+        ? 0
+        : index === lastPositivePanelIndex
         ? remainingHeight
-        : Math.floor((chartHeight * Math.max(0, panel.heightRatio)) / totalRatio);
+        : Math.floor((chartHeight * panelRatio) / totalRatio);
     const height = Math.max(0, rawHeight);
     const area: PanelArea = {
       id: panel.id,
       kind: panel.kind,
       label: panel.label,
       plotArea: { x: 0, y, width: plotWidth, height },
-      priceAxisArea: { x: plotWidth, y, width: input.rightAxisWidth, height }
+      priceAxisArea: { x: plotWidth, y, width: rightAxisWidth, height }
     };
 
     y += height;
