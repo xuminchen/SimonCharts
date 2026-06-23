@@ -1,20 +1,23 @@
 import type { VisualOutputType, VisualRenderer } from "./visualTypes";
 
 export interface VisualRendererRegistry {
-  register(type: VisualOutputType, renderer: VisualRenderer): void;
-  get(type: VisualOutputType): VisualRenderer;
-  has(type: VisualOutputType): boolean;
-  listTypes(): VisualOutputType[];
+  register(renderer: VisualRenderer): void;
+  get(type: VisualOutputType): VisualRenderer | undefined;
+  require(type: VisualOutputType): VisualRenderer;
+  list(): VisualRenderer[];
 }
 
 export function createVisualRendererRegistry(): VisualRendererRegistry {
   const renderers = new Map<VisualOutputType, VisualRenderer>();
 
   return {
-    register(type, renderer) {
-      renderers.set(type, renderer);
+    register(renderer) {
+      renderers.set(renderer.type, renderer);
     },
     get(type) {
+      return renderers.get(type);
+    },
+    require(type) {
       const renderer = renderers.get(type);
 
       if (!renderer) {
@@ -23,11 +26,8 @@ export function createVisualRendererRegistry(): VisualRendererRegistry {
 
       return renderer;
     },
-    has(type) {
-      return renderers.has(type);
-    },
-    listTypes() {
-      return [...renderers.keys()];
+    list() {
+      return [...renderers.values()];
     }
   };
 }

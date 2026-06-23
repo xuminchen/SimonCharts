@@ -6,7 +6,7 @@ export function chooseNearestVisualHit(
   let nearestHit: VisualHitTestResult | undefined;
 
   for (const hit of hits) {
-    if (!hit) {
+    if (!hit || !Number.isFinite(hit.distance)) {
       continue;
     }
 

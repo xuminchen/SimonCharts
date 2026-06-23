@@ -25,28 +25,28 @@ describe("visual renderer registry", () => {
       }
     };
 
-    registry.register("line", renderer);
+    registry.register(renderer);
 
     expect(registry.get("line")).toBe(renderer);
-    expect(registry.has("line")).toBe(true);
+    expect(registry.require("line")).toBe(renderer);
   });
 
   it("throws a clear error for missing visual renderer", () => {
     const registry = createVisualRendererRegistry();
 
-    expect(() => registry.get("band")).toThrow("Visual renderer is not registered: band");
-    expect(registry.has("band")).toBe(false);
+    expect(registry.get("band")).toBeUndefined();
+    expect(() => registry.require("band")).toThrow("Visual renderer is not registered: band");
   });
 
-  it("lists registered visual output types in insertion order", () => {
+  it("lists registered visual renderers in insertion order", () => {
     const registry = createVisualRendererRegistry();
     const lineRenderer = createRenderer("line");
     const bandRenderer = createRenderer("band");
 
-    registry.register("line", lineRenderer);
-    registry.register("band", bandRenderer);
+    registry.register(lineRenderer);
+    registry.register(bandRenderer);
 
-    expect(registry.listTypes()).toEqual(["line", "band"]);
+    expect(registry.list()).toEqual([lineRenderer, bandRenderer]);
   });
 });
 
@@ -84,6 +84,15 @@ describe("visual helpers", () => {
     const nearHit = createHit("near", 3);
 
     expect(chooseNearestVisualHit([undefined, farHit, nearHit])).toBe(nearHit);
+  });
+
+  it("ignores visual hits with non-finite distances", () => {
+    const validHit = createHit("valid", 4);
+
+    expect(chooseNearestVisualHit([createHit("nan", Number.NaN), validHit])).toBe(validHit);
+    expect(
+      chooseNearestVisualHit([createHit("infinite", Number.POSITIVE_INFINITY)])
+    ).toBeUndefined();
   });
 
   it("returns undefined when there are no visual hits", () => {
