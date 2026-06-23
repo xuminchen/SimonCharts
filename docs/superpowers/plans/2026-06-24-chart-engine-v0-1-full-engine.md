@@ -1474,7 +1474,7 @@ git commit -m "feat: add playground chart type selector"
 - Test: `packages/chart-engine/src/__tests__/panelEngine.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing panel tests**
+- [x] **Step 1: Write failing panel tests**
 
 Create `packages/chart-engine/src/__tests__/panelEngine.test.ts`:
 
@@ -1509,7 +1509,7 @@ describe("panel engine", () => {
 });
 ```
 
-- [ ] **Step 2: Verify the test fails**
+- [x] **Step 2: Verify the test fails**
 
 Run:
 
@@ -1519,7 +1519,7 @@ npm run test -- packages/chart-engine/src/__tests__/panelEngine.test.ts
 
 Expected: FAIL because panel contracts are missing.
 
-- [ ] **Step 3: Implement panel types**
+- [x] **Step 3: Implement panel types**
 
 Create `packages/chart-engine/src/panels/panelTypes.ts`:
 
@@ -1552,7 +1552,7 @@ export interface PanelArea {
 }
 ```
 
-- [ ] **Step 4: Implement panel layout**
+- [x] **Step 4: Implement panel layout**
 
 Create `packages/chart-engine/src/panels/panelLayout.ts`:
 
@@ -1599,7 +1599,7 @@ export function createPanelLayout(input: CreatePanelLayoutInput): PanelArea[] {
 }
 ```
 
-- [ ] **Step 5: Implement panel scale lookup helper**
+- [x] **Step 5: Implement panel scale lookup helper**
 
 Create `packages/chart-engine/src/panels/panelScales.ts`:
 
@@ -1611,7 +1611,7 @@ export function findPanelArea(panels: PanelArea[], panelId: string): PanelArea |
 }
 ```
 
-- [ ] **Step 6: Export panel API**
+- [x] **Step 6: Export panel API**
 
 Add to `packages/chart-engine/src/index.ts`:
 
@@ -1621,7 +1621,7 @@ export * from "./panels/panelScales";
 export * from "./panels/panelTypes";
 ```
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 Run:
 
@@ -1633,7 +1633,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/chart-engine/src/panels packages/chart-engine/src/__tests__/panelEngine.test.ts packages/chart-engine/src/index.ts
