@@ -1,0 +1,14 @@
+{
+  "name": "@simoncharts/playground",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@simoncharts/chart-engine": "0.0.0"
+  }
+}

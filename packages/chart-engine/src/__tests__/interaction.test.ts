@@ -1,0 +1,290 @@
+import { describe, expect, it } from "vitest";
+import {
+  createInitialViewport,
+  createInteractionEngine,
+  fixtureDailyCandleSeries,
+  hitTestCandleAtX,
+  indexToX
+} from "../index";
+import type { CandleSeries, InteractionEvent, ViewportState } from "../index";
+
+const width = 240;
+const plotLeft = 16;
+const plotTop = 20;
+const plotHeight = 180;
+
+function createEngine(events: InteractionEvent[] = []) {
+  return createInteractionEngine({
+    series: fixtureDailyCandleSeries,
+    viewport: createInitialViewport(fixtureDailyCandleSeries.candles.length, width),
+    width,
+    plotLeft,
+    plotTop,
+    plotHeight,
+    onEvent: (event) => events.push(event)
+  });
+}
+
+function createSeries(count: number): CandleSeries {
+  return {
+    symbol: "TEST",
+    timeframe: "1d",
+    adjustMode: "none",
+    dataVersion: "test",
+    candles: Array.from({ length: count }, (_, index) => ({
+      time: index,
+      open: index + 1,
+      high: index + 2,
+      low: index,
+      close: index + 1.5,
+      volume: index + 10,
+      turnover: index + 20
+    }))
+  };
+}
+
+describe("interaction engine", () => {
+  it("zooms in around the cursor candle index on wheel up", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const before = engine.getViewport();
+    const anchorIndex = before.visibleRange.from + 10;
+    const anchorX = indexToX(anchorIndex, before, plotLeft);
+
+    engine.handleWheel({ x: anchorX, deltaY: -100 });
+
+    const after = engine.getViewport();
+    expect(after.candleWidth).toBeGreaterThan(before.candleWidth);
+    expect(after.visibleRange.to - after.visibleRange.from).toBeLessThan(
+      before.visibleRange.to - before.visibleRange.from
+    );
+    expect(after.visibleRange.from).toBeLessThanOrEqual(anchorIndex);
+    expect(after.visibleRange.to).toBeGreaterThanOrEqual(anchorIndex);
+    expect(events.at(-1)).toEqual({
+      type: "viewportChanged",
+      viewport: after,
+      visibleRange: after.visibleRange
+    });
+  });
+
+  it("zooms out around the cursor candle index on wheel down", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const first = engine.getViewport();
+    const anchorIndex = first.visibleRange.from + 10;
+    const anchorX = indexToX(anchorIndex, first, plotLeft);
+
+    engine.handleWheel({ x: anchorX, deltaY: -100 });
+    const zoomed = engine.getViewport();
+    engine.handleWheel({ x: indexToX(anchorIndex, zoomed, plotLeft), deltaY: 100 });
+
+    const after = engine.getViewport();
+    expect(after.candleWidth).toBeLessThan(zoomed.candleWidth);
+    expect(after.visibleRange.to - after.visibleRange.from).toBeGreaterThan(
+      zoomed.visibleRange.to - zoomed.visibleRange.from
+    );
+    expect(after.visibleRange.from).toBeLessThanOrEqual(anchorIndex);
+    expect(after.visibleRange.to).toBeGreaterThanOrEqual(anchorIndex);
+  });
+
+  it("changes the visible range by candle delta while dragging", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const before = engine.getViewport();
+
+    engine.handlePointerDown({ x: 120, y: 80 });
+    engine.handlePointerMove({ x: 120 + before.candleWidth * 3, y: 80 });
+    engine.handlePointerUp({ x: 120 + before.candleWidth * 3, y: 80 });
+
+    const after = engine.getViewport();
+    expect(after.scrollOffset).toBe(before.scrollOffset + 3);
+    expect(after.visibleRange.from).toBe(before.visibleRange.from - 3);
+    expect(after.visibleRange.to).toBe(before.visibleRange.to - 3);
+    expect(events.some((event) => event.type === "viewportChanged")).toBe(true);
+  });
+
+  it("resets the view to the latest candles", () => {
+    const engine = createEngine();
+    const before = engine.getViewport();
+
+    engine.handlePointerDown({ x: 120, y: 80 });
+    engine.handlePointerMove({ x: 120 + before.candleWidth * 4, y: 80 });
+    engine.handlePointerUp({ x: 120 + before.candleWidth * 4, y: 80 });
+    engine.resetView();
+
+    expect(engine.getViewport()).toEqual(
+      createInitialViewport(fixtureDailyCandleSeries.candles.length, width)
+    );
+  });
+
+  it("emits crosshair state with candle index, time, price, and OHLCV values", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const viewport = engine.getViewport();
+    const index = viewport.visibleRange.from + 5;
+    const candle = fixtureDailyCandleSeries.candles[index];
+
+    engine.handlePointerMove({
+      x: indexToX(index, viewport, plotLeft),
+      y: plotTop + plotHeight / 2
+    });
+
+    const crosshair = engine.getCrosshair();
+    expect(crosshair).toMatchObject({
+      index,
+      time: candle.time,
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+      volume: candle.volume,
+      turnover: candle.turnover
+    });
+    expect(crosshair?.price).toEqual(expect.any(Number));
+    expect(events.at(-1)).toEqual({ type: "crosshairMoved", crosshair });
+  });
+
+  it("clears crosshair and emits undefined when pointer x misses data", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const viewport = engine.getViewport();
+    const index = viewport.visibleRange.from + 5;
+
+    engine.handlePointerMove({
+      x: indexToX(index, viewport, plotLeft),
+      y: plotTop + plotHeight / 2
+    });
+    engine.handlePointerMove({ x: plotLeft - 1, y: plotTop + plotHeight / 2 });
+
+    expect(engine.getCrosshair()).toBeUndefined();
+    expect(events.at(-1)).toEqual({ type: "crosshairMoved", crosshair: undefined });
+  });
+
+  it("clears crosshair and emits undefined when pointer y is outside the plot", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const viewport = engine.getViewport();
+    const index = viewport.visibleRange.from + 5;
+    const x = indexToX(index, viewport, plotLeft);
+
+    engine.handlePointerMove({ x, y: plotTop + plotHeight / 2 });
+    engine.handlePointerMove({ x, y: plotTop + plotHeight + 1 });
+
+    expect(engine.getCrosshair()).toBeUndefined();
+    expect(events.at(-1)).toEqual({ type: "crosshairMoved", crosshair: undefined });
+  });
+
+  it("clears crosshair and emits undefined when pointer input lacks y", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const viewport = engine.getViewport();
+    const index = viewport.visibleRange.from + 5;
+    const x = indexToX(index, viewport, plotLeft);
+
+    engine.handlePointerMove({ x, y: plotTop + plotHeight / 2 });
+    engine.handlePointerMove({ x });
+    engine.handlePointerMove({ x });
+
+    expect(engine.getCrosshair()).toBeUndefined();
+    expect(events.filter((event) => event.type === "crosshairMoved").at(-1)).toEqual({
+      type: "crosshairMoved",
+      crosshair: undefined
+    });
+    expect(events.filter((event) => event.type === "crosshairMoved" && !event.crosshair)).toHaveLength(
+      1
+    );
+  });
+
+  it("clears crosshair when reset view runs", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const viewport = engine.getViewport();
+    const index = viewport.visibleRange.from + 5;
+
+    engine.handlePointerMove({
+      x: indexToX(index, viewport, plotLeft),
+      y: plotTop + plotHeight / 2
+    });
+    engine.resetView();
+
+    expect(engine.getCrosshair()).toBeUndefined();
+    expect(events.at(-1)).toEqual({ type: "crosshairMoved", crosshair: undefined });
+  });
+
+  it("clears crosshair after a wheel viewport change", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const viewport = engine.getViewport();
+    const index = viewport.visibleRange.from + 5;
+    const x = indexToX(index, viewport, plotLeft);
+
+    engine.handlePointerMove({ x, y: plotTop + plotHeight / 2 });
+    engine.handleWheel({ x, deltaY: -100 });
+
+    expect(engine.getCrosshair()).toBeUndefined();
+    expect(events.at(-1)).toEqual({ type: "crosshairMoved", crosshair: undefined });
+  });
+
+  it("exposes interaction state with dragging status", () => {
+    const engine = createEngine();
+
+    expect(engine.getState().isDragging).toBe(false);
+    engine.handlePointerDown({ x: 120, y: 80 });
+    expect(engine.getState().isDragging).toBe(true);
+    engine.handlePointerUp({ x: 120, y: 80 });
+    expect(engine.getState().isDragging).toBe(false);
+  });
+
+  it("emits a neutral viewportChanged event when visible range changes", () => {
+    const events: InteractionEvent[] = [];
+    const engine = createEngine(events);
+    const before = engine.getViewport();
+
+    engine.handleWheel({ x: indexToX(before.visibleRange.from + 8, before, plotLeft), deltaY: -100 });
+
+    expect(events).toContainEqual({
+      type: "viewportChanged",
+      viewport: engine.getViewport(),
+      visibleRange: engine.getViewport().visibleRange
+    });
+  });
+});
+
+describe("hit testing", () => {
+  it("returns undefined when x maps beyond clamped visible candle data", () => {
+    const series = createSeries(5);
+    const viewport: ViewportState = {
+      visibleRange: { from: 0, to: 9 },
+      candleWidth: 8,
+      scrollOffset: 0,
+      priceScaleMode: "linear"
+    };
+
+    expect(hitTestCandleAtX(series, viewport, 4, 0)).toEqual({
+      index: 0,
+      candle: series.candles[0]
+    });
+    expect(hitTestCandleAtX(series, viewport, 36, 0)).toEqual({
+      index: 4,
+      candle: series.candles[4]
+    });
+    expect(hitTestCandleAtX(series, viewport, 60, 0)).toBeUndefined();
+    expect(
+      hitTestCandleAtX(series, { ...viewport, visibleRange: { from: 0, to: -1 } }, 4, 0)
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the viewport is entirely before available data", () => {
+    const series = createSeries(5);
+    const viewport: ViewportState = {
+      visibleRange: { from: -10, to: -1 },
+      candleWidth: 8,
+      scrollOffset: 0,
+      priceScaleMode: "linear"
+    };
+
+    expect(hitTestCandleAtX(series, viewport, 0, 0)).toBeUndefined();
+    expect(hitTestCandleAtX(series, viewport, 40, 0)).toBeUndefined();
+    expect(hitTestCandleAtX(series, viewport, 80, 0)).toBeUndefined();
+  });
+});

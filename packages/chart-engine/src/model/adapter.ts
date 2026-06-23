@@ -1,0 +1,28 @@
+import type { AdjustMode, CandleSeries, Timeframe } from "./market";
+import type { ChartCommand, ViewportState, VisibleRange } from "./runtime";
+import type { ChartMark, DrawingObject } from "./visual";
+
+export interface DataRequest {
+  symbol: string;
+  timeframe: Timeframe;
+  adjustMode: AdjustMode;
+  range?: VisibleRange;
+}
+
+export type DataResponse = CandleSeries | Promise<CandleSeries>;
+
+export interface LayoutSnapshot {
+  viewport: ViewportState;
+  drawings: DrawingObject[];
+  indicators: string[];
+}
+
+export interface HostAdapter {
+  resolveData?: (request: DataRequest) => DataResponse;
+  onRangeNeedMoreData?: (range: VisibleRange) => void;
+  onViewportChange?: (viewport: ViewportState) => void;
+  onDrawingChange?: (drawing: DrawingObject) => void;
+  onCommand?: (command: ChartCommand) => void;
+  onMarkClick?: (mark: ChartMark) => void;
+  persistLayout?: (layout: LayoutSnapshot) => void | Promise<void>;
+}
