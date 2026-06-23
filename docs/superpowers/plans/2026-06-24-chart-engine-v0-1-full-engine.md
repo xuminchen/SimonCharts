@@ -1652,7 +1652,7 @@ git commit -m "feat: add panel layout engine"
 - Test: `packages/chart-engine/src/__tests__/visualRegistry.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing visual registry tests**
+- [x] **Step 1: Write failing visual registry tests**
 
 Create `packages/chart-engine/src/__tests__/visualRegistry.test.ts`:
 
@@ -1684,7 +1684,7 @@ describe("visual renderer registry", () => {
 });
 ```
 
-- [ ] **Step 2: Verify the test fails**
+- [x] **Step 2: Verify the test fails**
 
 Run:
 
@@ -1694,7 +1694,7 @@ npm run test -- packages/chart-engine/src/__tests__/visualRegistry.test.ts
 
 Expected: FAIL because the visual registry is missing.
 
-- [ ] **Step 3: Implement visual types**
+- [x] **Step 3: Implement visual types**
 
 Create `packages/chart-engine/src/visuals/visualTypes.ts`:
 
@@ -1737,7 +1737,7 @@ export interface VisualRenderer {
 }
 ```
 
-- [ ] **Step 4: Implement visual registry**
+- [x] **Step 4: Implement visual registry**
 
 Create `packages/chart-engine/src/visuals/visualRegistry.ts`:
 
@@ -1777,7 +1777,7 @@ export function createVisualRendererRegistry(): VisualRendererRegistry {
 }
 ```
 
-- [ ] **Step 5: Add neutral helper modules**
+- [x] **Step 5: Add neutral helper modules**
 
 Create `visualTooltip.ts` with:
 
@@ -1822,7 +1822,7 @@ export function chooseNearestVisualHit(
 }
 ```
 
-- [ ] **Step 6: Export visual API**
+- [x] **Step 6: Export visual API**
 
 Add to `packages/chart-engine/src/index.ts`:
 
@@ -1834,7 +1834,7 @@ export * from "./visuals/visualTooltip";
 export * from "./visuals/visualTypes";
 ```
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 Run:
 
@@ -1846,7 +1846,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/chart-engine/src/visuals packages/chart-engine/src/__tests__/visualRegistry.test.ts packages/chart-engine/src/index.ts

@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+import {
+  chooseNearestVisualHit,
+  createVisualRendererRegistry,
+  formatVisualValue,
+  mergeVisualAutoscaleRanges,
+  type VisualHitTestResult,
+  type VisualRenderer
+} from "../index";
+
+describe("visual renderer registry", () => {
+  it("registers and retrieves a renderer by visual output type", () => {
+    const registry = createVisualRendererRegistry();
+    const renderer: VisualRenderer = {
+      type: "line",
+      render() {},
+      getAutoscale() {
+        return undefined;
+      },
+      hitTest() {
+        return undefined;
+      },
+      getTooltipRows() {
+        return [];
+      }
+    };
+
+    registry.register("line", renderer);
+
+    expect(registry.get("line")).toBe(renderer);
+    expect(registry.has("line")).toBe(true);
+  });
+
+  it("throws a clear error for missing visual renderer", () => {
+    const registry = createVisualRendererRegistry();
+
+    expect(() => registry.get("band")).toThrow("Visual renderer is not registered: band");
+    expect(registry.has("band")).toBe(false);
+  });
+
+  it("lists registered visual output types in insertion order", () => {
+    const registry = createVisualRendererRegistry();
+    const lineRenderer = createRenderer("line");
+    const bandRenderer = createRenderer("band");
+
+    registry.register("line", lineRenderer);
+    registry.register("band", bandRenderer);
+
+    expect(registry.listTypes()).toEqual(["line", "band"]);
+  });
+});
+
+describe("visual helpers", () => {
+  it("formats integer values without decimals and decimal values with two decimals", () => {
+    expect(formatVisualValue(12)).toBe("12");
+    expect(formatVisualValue(-4)).toBe("-4");
+    expect(formatVisualValue(12.345)).toBe("12.35");
+  });
+
+  it("merges only finite autoscale ranges", () => {
+    expect(
+      mergeVisualAutoscaleRanges([
+        undefined,
+        { min: 5, max: 8 },
+        { min: Number.NEGATIVE_INFINITY, max: 9 },
+        { min: -2, max: 6 },
+        { min: 0, max: Number.POSITIVE_INFINITY }
+      ])
+    ).toEqual({ min: -2, max: 8 });
+  });
+
+  it("returns undefined when there are no valid autoscale ranges", () => {
+    expect(
+      mergeVisualAutoscaleRanges([
+        undefined,
+        { min: Number.NaN, max: 4 },
+        { min: 1, max: Number.POSITIVE_INFINITY }
+      ])
+    ).toBeUndefined();
+  });
+
+  it("chooses the nearest defined visual hit", () => {
+    const farHit = createHit("far", 12);
+    const nearHit = createHit("near", 3);
+
+    expect(chooseNearestVisualHit([undefined, farHit, nearHit])).toBe(nearHit);
+  });
+
+  it("returns undefined when there are no visual hits", () => {
+    expect(chooseNearestVisualHit([undefined])).toBeUndefined();
+  });
+});
+
+function createRenderer(type: VisualRenderer["type"]): VisualRenderer {
+  return {
+    type,
+    render() {},
+    getAutoscale() {
+      return undefined;
+    },
+    hitTest() {
+      return undefined;
+    },
+    getTooltipRows() {
+      return [];
+    }
+  };
+}
+
+function createHit(outputId: string, distance: number): VisualHitTestResult {
+  return {
+    outputId,
+    outputType: "line",
+    time: 1,
+    value: 10,
+    distance
+  };
+}
