@@ -534,7 +534,7 @@ git commit -m "feat: build source series render models"
 - Test: `packages/chart-engine/src/__tests__/seriesRenderModels.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Extend failing tests**
+- [x] **Step 1: Extend failing tests**
 
 Add tests to `seriesRenderModels.test.ts`:
 
@@ -583,7 +583,7 @@ it("formats neutral tooltip rows from a hit-test result", () => {
 });
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run:
 
@@ -593,7 +593,7 @@ npm run test -- packages/chart-engine/src/__tests__/seriesRenderModels.test.ts
 
 Expected: FAIL because the helper functions are missing.
 
-- [ ] **Step 3: Implement autoscale**
+- [x] **Step 3: Implement autoscale**
 
 Create `packages/chart-engine/src/series/autoscale.ts`:
 
@@ -628,7 +628,7 @@ export function getSeriesAutoscaleRange(
 }
 ```
 
-- [ ] **Step 4: Implement hit-test**
+- [x] **Step 4: Implement hit-test**
 
 Create `packages/chart-engine/src/series/hitTest.ts`:
 
@@ -678,7 +678,7 @@ function getSourceCandle(model: SeriesRenderModel, sourceIndex: number | undefin
 }
 ```
 
-- [ ] **Step 5: Implement tooltip rows**
+- [x] **Step 5: Implement tooltip rows**
 
 Create `packages/chart-engine/src/series/tooltip.ts`:
 
@@ -704,7 +704,7 @@ function formatNumber(value: number): string {
 }
 ```
 
-- [ ] **Step 6: Export helpers**
+- [x] **Step 6: Export helpers**
 
 Add to `packages/chart-engine/src/index.ts`:
 
@@ -714,7 +714,7 @@ export * from "./series/hitTest";
 export * from "./series/tooltip";
 ```
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 Run:
 
@@ -726,7 +726,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/chart-engine/src/series packages/chart-engine/src/__tests__/seriesRenderModels.test.ts packages/chart-engine/src/index.ts

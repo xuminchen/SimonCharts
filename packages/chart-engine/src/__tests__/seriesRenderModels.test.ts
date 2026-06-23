@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createSourceSeriesRenderModel, type CandleSeries } from "../index";
+import {
+  createSourceSeriesRenderModel,
+  getDefaultSeriesTooltipRows,
+  getSeriesAutoscaleRange,
+  hitTestSeriesPoint,
+  type CandleSeries
+} from "../index";
 
 function createSeries(): CandleSeries {
   return {
@@ -32,5 +38,42 @@ describe("source series render model", () => {
     createSourceSeriesRenderModel("line", series);
 
     expect(JSON.stringify(series)).toBe(before);
+  });
+
+  it("computes autoscale from high and low values", () => {
+    const model = createSourceSeriesRenderModel("candles", createSeries());
+
+    expect(getSeriesAutoscaleRange(model, { from: 0, to: 1 })).toEqual({ min: 9, max: 13 });
+  });
+
+  it("hit-tests the closest visible point by x distance", () => {
+    const model = createSourceSeriesRenderModel("line", createSeries());
+    const hit = hitTestSeriesPoint(model, 12, {
+      plotLeft: 0,
+      candleWidth: 10,
+      visibleRange: { from: 0, to: 1 }
+    });
+
+    expect(hit?.point.sourceIndex).toBe(1);
+    expect(hit?.sourceCandle?.time).toBe(2);
+  });
+
+  it("formats neutral tooltip rows from a hit-test result", () => {
+    const model = createSourceSeriesRenderModel("candles", createSeries());
+    const hit = hitTestSeriesPoint(model, 2, {
+      plotLeft: 0,
+      candleWidth: 10,
+      visibleRange: { from: 0, to: 1 }
+    });
+
+    expect(hit ? getDefaultSeriesTooltipRows(hit).map((row) => row.label) : []).toEqual([
+      "Time",
+      "Open",
+      "High",
+      "Low",
+      "Close",
+      "Volume",
+      "Turnover"
+    ]);
   });
 });
