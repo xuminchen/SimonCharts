@@ -36,6 +36,7 @@ export function transformRenko(
         high: Math.max(open, close),
         low: Math.min(open, close),
         close,
+        sourceIndex,
         sourceRange: { from: rangeStart, to: sourceIndex }
       });
 

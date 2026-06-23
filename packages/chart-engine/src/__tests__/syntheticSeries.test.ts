@@ -5,7 +5,8 @@ import {
   transformLineBreak,
   transformPointAndFigure,
   transformRenko,
-  type CandleSeries
+  type CandleSeries,
+  type SeriesRenderPoint
 } from "../index";
 
 function createSeries(): CandleSeries {
@@ -34,6 +35,13 @@ function createEmptySeries(): CandleSeries {
   };
 }
 
+function expectRangeEndSourceIndexes(points: SeriesRenderPoint[]): void {
+  for (const point of points) {
+    expect(point.sourceRange).toBeDefined();
+    expect(point.sourceIndex).toBe(point.sourceRange?.to);
+  }
+}
+
 describe("synthetic series transforms", () => {
   it("creates Heikin Ashi points with source indexes", () => {
     const model = transformHeikinAshi(createSeries());
@@ -50,6 +58,13 @@ describe("synthetic series transforms", () => {
     expect(model.type).toBe("renko");
     expect(model.points.length).toBeGreaterThan(0);
     expect(model.points.every((point) => point.sourceRange)).toBe(true);
+  });
+
+  it("creates Renko bricks with range end source indexes", () => {
+    const model = transformRenko(createSeries(), { brickSize: 2 });
+
+    expect(model.points.length).toBeGreaterThan(0);
+    expectRangeEndSourceIndexes(model.points);
   });
 
   it("creates Line Break points with source traceability", () => {
@@ -74,6 +89,13 @@ describe("synthetic series transforms", () => {
     expect(model.type).toBe("pointAndFigure");
     expect(model.points.length).toBeGreaterThan(0);
     expect(model.points.every((point) => point.sourceRange)).toBe(true);
+  });
+
+  it("creates Point and Figure columns with range end source indexes", () => {
+    const model = transformPointAndFigure(createSeries(), { boxSize: 1, reversalBoxes: 3 });
+
+    expect(model.points.length).toBeGreaterThan(0);
+    expectRangeEndSourceIndexes(model.points);
   });
 
   it("returns empty models for empty source series", () => {

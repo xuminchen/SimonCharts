@@ -99,6 +99,7 @@ function createColumnPoint(series: CandleSeries, column: PointAndFigureColumn): 
     high: Math.max(column.start, column.end),
     low: Math.min(column.start, column.end),
     close: column.end,
+    sourceIndex: column.endIndex,
     sourceRange: { from: column.startIndex, to: column.endIndex }
   };
 }
