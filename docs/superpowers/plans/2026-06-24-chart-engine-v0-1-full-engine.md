@@ -1060,7 +1060,7 @@ git commit -m "feat: render direct chart series types"
 - Test: `packages/chart-engine/src/__tests__/syntheticSeries.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing synthetic transform tests**
+- [x] **Step 1: Write failing synthetic transform tests**
 
 Create `packages/chart-engine/src/__tests__/syntheticSeries.test.ts`:
 
@@ -1135,7 +1135,7 @@ describe("synthetic series transforms", () => {
 });
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run:
 
@@ -1145,7 +1145,7 @@ npm run test -- packages/chart-engine/src/__tests__/syntheticSeries.test.ts
 
 Expected: FAIL because transform functions are missing.
 
-- [ ] **Step 3: Implement deterministic synthetic transforms**
+- [x] **Step 3: Implement deterministic synthetic transforms**
 
 Implement each transform as a pure function returning `SeriesRenderModel`.
 
@@ -1159,7 +1159,7 @@ Rules:
 - Empty series returns an empty model of the requested type.
 - Invalid `brickSize`, `lineCount`, `reversalAmount`, `boxSize`, or `reversalBoxes` throws a clear `Error`.
 
-- [ ] **Step 4: Export transform functions**
+- [x] **Step 4: Export transform functions**
 
 Add to `packages/chart-engine/src/index.ts`:
 
@@ -1171,7 +1171,7 @@ export * from "./series/transforms/kagi";
 export * from "./series/transforms/pointAndFigure";
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -1183,7 +1183,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/chart-engine/src/series/transforms packages/chart-engine/src/__tests__/syntheticSeries.test.ts packages/chart-engine/src/index.ts
