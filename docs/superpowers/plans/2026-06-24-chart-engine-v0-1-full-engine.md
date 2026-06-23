@@ -1199,7 +1199,7 @@ git commit -m "feat: add synthetic chart transforms"
 - Modify: `packages/chart-engine/src/render/series/renderers/defaultSeriesRenderers.ts`
 - Test: `packages/chart-engine/src/__tests__/seriesRenderers.test.ts`
 
-- [ ] **Step 1: Add failing synthetic renderer tests**
+- [x] **Step 1: Add failing synthetic renderer tests**
 
 Extend `seriesRenderers.test.ts`:
 
@@ -1218,7 +1218,7 @@ it.each(["heikinAshi", "renko", "lineBreak", "kagi", "pointAndFigure"])(
 );
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run:
 
@@ -1228,7 +1228,7 @@ npm run test -- packages/chart-engine/src/__tests__/seriesRenderers.test.ts
 
 Expected: FAIL because synthetic renderers are not registered or transformed.
 
-- [ ] **Step 3: Update series layer to build synthetic models**
+- [x] **Step 3: Update series layer to build synthetic models**
 
 Modify `packages/chart-engine/src/render/series/seriesLayer.ts` so it routes synthetic types through transform functions:
 
@@ -1250,7 +1250,7 @@ function createRenderModel(type: SeriesType, series: CandleSeries): SeriesRender
 }
 ```
 
-- [ ] **Step 4: Implement synthetic renderer**
+- [x] **Step 4: Implement synthetic renderer**
 
 Create `packages/chart-engine/src/render/series/renderers/syntheticOhlcRenderer.ts` that renders synthetic points as OHLC/candle-like marks using `open/high/low/close` when available and close-only marks when synthetic point shape is close-only. Export:
 
@@ -1260,7 +1260,7 @@ export function createSyntheticOhlcSeriesRenderer(type: SeriesType): SeriesRende
 
 The renderer must delegate autoscale to `getSeriesAutoscaleRange`, hit-test to `hitTestSeriesPoint`, and tooltip rows to `getDefaultSeriesTooltipRows`.
 
-- [ ] **Step 5: Register synthetic renderers**
+- [x] **Step 5: Register synthetic renderers**
 
 Modify `defaultSeriesRenderers.ts`:
 
@@ -1272,7 +1272,7 @@ registry.register(createSyntheticOhlcSeriesRenderer("kagi"));
 registry.register(createSyntheticOhlcSeriesRenderer("pointAndFigure"));
 ```
 
-- [ ] **Step 6: Update registry list test to include all 17 renderers**
+- [x] **Step 6: Update registry list test to include all 17 renderers**
 
 Modify the registry list assertion in `seriesRenderers.test.ts`:
 
@@ -1298,7 +1298,7 @@ expect(registry.list().map((renderer) => renderer.type)).toEqual([
 ]);
 ```
 
-- [ ] **Step 7: Verify all 17 renderers**
+- [x] **Step 7: Verify all 17 renderers**
 
 Run:
 
@@ -1311,7 +1311,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/chart-engine/src/render/series packages/chart-engine/src/__tests__/seriesRenderers.test.ts

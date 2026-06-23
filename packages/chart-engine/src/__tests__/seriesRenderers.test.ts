@@ -109,6 +109,8 @@ const directTypes: SeriesType[] = [
   "highLow"
 ];
 
+const syntheticTypes: SeriesType[] = ["heikinAshi", "renko", "lineBreak", "kagi", "pointAndFigure"];
+
 function createSeries(): CandleSeries {
   return {
     symbol: "TEST",
@@ -161,10 +163,28 @@ function createRenderContext(seriesType: SeriesType): LayerRenderContext {
   };
 }
 
-describe("direct source series renderers", () => {
-  it("registers default direct renderers in deterministic order", () => {
+describe("series renderers", () => {
+  it("registers default renderers in deterministic order", () => {
     expect(createDefaultSeriesRendererRegistry().list().map((renderer) => renderer.type)).toEqual(
-      directTypes
+      [
+        "bars",
+        "candles",
+        "hollowCandles",
+        "volumeCandles",
+        "line",
+        "lineWithMarkers",
+        "stepLine",
+        "area",
+        "hlcArea",
+        "baseline",
+        "columns",
+        "highLow",
+        "heikinAshi",
+        "renko",
+        "lineBreak",
+        "kagi",
+        "pointAndFigure"
+      ]
     );
   });
 
@@ -227,5 +247,15 @@ describe("direct source series renderers", () => {
     );
 
     expect(fillRects).toHaveLength(renderContext.state.series.candles.length);
+  });
+
+  it.each(syntheticTypes)("renders synthetic chart type %s through default registry", (type) => {
+    const registry = createDefaultSeriesRendererRegistry();
+    const layer = createSeriesLayer(registry);
+    const context = createRenderContext(type);
+
+    layer.render(context);
+
+    expect((context.context as unknown as FakeCanvasContext).calls.length).toBeGreaterThan(0);
   });
 });

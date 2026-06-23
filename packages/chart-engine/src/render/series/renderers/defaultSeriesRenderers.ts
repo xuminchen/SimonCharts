@@ -11,6 +11,7 @@ import { createHollowCandlesRenderer } from "./hollowCandlesRenderer";
 import { createLineRenderer } from "./lineRenderer";
 import { createLineWithMarkersRenderer } from "./lineWithMarkersRenderer";
 import { createStepLineRenderer } from "./stepLineRenderer";
+import { createSyntheticOhlcSeriesRenderer } from "./syntheticOhlcRenderer";
 import { createVolumeCandlesRenderer } from "./volumeCandlesRenderer";
 
 export function createDefaultSeriesRendererRegistry(): SeriesRendererRegistry {
@@ -28,6 +29,11 @@ export function createDefaultSeriesRendererRegistry(): SeriesRendererRegistry {
   registry.register(createBaselineRenderer());
   registry.register(createColumnsRenderer());
   registry.register(createHighLowRenderer());
+  registry.register(createSyntheticOhlcSeriesRenderer("heikinAshi"));
+  registry.register(createSyntheticOhlcSeriesRenderer("renko"));
+  registry.register(createSyntheticOhlcSeriesRenderer("lineBreak"));
+  registry.register(createSyntheticOhlcSeriesRenderer("kagi"));
+  registry.register(createSyntheticOhlcSeriesRenderer("pointAndFigure"));
 
   return registry;
 }
