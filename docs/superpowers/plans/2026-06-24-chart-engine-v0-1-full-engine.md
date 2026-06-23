@@ -1866,7 +1866,7 @@ git commit -m "feat: add visual renderer registry"
 - Modify: `packages/chart-engine/src/render/renderTypes.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing visual renderer tests**
+- [x] **Step 1: Write failing visual renderer tests**
 
 Create `packages/chart-engine/src/__tests__/visualRenderers.test.ts`:
 
@@ -1967,7 +1967,7 @@ function createVisualContext(output: IndicatorVisualOutput) {
 }
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run:
 
@@ -1977,7 +1977,7 @@ npm run test -- packages/chart-engine/src/__tests__/visualRenderers.test.ts
 
 Expected: FAIL because visual renderers are missing.
 
-- [ ] **Step 3: Extend render state for visuals and panels**
+- [x] **Step 3: Extend render state for visuals and panels**
 
 Modify `packages/chart-engine/src/render/renderTypes.ts`:
 
@@ -1998,7 +1998,7 @@ export interface RenderState {
 }
 ```
 
-- [ ] **Step 4: Implement four visual renderers**
+- [x] **Step 4: Implement four visual renderers**
 
 Create renderer files. Each exports one factory:
 
@@ -2018,7 +2018,7 @@ Each renderer:
 - returns neutral tooltip rows from hit results;
 - does not read host metadata.
 
-- [ ] **Step 5: Implement visual layer**
+- [x] **Step 5: Implement visual layer**
 
 Create `packages/chart-engine/src/render/visuals/visualLayer.ts`:
 
@@ -2051,7 +2051,7 @@ export function createVisualLayer(registry: VisualRendererRegistry): ChartLayer 
 }
 ```
 
-- [ ] **Step 6: Export visual renderers**
+- [x] **Step 6: Export visual renderers**
 
 Add exports:
 
@@ -2063,7 +2063,7 @@ export * from "./render/visuals/renderers/lineVisualRenderer";
 export * from "./render/visuals/renderers/markerVisualRenderer";
 ```
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 Run:
 
@@ -2075,7 +2075,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/chart-engine/src/render/visuals packages/chart-engine/src/render/renderTypes.ts packages/chart-engine/src/__tests__/visualRenderers.test.ts packages/chart-engine/src/index.ts

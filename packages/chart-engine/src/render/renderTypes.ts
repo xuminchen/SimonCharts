@@ -2,6 +2,8 @@ import type { MovingAveragePoint } from "../indicators/movingAverage";
 import type { CandleSeries } from "../model/market";
 import type { ChartCrosshairState as CrosshairState, ViewportState } from "../model/runtime";
 import type { ChartTheme } from "../model/theme";
+import type { IndicatorVisualOutput } from "../model/visual";
+import type { PanelArea } from "../panels/panelTypes";
 import type { SeriesType } from "../series/seriesTypes";
 
 export interface ChartLayout {
@@ -37,6 +39,8 @@ export interface RenderState {
   layout: ChartLayout;
   movingAverages?: MovingAveragePoint[][];
   crosshair?: CrosshairState | undefined;
+  panels?: PanelArea[];
+  visualOutputs?: IndicatorVisualOutput[];
 }
 
 export interface LayerRenderContext {
