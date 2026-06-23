@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultSeriesRendererRegistry,
   createSeriesLayer,
+  createSeriesRendererRegistry,
   createSourceSeriesRenderModel,
   defaultChartTheme,
   type CandleSeries,
   type ChartLayout,
   type LayerRenderContext,
   type RenderState,
+  type SeriesRenderer,
+  type SeriesRenderModel,
   type SeriesType,
   type ViewportState
 } from "../index";
@@ -257,5 +260,60 @@ describe("series renderers", () => {
     layer.render(context);
 
     expect((context.context as unknown as FakeCanvasContext).calls.length).toBeGreaterThan(0);
+  });
+
+  it("does not hit test synthetic renderers without layout geometry", () => {
+    const registry = createDefaultSeriesRendererRegistry();
+    const context = createRenderContext("heikinAshi");
+    const model = createSourceSeriesRenderModel("heikinAshi", context.state.series);
+
+    expect(registry.require("heikinAshi").hitTest(model, 10, 20)).toBeUndefined();
+  });
+
+  it.each(syntheticTypes)("routes transformed %s models into registered renderers", (type) => {
+    const registry = createSeriesRendererRegistry();
+    let capturedModel: SeriesRenderModel | undefined;
+    const renderer: SeriesRenderer = {
+      type,
+      render(context) {
+        capturedModel = context.model;
+      },
+      getAutoscale() {
+        return undefined;
+      },
+      hitTest() {
+        return undefined;
+      },
+      getTooltipRows() {
+        return [];
+      }
+    };
+
+    registry.register(renderer);
+
+    createSeriesLayer(registry).render(createRenderContext(type));
+
+    expect(capturedModel).toBeDefined();
+
+    if (!capturedModel) {
+      throw new Error("Expected synthetic model to be captured");
+    }
+
+    expect(capturedModel.type).toBe(type);
+    expect(capturedModel.points.length).toBeGreaterThan(0);
+
+    if (type === "renko" || type === "pointAndFigure") {
+      for (const point of capturedModel.points) {
+        expect(point.sourceRange).toBeDefined();
+        expect(point.sourceIndex).toBe(point.sourceRange?.to);
+      }
+    } else {
+      expect(capturedModel.points.every((point) => point.sourceIndex !== undefined)).toBe(true);
+    }
+
+    if (type === "heikinAshi") {
+      expect(capturedModel.points[0]?.close).toBe(11.5);
+      expect(capturedModel.points[0]?.close).not.toBe(createSeries().candles[0]?.close);
+    }
   });
 });

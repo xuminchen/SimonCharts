@@ -1,5 +1,4 @@
 import { getSeriesAutoscaleRange } from "../../../series/autoscale";
-import { hitTestSeriesPoint } from "../../../series/hitTest";
 import { getDefaultSeriesTooltipRows } from "../../../series/tooltip";
 import type { SeriesRenderer, SeriesType } from "../../../series/seriesTypes";
 import {
@@ -63,12 +62,8 @@ export function createSyntheticOhlcSeriesRenderer(type: SeriesType): SeriesRende
     getAutoscale(model) {
       return getSeriesAutoscaleRange(model, { from: 0, to: model.points.length - 1 });
     },
-    hitTest(model, x) {
-      return hitTestSeriesPoint(model, x, {
-        plotLeft: 0,
-        candleWidth: 1,
-        visibleRange: { from: 0, to: model.points.length - 1 }
-      });
+    hitTest() {
+      return undefined;
     },
     getTooltipRows: getDefaultSeriesTooltipRows
   };
