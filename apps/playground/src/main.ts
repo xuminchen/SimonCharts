@@ -54,6 +54,7 @@ topControls.className = "top-controls";
 seriesTypeLabel.textContent = "Type";
 seriesTypeSelect.dataset.testid = "series-type";
 activeSeriesType.dataset.testid = "active-series-type";
+activeSeriesType.hidden = true;
 activeSeriesType.textContent = playgroundState.seriesType;
 canvas.dataset.testid = "chart-canvas";
 canvas.setAttribute("aria-label", "SimonCharts static chart");
