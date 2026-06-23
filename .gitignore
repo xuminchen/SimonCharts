@@ -3,5 +3,8 @@ dist/
 apps/*/dist/
 test-results/
 playwright-report/
+.playwright-mcp/
+.superpowers/
+simoncharts-running.png
 .DS_Store
 *.tsbuildinfo
