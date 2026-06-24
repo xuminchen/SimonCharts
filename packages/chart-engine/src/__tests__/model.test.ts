@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   assertCandleSeries,
+  defaultChartSettings,
   defaultChartTheme,
   findCandleByTime,
   fixtureDailyCandleSeries,
   getCandleAtIndex,
-  isValidCandle
+  isValidCandle,
+  mergeChartSettings
 } from "../index";
 import type { CandleSeries, HostAdapter, ViewportState } from "../index";
 
@@ -151,5 +153,17 @@ describe("neutral engine model contracts", () => {
         ]
       })
     ).toThrow(new Error("Candle time must be strictly increasing at index 1"));
+  });
+
+  it("supports v0.1 chart settings without host business fields", () => {
+    const settings = mergeChartSettings(defaultChartSettings, {
+      themeMode: "dark",
+      candleColorScheme: "aShare",
+      gridVisible: false
+    });
+
+    expect(settings.themeMode).toBe("dark");
+    expect(settings.candleColorScheme).toBe("aShare");
+    expect(settings.gridVisible).toBe(false);
   });
 });

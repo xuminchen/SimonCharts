@@ -3371,7 +3371,7 @@ git commit -m "feat: add chart command dispatcher"
 - Test: `packages/chart-engine/src/__tests__/model.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Add failing settings tests**
+- [x] **Step 1: Add failing settings tests**
 
 Append to `model.test.ts`:
 
@@ -3391,7 +3391,7 @@ it("supports v0.1 chart settings without host business fields", () => {
 });
 ```
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -3401,7 +3401,7 @@ npm run test -- packages/chart-engine/src/__tests__/model.test.ts
 
 Expected: FAIL because chart settings are missing.
 
-- [ ] **Step 3: Implement settings contract**
+- [x] **Step 3: Implement settings contract**
 
 Create `packages/chart-engine/src/settings/chartSettings.ts`:
 
@@ -3437,7 +3437,7 @@ export function mergeChartSettings(
 }
 ```
 
-- [ ] **Step 4: Extend theme if needed**
+- [x] **Step 4: Extend theme if needed**
 
 Modify `theme.ts` only for settings-required semantic colors:
 
@@ -3446,7 +3446,7 @@ Modify `theme.ts` only for settings-required semantic colors:
 - hovered drawing
 - marker default
 
-- [ ] **Step 5: Export settings**
+- [x] **Step 5: Export settings**
 
 Add:
 
@@ -3454,7 +3454,7 @@ Add:
 export * from "./settings/chartSettings";
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -3466,7 +3466,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/chart-engine/src/settings packages/chart-engine/src/model/theme.ts packages/chart-engine/src/__tests__/model.test.ts packages/chart-engine/src/index.ts

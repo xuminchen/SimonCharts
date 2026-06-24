@@ -130,6 +130,10 @@ function createState(override: Partial<RenderState> = {}): RenderState {
         bearishCandle: "#dc2626",
         volume: "#94a3b8",
         crosshair: "#64748b",
+        panelSeparator: "#cbd5e1",
+        selectedDrawing: "#2563eb",
+        hoveredDrawing: "#0f766e",
+        markerDefault: "#f59e0b",
         tooltip: {
           background: "#111827",
           text: "#f9fafb",

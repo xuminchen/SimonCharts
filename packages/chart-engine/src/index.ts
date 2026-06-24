@@ -45,6 +45,7 @@ export * from "./series/hitTest";
 export * from "./series/renderModel";
 export * from "./series/seriesRegistry";
 export * from "./series/seriesTypes";
+export * from "./settings/chartSettings";
 export * from "./series/tooltip";
 export * from "./series/transforms/heikinAshi";
 export * from "./series/transforms/kagi";
