@@ -3670,7 +3670,7 @@ git commit -m "feat: expose settings actions in playground"
 - Create: `docs/engine/boundary-rules.md`
 - Create: `docs/engine/testing-strategy.md`
 
-- [ ] **Step 1: Create documentation files**
+- [x] **Step 1: Create documentation files**
 
 Write each file with concrete examples from the implemented API. Include this required positioning in `docs/engine/overview.md`:
 
@@ -3682,7 +3682,7 @@ SimonCharts is a reusable chart engine kernel. It is not a host application and 
 Host applications own data loading, authentication, persistence, business workflows, and product UI. The engine owns neutral chart data contracts, rendering, interaction, drawing, commands, and neutral events.
 ```
 
-- [ ] **Step 2: Verify docs include required topics**
+- [x] **Step 2: Verify docs include required topics**
 
 Run:
 
@@ -3692,7 +3692,7 @@ rg -n "not a host application|SeriesType|VisualRenderer|PanelDefinition|DrawingO
 
 Expected: output includes matches across the docs.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/engine
