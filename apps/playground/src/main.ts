@@ -256,6 +256,7 @@ let panels: PanelArea[] = [];
 let interactionEngine: InteractionEngine | undefined;
 let drawingDragStart: { x: number; y: number } | undefined;
 let lastKeyboardCommandText = "none";
+let pendingInvalidationReasons: string[] = [];
 
 const interactionSession = createInteractionSession({
   onEvent(event) {
@@ -427,6 +428,7 @@ function getMainPanelLayout(): ChartLayout {
 }
 
 function invalidateRender(invalidation: RenderInvalidation): void {
+  pendingInvalidationReasons.push(invalidation.reason);
   renderScheduler.invalidate(invalidation);
   syncRenderDiagnostics(invalidation);
 }
@@ -473,16 +475,31 @@ function syncInteractionDiagnostics(): void {
 function syncRenderDiagnostics(invalidation?: RenderInvalidation): void {
   const schedulerState = renderScheduler.getState();
   const metrics = schedulerState.metrics;
-  const lastReason =
-    invalidation?.reason ??
-    metrics.lastInvalidationReasons[metrics.lastInvalidationReasons.length - 1] ??
-    "none";
+  const reasonCandidates = schedulerState.pending
+    ? pendingInvalidationReasons
+    : metrics.lastInvalidationReasons;
+  const lastReason = getDiagnosticInvalidationReason(invalidation, reasonCandidates);
 
   totalRenderCount.textContent = String(metrics.totalRenderCount);
   staticRenderCount.textContent = String(metrics.renderCountByPass.static);
   overlayRenderCount.textContent = String(metrics.renderCountByPass.overlay);
   lastInvalidationReason.textContent = lastReason;
   chartEngine.setRenderState(schedulerState);
+
+  if (!schedulerState.pending) {
+    pendingInvalidationReasons = [];
+  }
+}
+
+function getDiagnosticInvalidationReason(
+  invalidation: RenderInvalidation | undefined,
+  reasons: string[]
+): string {
+  if (reasons.includes("viewportChanged")) {
+    return "viewportChanged";
+  }
+
+  return invalidation?.reason ?? reasons[reasons.length - 1] ?? "none";
 }
 
 function handleInteractionEvent(event: InteractionEvent): void {

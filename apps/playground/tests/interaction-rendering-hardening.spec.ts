@@ -157,3 +157,21 @@ test("lost pointer capture cancels active chart drag", async ({ page }) => {
 
   expect(viewportEvents).toBe(0);
 });
+
+test("wheel zoom invalidates chart layers and records render reason", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.mouse.move(box.x + 180, box.y + 220);
+  await page.mouse.wheel(0, -180);
+
+  await expect(page.getByTestId("last-invalidation-reason")).toHaveText(
+    /viewportChanged|wheelZoomed|keyboardCommand/
+  );
+  expect(Number(await page.getByTestId("static-render-count").textContent())).toBeGreaterThan(0);
+});
