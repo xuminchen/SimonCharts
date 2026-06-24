@@ -318,15 +318,7 @@ function syncLayout(): void {
 
   if (layoutChanged || !interactionEngine) {
     crosshair = undefined;
-    interactionEngine = createInteractionEngine({
-      series: fixtureDailyCandleSeries,
-      viewport,
-      width: layout.plotArea.width,
-      plotLeft: layout.plotArea.x,
-      plotTop: layout.plotArea.y,
-      plotHeight: layout.plotArea.height,
-      onEvent: handleInteractionEvent
-    });
+    interactionEngine = createCurrentInteractionEngine();
   }
 }
 
@@ -511,6 +503,30 @@ function handleInteractionEvent(event: InteractionEvent): void {
   interactionSession.handleInput({ type: "crosshair", crosshair });
 }
 
+function createCurrentInteractionEngine(): InteractionEngine {
+  if (!layout || !viewport) {
+    throw new Error("Chart layout is not ready");
+  }
+
+  return createInteractionEngine({
+    series: fixtureDailyCandleSeries,
+    viewport,
+    width: layout.plotArea.width,
+    plotLeft: layout.plotArea.x,
+    plotTop: layout.plotArea.y,
+    plotHeight: layout.plotArea.height,
+    onEvent: handleInteractionEvent
+  });
+}
+
+function cancelPointerInteraction(): void {
+  drawingDragStart = undefined;
+  crosshair = undefined;
+  if (layout && viewport) {
+    interactionEngine = createCurrentInteractionEngine();
+  }
+}
+
 function getCanvasPoint(event: PointerEvent): { x: number; y: number } {
   const rect = overlayCanvas.getBoundingClientRect();
 
@@ -550,12 +566,14 @@ overlayCanvas.addEventListener(
 overlayCanvas.addEventListener("pointerdown", (event) => {
   overlayCanvas.setPointerCapture(event.pointerId);
   const point = getCanvasPoint(event);
+  const handledDrawing = handleDrawingPointerDown(point);
+
   interactionSession.handleInput({
     type: "pointerDown",
     point,
-    mode: drawingEditor.getState().activeTool === "select" ? "dragPan" : "drawing"
+    mode: handledDrawing ? "drawing" : "dragPan"
   });
-  if (handleDrawingPointerDown(event)) {
+  if (handledDrawing) {
     return;
   }
   interactionEngine?.handlePointerDown(point);
@@ -574,13 +592,26 @@ overlayCanvas.addEventListener("pointermove", (event) => {
   interactionEngine?.handlePointerMove(point);
 });
 
+const expectedLostPointerIds = new Set<number>();
+
+function releasePointerCapture(pointerId: number): void {
+  if (!overlayCanvas.hasPointerCapture(pointerId)) {
+    return;
+  }
+
+  expectedLostPointerIds.add(pointerId);
+  overlayCanvas.releasePointerCapture(pointerId);
+}
+
 function finishPointerInteraction(event: PointerEvent, canceled = false): void {
   const point = getCanvasPoint(event);
 
   interactionSession.handleInput(canceled ? { type: "pointerCancel" } : { type: "pointerUp", point });
+  releasePointerCapture(event.pointerId);
 
-  if (overlayCanvas.hasPointerCapture(event.pointerId)) {
-    overlayCanvas.releasePointerCapture(event.pointerId);
+  if (canceled) {
+    cancelPointerInteraction();
+    return;
   }
 
   if (handleDrawingPointerUp()) {
@@ -592,13 +623,20 @@ function finishPointerInteraction(event: PointerEvent, canceled = false): void {
 
 overlayCanvas.addEventListener("pointerup", finishPointerInteraction);
 overlayCanvas.addEventListener("pointercancel", (event) => finishPointerInteraction(event, true));
-overlayCanvas.addEventListener("lostpointercapture", finishPointerInteraction);
-
-window.addEventListener("keydown", (event) => {
-  if (isEditableTarget(event.target)) {
+overlayCanvas.addEventListener("lostpointercapture", (event) => {
+  if (expectedLostPointerIds.delete(event.pointerId)) {
     return;
   }
 
+  finishPointerInteraction(event, true);
+});
+
+window.addEventListener("keydown", (event) => {
+  if (isEditableTarget(event.target) || !isChartKeyboardCommand(event)) {
+    return;
+  }
+
+  event.preventDefault();
   interactionSession.handleInput({
     type: "keyboardDown",
     key: event.key,
@@ -610,10 +648,11 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keyup", (event) => {
-  if (isEditableTarget(event.target)) {
+  if (isEditableTarget(event.target) || !isChartKeyboardCommand(event)) {
     return;
   }
 
+  event.preventDefault();
   interactionSession.handleInput({
     type: "keyboardUp",
     key: event.key,
@@ -629,6 +668,15 @@ function isEditableTarget(target: EventTarget | null): boolean {
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement
+  );
+}
+
+function isChartKeyboardCommand(event: KeyboardEvent): boolean {
+  return (
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    (event.key === "+" || event.key === "-" || event.key === "0")
   );
 }
 
@@ -669,8 +717,7 @@ function render(): void {
   renderOverlayCanvas();
 }
 
-function handleDrawingPointerDown(event: PointerEvent): boolean {
-  const point = getCanvasPoint(event);
+function handleDrawingPointerDown(point: { x: number; y: number }): boolean {
   const editorState = drawingEditor.getState();
 
   if (editorState.activeTool !== "select") {

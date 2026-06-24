@@ -45,9 +45,12 @@ canvas {
   top: 12px;
   left: 12px;
   z-index: 3;
+  box-sizing: border-box;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  max-width: calc(100vw - 120px);
   padding: 6px;
   background: #ffffff;
   border: 1px solid #d0d7de;
@@ -137,6 +140,12 @@ canvas {
 
 .reset-view:hover {
   background: #f6f8fa;
+}
+
+@media (max-width: 1100px) {
+  .diagnostics-item {
+    display: none;
+  }
 }
 
 @media (max-width: 520px) {
