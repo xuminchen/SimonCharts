@@ -140,23 +140,31 @@ describe("render scheduler", () => {
 
   it("cancels pending frame on destroy", () => {
     const canceled: number[] = [];
+    let frameCallback: (() => void) | undefined;
+    let renderCallCount = 0;
     const scheduler = createRenderScheduler({
-      requestFrame() {
+      requestFrame(callback) {
+        frameCallback = callback;
         return 42;
       },
       cancelFrame(frameId) {
         canceled.push(frameId);
       },
       renderPass() {
-        throw new Error("destroyed scheduler should not render");
+        renderCallCount += 1;
       }
     });
 
-    scheduler.invalidate({ layers: ["series"], reason: "viewportChanged" });
+    scheduler.invalidate({ layers: ["series"], reason: "viewportChanged", layoutRequired: true });
     scheduler.destroy();
-    scheduler.flush();
+    frameCallback?.();
 
     expect(canceled).toEqual([42]);
-    expect(scheduler.getState().pending).toBe(false);
+    expect(scheduler.getState()).toMatchObject({
+      pending: false,
+      dirtyLayers: [],
+      layoutRequired: false
+    });
+    expect(renderCallCount).toBe(0);
   });
 });
