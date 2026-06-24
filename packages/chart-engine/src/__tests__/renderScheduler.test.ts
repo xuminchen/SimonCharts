@@ -113,4 +113,50 @@ describe("render scheduler", () => {
     ]);
     expect(scheduler.getState().metrics.dirtyLayerCount).toBe(2);
   });
+
+  it("records slow frame metrics with injected time source", () => {
+    let nowValue = 0;
+    let frameCallback: (() => void) | undefined;
+    const scheduler = createRenderScheduler({
+      requestFrame(callback) {
+        frameCallback = callback;
+        return 1;
+      },
+      now: () => nowValue,
+      slowFrameThresholdMs: 5,
+      renderPass() {
+        nowValue += 6;
+      }
+    });
+
+    scheduler.invalidate({ layers: ["tooltip"], reason: "tooltipChanged" });
+    frameCallback?.();
+
+    expect(scheduler.getState().metrics.totalRenderCount).toBe(1);
+    expect(scheduler.getState().metrics.renderCountByPass.overlay).toBe(1);
+    expect(scheduler.getState().metrics.lastRenderDuration).toBe(6);
+    expect(scheduler.getState().metrics.slowFrameCount).toBe(1);
+  });
+
+  it("cancels pending frame on destroy", () => {
+    const canceled: number[] = [];
+    const scheduler = createRenderScheduler({
+      requestFrame() {
+        return 42;
+      },
+      cancelFrame(frameId) {
+        canceled.push(frameId);
+      },
+      renderPass() {
+        throw new Error("destroyed scheduler should not render");
+      }
+    });
+
+    scheduler.invalidate({ layers: ["series"], reason: "viewportChanged" });
+    scheduler.destroy();
+    scheduler.flush();
+
+    expect(canceled).toEqual([42]);
+    expect(scheduler.getState().pending).toBe(false);
+  });
 });
