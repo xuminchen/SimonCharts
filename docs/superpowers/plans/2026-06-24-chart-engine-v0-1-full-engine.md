@@ -3107,7 +3107,7 @@ git commit -m "feat: add command history for drawings"
 - Modify: `apps/playground/src/styles.css`
 - Create: `apps/playground/tests/drawing-editor.spec.ts`
 
-- [ ] **Step 1: Write failing drawing E2E**
+- [x] **Step 1: Write failing drawing E2E**
 
 Create `apps/playground/tests/drawing-editor.spec.ts`:
 
@@ -3140,7 +3140,7 @@ test("creates edits deletes and restores a trend line drawing", async ({ page })
 });
 ```
 
-- [ ] **Step 2: Verify the test fails**
+- [x] **Step 2: Verify the test fails**
 
 Run:
 
@@ -3150,7 +3150,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-edit
 
 Expected: FAIL because drawing toolbar and controls are missing.
 
-- [ ] **Step 3: Implement drawing toolbar**
+- [x] **Step 3: Implement drawing toolbar**
 
 Create `apps/playground/src/drawingToolbar.ts` with buttons for:
 
@@ -3180,7 +3180,7 @@ Use `data-testid` values:
 - `undo`
 - `redo`
 
-- [ ] **Step 4: Wire playground pointer events to drawing editor**
+- [x] **Step 4: Wire playground pointer events to drawing editor**
 
 Modify `main.ts`:
 
@@ -3190,7 +3190,7 @@ Modify `main.ts`:
 - update `data-testid="drawing-count"`;
 - push only neutral drawing events into `window.__SIMON_CHART_EVENTS__`.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -3202,7 +3202,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/playground/src apps/playground/tests/drawing-editor.spec.ts

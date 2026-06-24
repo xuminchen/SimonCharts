@@ -9,6 +9,9 @@ import {
   createHistogramVisualRenderer,
   createLineVisualRenderer,
   createMarkerVisualRenderer,
+  createDefaultDrawingRendererRegistry,
+  createDrawingEditor,
+  createDrawingLayer,
   createPanelLayout,
   createStaticLayers,
   createVisualLayer,
@@ -28,9 +31,12 @@ import type {
   LayerRenderContext,
   PanelArea,
   PanelDefinition,
+  DrawingEditorTool,
+  DrawingObject,
   SeriesType,
   ViewportState
 } from "@simoncharts/chart-engine";
+import { createDrawingToolbar } from "./drawingToolbar";
 import { playgroundVisualOutputs } from "./fixtures/visualFixtures";
 import { playgroundState } from "./playgroundState";
 import "./styles.css";
@@ -61,6 +67,7 @@ const visualOutputCount = document.createElement("span");
 const canvas = document.createElement("canvas");
 const overlayCanvas = document.createElement("canvas");
 const resetButton = document.createElement("button");
+let drawingToolbar: ReturnType<typeof createDrawingToolbar>;
 
 chartSurface.className = "chart-surface";
 topControls.className = "top-controls";
@@ -92,25 +99,65 @@ for (const type of supportedSeriesTypes) {
 
 seriesTypeLabel.append(seriesTypeSelect);
 topControls.append(seriesTypeLabel, activeSeriesType, panelCount, visualOutputCount);
-chartSurface.replaceChildren(canvas, overlayCanvas, topControls, resetButton);
-app.replaceChildren(chartSurface);
-
 const playgroundPanelDefinitions: PanelDefinition[] = [
   { id: "main", kind: "main", label: "Main", heightRatio: 3 },
   { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
 ];
+const drawingEditor = createDrawingEditor({
+  drawings: [],
+  onEvent(event) {
+    window.__SIMON_CHART_EVENTS__?.push(event);
+    syncDrawingStatus();
+  }
+});
+drawingToolbar = createDrawingToolbar({
+  setTool(tool) {
+    drawingEditor.setTool(tool);
+    drawingToolbar.setActiveTool(tool);
+  },
+  deleteSelected() {
+    drawingEditor.deleteSelected();
+    renderStatic();
+  },
+  lockSelected() {
+    drawingEditor.lockSelected();
+    renderStatic();
+  },
+  hideSelected() {
+    drawingEditor.hideSelected();
+    renderStatic();
+  },
+  undo() {
+    drawingEditor.undo();
+    renderStatic();
+  },
+  redo() {
+    drawingEditor.redo();
+    renderStatic();
+  }
+});
+drawingToolbar.setActiveTool("select");
+chartSurface.replaceChildren(canvas, overlayCanvas, topControls, drawingToolbar.element, resetButton);
+app.replaceChildren(chartSurface);
+
 const visualRendererRegistry = createVisualRendererRegistry();
 visualRendererRegistry.register(createLineVisualRenderer());
 visualRendererRegistry.register(createHistogramVisualRenderer());
 visualRendererRegistry.register(createBandVisualRenderer());
 visualRendererRegistry.register(createMarkerVisualRenderer());
-const staticLayers = [...createStaticLayers(), createVisualLayer(visualRendererRegistry)];
+const drawingRendererRegistry = createDefaultDrawingRendererRegistry();
+const staticLayers = [
+  ...createStaticLayers(),
+  createVisualLayer(visualRendererRegistry),
+  createDrawingLayer(drawingRendererRegistry)
+];
 const movingAverages = Object.values(calculateDefaultMovingAverages(fixtureDailyCandleSeries));
 let viewport: ViewportState | undefined;
 let crosshair: ChartCrosshairState | undefined;
 let layout: ChartLayout | undefined;
 let panels: PanelArea[] = [];
 let interactionEngine: InteractionEngine | undefined;
+let drawingDragStart: { x: number; y: number } | undefined;
 
 function syncLayout(): void {
   const width = Math.max(1, Math.floor(app.clientWidth));
@@ -128,6 +175,7 @@ function syncLayout(): void {
   });
   panelCount.textContent = `${panels.length} panels`;
   visualOutputCount.textContent = `${playgroundVisualOutputs.length} visuals`;
+  syncDrawingStatus();
 
   if (!viewport) {
     viewport = createInitialViewport(fixtureDailyCandleSeries.candles.length, layout.plotArea.width);
@@ -210,9 +258,17 @@ function createRenderContext(
       crosshair,
       seriesType: playgroundState.seriesType,
       panels,
-      visualOutputs: playgroundVisualOutputs
+      visualOutputs: playgroundVisualOutputs,
+      drawings: drawingEditor.getState().drawings,
+      selectedDrawingIds: drawingEditor.getState().selectedDrawingIds
     }
   };
+}
+
+function syncDrawingStatus(): void {
+  const count = drawingEditor.getState().drawings.filter((drawing) => drawing.visible !== false).length;
+
+  drawingToolbar.countElement.textContent = `${count} ${count === 1 ? "drawing" : "drawings"}`;
 }
 
 function getMainPanelLayout(): ChartLayout {
@@ -278,16 +334,26 @@ overlayCanvas.addEventListener(
 
 overlayCanvas.addEventListener("pointerdown", (event) => {
   overlayCanvas.setPointerCapture(event.pointerId);
+  if (handleDrawingPointerDown(event)) {
+    return;
+  }
   interactionEngine?.handlePointerDown(getCanvasPoint(event));
 });
 
 overlayCanvas.addEventListener("pointermove", (event) => {
+  if (handleDrawingPointerMove(event)) {
+    return;
+  }
   interactionEngine?.handlePointerMove(getCanvasPoint(event));
 });
 
 function finishPointerInteraction(event: PointerEvent): void {
   if (overlayCanvas.hasPointerCapture(event.pointerId)) {
     overlayCanvas.releasePointerCapture(event.pointerId);
+  }
+
+  if (handleDrawingPointerUp()) {
+    return;
   }
 
   interactionEngine?.handlePointerUp(getCanvasPoint(event));
@@ -310,6 +376,71 @@ seriesTypeSelect.addEventListener("change", () => {
 function render(): void {
   renderStatic();
   renderOverlayCanvas();
+}
+
+function handleDrawingPointerDown(event: PointerEvent): boolean {
+  const point = getCanvasPoint(event);
+  const editorState = drawingEditor.getState();
+
+  if (editorState.activeTool !== "select") {
+    drawingEditor.pointerDown(point);
+    renderStatic();
+    return true;
+  }
+
+  const hitDrawing = hitTestDrawing(point, editorState.drawings);
+
+  if (!hitDrawing) {
+    return false;
+  }
+
+  drawingEditor.selectDrawing(hitDrawing.id);
+  drawingDragStart = point;
+  renderStatic();
+  return true;
+}
+
+function handleDrawingPointerMove(event: PointerEvent): boolean {
+  if (!drawingDragStart) {
+    return false;
+  }
+
+  const point = getCanvasPoint(event);
+
+  drawingEditor.dragSelected({
+    dx: point.x - drawingDragStart.x,
+    dy: point.y - drawingDragStart.y
+  });
+  drawingDragStart = point;
+  renderStatic();
+  return true;
+}
+
+function handleDrawingPointerUp(): boolean {
+  if (!drawingDragStart) {
+    return false;
+  }
+
+  drawingDragStart = undefined;
+  return true;
+}
+
+function hitTestDrawing(
+  point: { x: number; y: number },
+  drawings: DrawingObject[]
+): DrawingObject | undefined {
+  const hits = drawings
+    .filter((drawing) => drawing.visible !== false)
+    .map((drawing) => ({
+      drawing,
+      hit: drawingRendererRegistry.require(drawing.type).hitTest(drawing, point)
+    }))
+    .filter((result): result is { drawing: DrawingObject; hit: { drawingId: string; distance: number } } =>
+      result.hit !== undefined
+    )
+    .sort((left, right) => left.hit.distance - right.hit.distance);
+
+  return hits[0]?.drawing;
 }
 
 window.addEventListener("resize", render);
