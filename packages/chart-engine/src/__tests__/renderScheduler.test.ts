@@ -157,6 +157,9 @@ describe("render scheduler", () => {
 
     scheduler.invalidate({ layers: ["series"], reason: "viewportChanged", layoutRequired: true });
     scheduler.destroy();
+
+    expect(scheduler.getState().pending).toBe(false);
+
     frameCallback?.();
 
     expect(canceled).toEqual([42]);
