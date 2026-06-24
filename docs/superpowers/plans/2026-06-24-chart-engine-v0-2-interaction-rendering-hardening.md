@@ -1453,7 +1453,7 @@ git commit -m "feat: demonstrate interaction render lifecycle"
 - Modify: `apps/playground/tests/interaction-rendering-hardening.spec.ts`
 - Run existing E2E suites.
 
-- [ ] **Step 1: Add wheel invalidation E2E**
+- [x] **Step 1: Add wheel invalidation E2E**
 
 Append to `apps/playground/tests/interaction-rendering-hardening.spec.ts`:
 
@@ -1475,7 +1475,7 @@ test("wheel zoom invalidates chart layers and records render reason", async ({ p
 });
 ```
 
-- [ ] **Step 2: Run focused E2E**
+- [x] **Step 2: Run focused E2E**
 
 Run:
 
@@ -1485,7 +1485,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/interaction-
 
 Expected: PASS. If it fails because the last reason is unstable, update `handleInteractionSessionEvent` and `handleInteractionEvent` to prefer `viewportChanged` for wheel-driven viewport changes.
 
-- [ ] **Step 3: Run regression E2E suites**
+- [x] **Step 3: Run regression E2E suites**
 
 Run:
 
@@ -1495,7 +1495,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/interaction.
 
 Expected: all pass. If reset behavior fails, ensure `resetButton` invalidates `["axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"]` with reason `resetView`.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -1506,7 +1506,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/playground/src/main.ts apps/playground/tests/interaction-rendering-hardening.spec.ts
