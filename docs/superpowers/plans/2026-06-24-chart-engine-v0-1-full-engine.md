@@ -2818,7 +2818,7 @@ git commit -m "feat: render neutral drawing objects"
 - Test: `packages/chart-engine/src/__tests__/drawingEditor.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing drawing editor tests**
+- [x] **Step 1: Write failing drawing editor tests**
 
 Create `packages/chart-engine/src/__tests__/drawingEditor.test.ts`:
 
@@ -2866,7 +2866,7 @@ describe("drawing editor", () => {
 });
 ```
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -2876,7 +2876,7 @@ npm run test -- packages/chart-engine/src/__tests__/drawingEditor.test.ts
 
 Expected: FAIL because `createDrawingEditor` is missing.
 
-- [ ] **Step 3: Implement editor API**
+- [x] **Step 3: Implement editor API**
 
 Create `drawingEditor.ts` with:
 
@@ -2913,7 +2913,7 @@ export interface DrawingEditor {
 
 Implement deterministic immutable state updates. Use generated drawing ids in the form `drawing-${n}`.
 
-- [ ] **Step 4: Implement magnet helper**
+- [x] **Step 4: Implement magnet helper**
 
 Create `drawingMagnet.ts`:
 
@@ -2939,7 +2939,7 @@ export function snapPointToCandidates(
 }
 ```
 
-- [ ] **Step 5: Export editor API**
+- [x] **Step 5: Export editor API**
 
 Add to `packages/chart-engine/src/index.ts`:
 
@@ -2949,7 +2949,7 @@ export * from "./drawing/drawingEditor";
 export * from "./drawing/drawingMagnet";
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -2961,7 +2961,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/chart-engine/src/drawing packages/chart-engine/src/__tests__/drawingEditor.test.ts packages/chart-engine/src/index.ts
