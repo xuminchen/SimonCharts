@@ -3483,7 +3483,7 @@ git commit -m "feat: harden chart settings contracts"
 - Test: `packages/chart-engine/src/__tests__/chartEngine.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing engine facade tests**
+- [x] **Step 1: Write failing engine facade tests**
 
 Create `packages/chart-engine/src/__tests__/chartEngine.test.ts`:
 
@@ -3516,7 +3516,7 @@ describe("chart engine facade", () => {
 });
 ```
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -3526,7 +3526,7 @@ npm run test -- packages/chart-engine/src/__tests__/chartEngine.test.ts
 
 Expected: FAIL because `createChartEngine` is missing.
 
-- [ ] **Step 3: Implement facade**
+- [x] **Step 3: Implement facade**
 
 Create a neutral facade with:
 
@@ -3555,7 +3555,7 @@ export type ChartEngineEvent =
   | { type: "drawingsChanged"; drawings: DrawingObject[] };
 ```
 
-- [ ] **Step 4: Export facade**
+- [x] **Step 4: Export facade**
 
 Add:
 
@@ -3565,7 +3565,7 @@ export * from "./engine/chartState";
 export * from "./engine/events";
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -3577,7 +3577,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/chart-engine/src/engine packages/chart-engine/src/__tests__/chartEngine.test.ts packages/chart-engine/src/index.ts
