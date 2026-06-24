@@ -44,9 +44,9 @@ test("renders main and sub panel visual outputs", async ({ page }) => {
       countMatchingPixels(canvas, {
         minYRatio: 0,
         maxYRatio: 0.72,
-        red: [20, 55],
-        green: [80, 120],
-        blue: [210, 255],
+        red: [0, 20],
+        green: [135, 160],
+        blue: [165, 190],
         alpha: [201, 255]
       })
     )
@@ -103,6 +103,33 @@ test("renders main and sub panel visual outputs", async ({ page }) => {
       })
     )
     .toBeGreaterThan(8);
+
+  await expect
+    .poll(() =>
+      countMatchingPixels(canvas, {
+        minYRatio: 0.72,
+        maxYRatio: 0.96,
+        red: [20, 65],
+        green: [80, 125],
+        blue: [210, 255],
+        alpha: [201, 255]
+      })
+    )
+    .toBe(0);
+
+  await expect
+    .poll(() =>
+      countMatchingPixels(canvas, {
+        minYRatio: 0.72,
+        maxYRatio: 0.96,
+        red: [135, 165],
+        green: [150, 180],
+        blue: [170, 200],
+        alpha: [201, 255]
+      })
+    )
+    .toBe(0);
+
 });
 
 test("visual panel controls do not overlap reset on narrow screens", async ({ page }) => {

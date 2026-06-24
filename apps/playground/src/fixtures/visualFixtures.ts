@@ -13,7 +13,7 @@ export const playgroundVisualOutputs: IndicatorVisualOutput[] = [
     id: "playground-main-line",
     label: "Main Line",
     panelId: "main",
-    color: "#2563eb",
+    color: "#0891b2",
     lineWidth: 2,
     values: [
       { time: timeAt(72), value: 116 },
