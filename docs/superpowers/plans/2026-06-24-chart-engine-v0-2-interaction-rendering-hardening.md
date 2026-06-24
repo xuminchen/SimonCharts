@@ -1188,7 +1188,7 @@ git commit -m "feat: expose interaction render state in engine facade"
 - Modify: `apps/playground/src/styles.css`
 - Test: `apps/playground/tests/interaction-rendering-hardening.spec.ts`
 
-- [ ] **Step 1: Write failing playground E2E**
+- [x] **Step 1: Write failing playground E2E**
 
 Create `apps/playground/tests/interaction-rendering-hardening.spec.ts`:
 
@@ -1233,7 +1233,7 @@ test("keyboard zoom commands use neutral interaction events", async ({ page }) =
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1243,7 +1243,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/interaction-
 
 Expected: FAIL because diagnostics are not present.
 
-- [ ] **Step 3: Add imports and diagnostics elements**
+- [x] **Step 3: Add imports and diagnostics elements**
 
 Modify imports in `apps/playground/src/main.ts`:
 
@@ -1298,7 +1298,7 @@ lastInvalidationReason.dataset.testid = "last-invalidation-reason";
 
 Append these elements to `topControls` after `visualOutputCount`.
 
-- [ ] **Step 4: Add interaction session and scheduler wiring**
+- [x] **Step 4: Add interaction session and scheduler wiring**
 
 Add after `chartEngine` creation:
 
@@ -1353,7 +1353,7 @@ function handleInteractionSessionEvent(event: InteractionSessionEvent): void {
 }
 ```
 
-- [ ] **Step 5: Route existing render calls through invalidation for high-frequency events**
+- [x] **Step 5: Route existing render calls through invalidation for high-frequency events**
 
 In `handleInteractionEvent(event)`, replace direct render calls:
 
@@ -1387,7 +1387,7 @@ In wheel handler:
 
 Keep `requestAnimationFrame(render);` for initial render only.
 
-- [ ] **Step 6: Add diagnostics sync helpers**
+- [x] **Step 6: Add diagnostics sync helpers**
 
 Add helpers in `apps/playground/src/main.ts`:
 
@@ -1416,7 +1416,7 @@ syncInteractionDiagnostics();
 syncRenderDiagnostics();
 ```
 
-- [ ] **Step 7: Add compact diagnostics styling**
+- [x] **Step 7: Add compact diagnostics styling**
 
 Append to `apps/playground/src/styles.css`:
 
@@ -1426,7 +1426,7 @@ Append to `apps/playground/src/styles.css`:
 }
 ```
 
-- [ ] **Step 8: Verify focused E2E and typecheck**
+- [x] **Step 8: Verify focused E2E and typecheck**
 
 Run:
 
@@ -1438,7 +1438,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/playground/src/main.ts apps/playground/src/styles.css apps/playground/tests/interaction-rendering-hardening.spec.ts
