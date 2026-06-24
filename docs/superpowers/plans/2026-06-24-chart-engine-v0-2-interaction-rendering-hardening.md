@@ -1521,7 +1521,7 @@ git commit -m "fix: stabilize playground render scheduling"
 - Modify: `docs/engine/public-api.md`
 - Modify: `docs/engine/testing-strategy.md`
 
-- [ ] **Step 1: Create lifecycle documentation**
+- [x] **Step 1: Create lifecycle documentation**
 
 Create `docs/engine/interaction-rendering-lifecycle.md`:
 
@@ -1547,7 +1547,7 @@ Typical flow:
 The engine does not import DOM events, host APIs, product stores, or business models.
 ```
 
-- [ ] **Step 2: Update public API docs**
+- [x] **Step 2: Update public API docs**
 
 Append to `docs/engine/public-api.md`:
 
@@ -1574,7 +1574,7 @@ const scheduler = createRenderScheduler({
 Both APIs are host-independent. Hosts translate native events into `InteractionInput` and translate scheduler render passes into canvas rendering calls.
 ````
 
-- [ ] **Step 3: Update testing docs**
+- [x] **Step 3: Update testing docs**
 
 Append to `docs/engine/testing-strategy.md`:
 
@@ -1584,7 +1584,7 @@ v0.2 adds focused tests for interaction session state, keyboard command events, 
 Playwright verifies that high-frequency pointer movement updates overlay diagnostics without forcing repeated static redraws, and that keyboard zoom commands use neutral engine events.
 ```
 
-- [ ] **Step 4: Verify docs**
+- [x] **Step 4: Verify docs**
 
 Run:
 
@@ -1594,7 +1594,7 @@ rg -n "InteractionSession|RenderScheduler|InteractionInput|RenderInvalidation|Re
 
 Expected: matches in lifecycle, public API, and testing docs.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/engine/interaction-rendering-lifecycle.md docs/engine/public-api.md docs/engine/testing-strategy.md
