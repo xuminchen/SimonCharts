@@ -57,13 +57,13 @@ npm run test -- packages/chart-engine/src/__tests__/renderScheduler.test.ts
 npm run test -- packages/chart-engine/src/__tests__/chartEngine.test.ts
 ```
 
-Playground integration verifies that browser input is translated outside the engine, high-frequency pointer movement updates overlay diagnostics without static redraw spam, and keyboard zoom commands use neutral interaction events:
+Playground integration exercises playground browser input translation and verifies diagnostics and behavior, including high-frequency pointer movement without static redraw spam and keyboard zoom commands through neutral interaction events:
 
 ```bash
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/interaction-rendering-hardening.spec.ts
 ```
 
-Boundary verification confirms the engine does not import DOM events, host APIs, stores, schemas, routes, TradingReviewSystem, review, strategy, watchlist, AI, or other product business models:
+Boundary verification confirms engine TypeScript files do not import app or host modules through forbidden paths and do not contain blocked host or business vocabulary:
 
 ```bash
 npm run guard:engine-boundary

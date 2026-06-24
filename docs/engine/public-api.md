@@ -58,18 +58,57 @@ import {
   createInteractionSession,
   createRenderScheduler,
   type InteractionInput,
-  type RenderInvalidation,
-  type RenderPass
+  type RenderInvalidation
 } from "@simoncharts/chart-engine";
 
-function renderCanvasPass(pass: RenderPass, invalidation: RenderInvalidation): void {
-  renderHostCanvas(pass, invalidation.layers);
+interface HostRenderState {
+  canvas: unknown;
+  context: unknown;
+  chartState: unknown;
+}
+
+const hostRenderState: HostRenderState = {
+  canvas: {},
+  context: {},
+  chartState: {}
+};
+
+function requestHostFrame(callback: () => void): number {
+  return requestAnimationFrame(callback);
+}
+
+function renderStaticLayer(state: HostRenderState, invalidation: RenderInvalidation): void {
+  // Host-owned canvas/context/state drawing. The engine only supplies invalidation data.
+  void state;
+  void invalidation;
+}
+
+function renderDynamicLayer(state: HostRenderState, invalidation: RenderInvalidation): void {
+  // Host-owned dynamic drawing.
+  void state;
+  void invalidation;
+}
+
+function renderOverlayLayer(state: HostRenderState, invalidation: RenderInvalidation): void {
+  // Host-owned overlay drawing.
+  void state;
+  void invalidation;
 }
 
 const scheduler = createRenderScheduler({
-  requestFrame: requestAnimationFrame,
+  requestFrame: requestHostFrame,
   renderPass(pass, invalidation) {
-    renderCanvasPass(pass, invalidation);
+    if (pass === "static") {
+      renderStaticLayer(hostRenderState, invalidation);
+    }
+
+    if (pass === "dynamic") {
+      renderDynamicLayer(hostRenderState, invalidation);
+    }
+
+    if (pass === "overlay") {
+      renderOverlayLayer(hostRenderState, invalidation);
+    }
   }
 });
 
@@ -88,6 +127,6 @@ function handleHostPointerMove(point: { x: number; y: number }): void {
 }
 ```
 
-Hosts translate native or browser events into `InteractionInput`, then translate `renderPass` callbacks into canvas render calls. `ChartEngine.setInteractionState()` and `ChartEngine.setRenderState()` can store neutral snapshots for facade subscribers.
+Hosts translate native or browser events into `InteractionInput`, then translate `renderPass(pass, invalidation)` callbacks into canvas render calls. Canvas, context, and render state stay host-owned; the scheduler only passes the render pass and `RenderInvalidation`. `ChartEngine.setInteractionState()` and `ChartEngine.setRenderState()` can store neutral snapshots for facade subscribers.
 
 These APIs are host-independent. The engine does not import DOM events, host APIs, stores, schemas, routes, TradingReviewSystem, review, strategy, watchlist, AI, or other product business models.

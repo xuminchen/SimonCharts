@@ -11,10 +11,11 @@ Typical flow:
 1. Host receives input outside the engine.
 2. Host maps that input into `InteractionInput`.
 3. `InteractionSession.handleInput()` updates `InteractionSessionState`.
-4. Session events produce `RenderInvalidation`.
-5. `RenderScheduler.invalidate()` coalesces dirty layers.
-6. Scheduler runs `static`, `dynamic`, and `overlay` passes as needed.
-7. `RenderMetrics` are exposed for diagnostics and tests.
+4. `InteractionSession` emits neutral session events.
+5. Host maps those events into `RenderInvalidation`.
+6. `RenderScheduler.invalidate()` receives them and coalesces dirty layers.
+7. Scheduler runs `static`, `dynamic`, and `overlay` passes as needed.
+8. `RenderMetrics` are exposed for diagnostics and tests.
 
 The host owns native or browser event handling and canvas drawing calls. The engine owns only neutral chart input, interaction state, invalidation, pass scheduling, and metrics.
 
