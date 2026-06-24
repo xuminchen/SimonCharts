@@ -84,6 +84,45 @@ describe("chart engine facade", () => {
     expect(engine.getState().render?.metrics.lastInvalidationReasons).toEqual(["pointerMoved"]);
   });
 
+  it("isolates subscriber event payloads from other subscribers", () => {
+    const engine = createChartEngine({ series: fixtureDailyCandleSeries });
+    const observedInteractionPoints: number[] = [];
+    const observedRenderLayers: string[][] = [];
+
+    engine.subscribe((event) => {
+      if (event.type === "interactionStateChanged") {
+        event.interaction.pointer.point!.x = 99;
+        event.interaction.tooltip.rows![0].value = "99";
+      }
+
+      if (event.type === "renderStateChanged") {
+        event.render.dirtyLayers.push("tooltip");
+        event.render.metrics.lastInvalidationReasons.push("tooltipChanged");
+      }
+    });
+    engine.subscribe((event) => {
+      if (event.type === "interactionStateChanged") {
+        observedInteractionPoints.push(event.interaction.pointer.point!.x);
+        expect(event.interaction.tooltip.rows?.[0].value).toBe("10");
+      }
+
+      if (event.type === "renderStateChanged") {
+        observedRenderLayers.push(event.render.dirtyLayers);
+        expect(event.render.metrics.lastInvalidationReasons).toEqual(["pointerMoved"]);
+      }
+    });
+
+    engine.setInteractionState(createInteractionSnapshot());
+    engine.setRenderState(createRenderSnapshot());
+
+    expect(observedInteractionPoints).toEqual([10]);
+    expect(observedRenderLayers).toEqual([["crosshair"]]);
+    expect(engine.getState().interaction?.pointer.point?.x).toBe(10);
+    expect(engine.getState().interaction?.tooltip.rows?.[0].value).toBe("10");
+    expect(engine.getState().render?.dirtyLayers).toEqual(["crosshair"]);
+    expect(engine.getState().render?.metrics.lastInvalidationReasons).toEqual(["pointerMoved"]);
+  });
+
   it("isolates stored snapshots from returned state mutation", () => {
     const engine = createChartEngine({ series: fixtureDailyCandleSeries });
 

@@ -46,10 +46,20 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
       return;
     }
 
-    frameId = options.requestFrame(() => {
-      frameId = undefined;
+    let callbackRanSynchronously = false;
+    let nextFrameId: number | undefined;
+
+    nextFrameId = options.requestFrame(() => {
+      callbackRanSynchronously = nextFrameId === undefined;
+      if (frameId === nextFrameId) {
+        frameId = undefined;
+      }
       flush();
     });
+
+    if (!callbackRanSynchronously && !destroyed) {
+      frameId = nextFrameId;
+    }
   }
 
   function flush(): void {
@@ -90,6 +100,9 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
           [pass]: metrics.renderCountByPass[pass] + 1
         }
       };
+      if (destroyed) {
+        break;
+      }
     }
 
     const duration = Math.max(0, now() - startedAt);

@@ -258,6 +258,8 @@ let drawingDragStart: { x: number; y: number } | undefined;
 let lastKeyboardCommandText = "none";
 let viewportCoversNextCrosshairClear = false;
 let skipCurrentCrosshairRenderInvalidation = false;
+let staticCanvasRenderCount = 0;
+let overlayCanvasRenderCount = 0;
 
 const interactionSession = createInteractionSession({
   onEvent(event) {
@@ -273,7 +275,7 @@ const renderScheduler = createRenderScheduler({
     window.cancelAnimationFrame(frameId);
   },
   renderPass(pass, invalidation) {
-    if (pass === "static" || pass === "dynamic") {
+    if (pass === "static") {
       renderStatic();
     }
     if (pass === "overlay") {
@@ -338,6 +340,7 @@ function renderStatic(): void {
   context.fillRect(0, 0, layout.width, layout.height);
 
   renderStaticChart(createRenderContext(context, getMainPanelLayout()), getStaticLayers());
+  staticCanvasRenderCount += 1;
 }
 
 function renderOverlayCanvas(): void {
@@ -355,6 +358,7 @@ function renderOverlayCanvas(): void {
   );
 
   renderOverlay(createRenderContext(context));
+  overlayCanvasRenderCount += 1;
 }
 
 function createRenderContext(
@@ -483,8 +487,8 @@ function syncRenderDiagnostics(invalidation?: RenderInvalidation): void {
     "none";
 
   totalRenderCount.textContent = String(metrics.totalRenderCount);
-  staticRenderCount.textContent = String(metrics.renderCountByPass.static);
-  overlayRenderCount.textContent = String(metrics.renderCountByPass.overlay);
+  staticRenderCount.textContent = String(staticCanvasRenderCount);
+  overlayRenderCount.textContent = String(overlayCanvasRenderCount);
   lastInvalidationReason.textContent = lastReason;
   chartEngine.setRenderState(schedulerState);
 }
@@ -537,6 +541,13 @@ function cancelPointerInteraction(): void {
   if (layout && viewport) {
     interactionEngine = createCurrentInteractionEngine();
   }
+}
+
+function clearTransientInteraction(inputType: "leave" | "blur"): void {
+  cancelPointerInteraction();
+  lastKeyboardCommandText = "none";
+  interactionSession.handleInput({ type: inputType });
+  syncInteractionDiagnostics();
 }
 
 function getCanvasPoint(event: PointerEvent): { x: number; y: number } {
@@ -642,6 +653,9 @@ overlayCanvas.addEventListener("lostpointercapture", (event) => {
 
   finishPointerInteraction(event, true);
 });
+overlayCanvas.addEventListener("pointerleave", () => {
+  clearTransientInteraction("leave");
+});
 
 window.addEventListener("keydown", (event) => {
   if (isEditableTarget(event.target) || !isChartKeyboardCommand(event)) {
@@ -673,6 +687,9 @@ window.addEventListener("keyup", (event) => {
     metaKey: event.metaKey,
     shiftKey: event.shiftKey
   });
+});
+window.addEventListener("blur", () => {
+  clearTransientInteraction("blur");
 });
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -797,4 +814,7 @@ window.addEventListener("resize", render);
 syncEngineStatus();
 syncInteractionDiagnostics();
 syncRenderDiagnostics();
-requestAnimationFrame(render);
+requestAnimationFrame(() => {
+  render();
+  syncRenderDiagnostics();
+});

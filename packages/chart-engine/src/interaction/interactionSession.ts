@@ -134,7 +134,8 @@ export function createInteractionSession(
           crosshair: { visible: false },
           tooltip: { visible: false },
           cursor: "default",
-          magnet: { mode: "off" }
+          magnet: { mode: "off" },
+          keyboard: createDefaultKeyboardState()
         };
         emit({ type: "crosshairChanged", crosshair: cloneCrosshair(state.crosshair) });
         emit({ type: "tooltipChanged", tooltip: cloneTooltip(state.tooltip) });
@@ -160,6 +161,15 @@ function toKeyboardState(
     metaKey: input.metaKey ?? false,
     shiftKey: input.shiftKey ?? false,
     lastKey: input.key
+  };
+}
+
+function createDefaultKeyboardState(): KeyboardSessionState {
+  return {
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false
   };
 }
 

@@ -88,6 +88,63 @@ describe("render scheduler", () => {
     expect(scheduler.getState().dirtyLayers).toEqual([]);
   });
 
+  it("does not keep a stale pending frame when requestFrame runs synchronously", () => {
+    const calls: string[] = [];
+    const scheduler = createRenderScheduler({
+      requestFrame(callback) {
+        callback();
+        return 7;
+      },
+      renderPass(pass, invalidation) {
+        calls.push(`${pass}:${invalidation.reason}`);
+      }
+    });
+
+    scheduler.invalidate({ layers: ["tooltip"], reason: "tooltipChanged" });
+
+    expect(calls).toEqual(["overlay:tooltipChanged"]);
+    expect(scheduler.getState()).toMatchObject({
+      pending: false,
+      dirtyLayers: [],
+      layoutRequired: false
+    });
+    expect(scheduler.getState().metrics.totalRenderCount).toBe(1);
+  });
+
+  it("stops later passes when destroyed during a render pass", () => {
+    const calls: string[] = [];
+    let frameCallback: (() => void) | undefined;
+    let scheduler!: ReturnType<typeof createRenderScheduler>;
+
+    scheduler = createRenderScheduler({
+      requestFrame(callback) {
+        frameCallback = callback;
+        return 1;
+      },
+      renderPass(pass) {
+        calls.push(pass);
+        if (pass === "static") {
+          scheduler.destroy();
+        }
+      }
+    });
+
+    scheduler.invalidate({ layers: ["series", "crosshair"], reason: "mixed" });
+    frameCallback?.();
+
+    expect(calls).toEqual(["static"]);
+    expect(scheduler.getState()).toMatchObject({
+      pending: false,
+      dirtyLayers: [],
+      layoutRequired: false
+    });
+    expect(scheduler.getState().metrics.renderCountByPass).toMatchObject({
+      static: 1,
+      dynamic: 0,
+      overlay: 0
+    });
+  });
+
   it("isolates render pass invalidation payloads from callback mutation", () => {
     const calls: string[] = [];
     let frameCallback: (() => void) | undefined;

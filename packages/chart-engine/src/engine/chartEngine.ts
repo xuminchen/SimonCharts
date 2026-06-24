@@ -49,7 +49,7 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
   const listeners = new Set<ChartEngineEventListener>();
 
   function emit(event: ChartEngineEvent): void {
-    listeners.forEach((listener) => listener(event));
+    listeners.forEach((listener) => listener(cloneEvent(event)));
   }
 
   function updateState(nextState: ChartEngineState): void {
@@ -113,6 +113,40 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
       listeners.clear();
     }
   };
+}
+
+function cloneEvent(event: ChartEngineEvent): ChartEngineEvent {
+  if (event.type === "seriesChanged") {
+    return { ...event };
+  }
+
+  if (event.type === "seriesTypeChanged") {
+    return { ...event };
+  }
+
+  if (event.type === "viewportChanged") {
+    return {
+      type: event.type,
+      viewport: {
+        ...event.viewport,
+        visibleRange: { ...event.viewport.visibleRange }
+      }
+    };
+  }
+
+  if (event.type === "visualOutputsChanged") {
+    return { type: event.type, outputs: [...event.outputs] };
+  }
+
+  if (event.type === "drawingsChanged") {
+    return { type: event.type, drawings: [...event.drawings] };
+  }
+
+  if (event.type === "interactionStateChanged") {
+    return { type: event.type, interaction: cloneInteractionState(event.interaction) };
+  }
+
+  return { type: event.type, render: cloneRenderState(event.render) };
 }
 
 function cloneInteractionState(interaction: InteractionSessionState): InteractionSessionState {

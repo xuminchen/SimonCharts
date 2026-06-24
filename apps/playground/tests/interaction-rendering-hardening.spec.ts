@@ -50,6 +50,52 @@ test("keyboard zoom commands use neutral interaction events", async ({ page }) =
   await expect(page.getByTestId("last-keyboard-command")).toHaveText("resetZoom");
 });
 
+test("pointer leave clears cursor and keyboard diagnostics", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.keyboard.press("-");
+  await expect(page.getByTestId("last-keyboard-command")).toHaveText("zoomOut");
+  await page.mouse.move(box.x + 180, box.y + 220);
+  await expect(page.getByTestId("cursor-state")).toHaveText("crosshair");
+
+  await page.evaluate(() => {
+    (window as Window & { __SIMON_CHART_EVENTS__?: unknown[] }).__SIMON_CHART_EVENTS__ = [];
+  });
+  await overlay.evaluate((element) => {
+    element.dispatchEvent(new PointerEvent("pointerleave", { pointerId: 1 }));
+  });
+
+  await expect(page.getByTestId("cursor-state")).toHaveText("default");
+  await expect(page.getByTestId("magnet-state")).toHaveText("off");
+  await expect(page.getByTestId("last-keyboard-command")).toHaveText("none");
+
+  const cleanupEvents = await page.evaluate(() => {
+    const events =
+      (window as Window & { __SIMON_CHART_EVENTS__?: unknown[] }).__SIMON_CHART_EVENTS__ ?? [];
+
+    return {
+      cursorDefault: events.some(
+        (event) => (event as { type?: string; cursor?: string }).type === "cursorChanged" &&
+          (event as { cursor?: string }).cursor === "default"
+      ),
+      crosshairHidden: events.some(
+        (event) =>
+          (event as { type?: string; crosshair?: { visible?: boolean } }).type ===
+            "crosshairChanged" &&
+          (event as { crosshair?: { visible?: boolean } }).crosshair?.visible === false
+      )
+    };
+  });
+
+  expect(cleanupEvents).toEqual({ cursorDefault: true, crosshairHidden: true });
+});
+
 test("top controls do not overlap reset at medium widths", async ({ page }) => {
   for (const width of [800, 1024]) {
     await page.setViewportSize({ width, height: 600 });
@@ -160,6 +206,15 @@ test("lost pointer capture cancels active chart drag", async ({ page }) => {
 
 test("wheel zoom invalidates chart layers and records render reason", async ({ page }) => {
   await page.goto("/");
+  await expect
+    .poll(() =>
+      page.getByTestId("chart-canvas").evaluate((element) => {
+        const canvas = element as HTMLCanvasElement;
+
+        return canvas.width > 0 && canvas.height > 0;
+      })
+    )
+    .toBe(true);
   const overlay = page.getByTestId("chart-overlay");
   const box = await overlay.boundingBox();
 
@@ -174,6 +229,6 @@ test("wheel zoom invalidates chart layers and records render reason", async ({ p
 
   await expect
     .poll(async () => Number(await page.getByTestId("static-render-count").textContent()))
-    .toBeGreaterThan(staticBefore);
+    .toBe(staticBefore + 1);
   await expect(page.getByTestId("last-invalidation-reason")).toHaveText("viewportChanged");
 });

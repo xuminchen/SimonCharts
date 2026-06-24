@@ -290,6 +290,15 @@ describe("interaction session contracts", () => {
         target: { id: "marker", mode: "visualPoint", point: { x: 12, y: 24 }, distance: 2 }
       }
     });
+    session.handleInput({ type: "keyboardDown", key: "Shift", shiftKey: true });
+
+    expect(session.getState().keyboard).toStrictEqual({
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      lastKey: "Shift"
+    });
 
     events.length = 0;
     session.handleInput({ type: "leave" });
@@ -337,11 +346,19 @@ describe("interaction session contracts", () => {
         }
       }
     });
+    session.handleInput({ type: "keyboardDown", key: "Meta", metaKey: true });
 
     expect(session.getState().cursor).toBe("crosshair");
     expect(session.getState().crosshair.visible).toBe(true);
     expect(session.getState().tooltip.visible).toBe(true);
     expect(session.getState().magnet.target?.id).toBe("anchor-2");
+    expect(session.getState().keyboard).toStrictEqual({
+      altKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false,
+      lastKey: "Meta"
+    });
 
     session.handleInput({ type: "blur" });
 
