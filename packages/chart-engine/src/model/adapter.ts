@@ -1,6 +1,7 @@
+import type { DrawingObject } from "../drawing/drawingTypes";
 import type { AdjustMode, CandleSeries, Timeframe } from "./market";
 import type { ChartCommand, ViewportState, VisibleRange } from "./runtime";
-import type { ChartMark, DrawingObject } from "./visual";
+import type { ChartMark } from "./visual";
 
 export interface DataRequest {
   symbol: string;

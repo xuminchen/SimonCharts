@@ -1,5 +1,6 @@
 import type { Timeframe } from "./market";
-import type { ChartMark, DrawingObject } from "./visual";
+import type { DrawingObject } from "../drawing/drawingTypes";
+import type { ChartMark } from "./visual";
 
 export type PriceScaleMode = "linear" | "log" | "percent";
 

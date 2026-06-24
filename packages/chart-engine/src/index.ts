@@ -1,4 +1,6 @@
 export * from "./fixtures/dailyCandles";
+export * from "./drawing/drawingSerialization";
+export * from "./drawing/drawingTypes";
 export * from "./indicators/movingAverage";
 export * from "./interaction/hitTest";
 export * from "./interaction/interactionEngine";

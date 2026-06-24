@@ -16,30 +16,6 @@ export interface ChartMark {
   metadata?: Record<string, unknown>;
 }
 
-export interface DrawingAnchor {
-  time?: number;
-  index?: number;
-  price?: number;
-}
-
-export interface DrawingStyle {
-  color?: string;
-  lineWidth?: number;
-  lineDash?: number[];
-  fill?: string;
-  textColor?: string;
-}
-
-export interface DrawingObject {
-  id: string;
-  type: string;
-  anchors: DrawingAnchor[];
-  style?: DrawingStyle;
-  visible?: boolean;
-  locked?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
 export type IndicatorParameterType = "number" | "string" | "boolean";
 
 export interface IndicatorParameterDefinition {

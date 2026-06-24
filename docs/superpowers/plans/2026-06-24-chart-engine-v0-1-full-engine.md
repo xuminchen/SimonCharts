@@ -2217,7 +2217,7 @@ git commit -m "feat: demonstrate visual panels in playground"
 - Test: `packages/chart-engine/src/__tests__/drawingModel.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing drawing model tests**
+- [x] **Step 1: Write failing drawing model tests**
 
 Create `packages/chart-engine/src/__tests__/drawingModel.test.ts`:
 
@@ -2308,7 +2308,7 @@ function createLayerContext(drawings: DrawingObject[]) {
 }
 ```
 
-- [ ] **Step 2: Verify the test fails**
+- [x] **Step 2: Verify the test fails**
 
 Run:
 
@@ -2318,7 +2318,7 @@ npm run test -- packages/chart-engine/src/__tests__/drawingModel.test.ts
 
 Expected: FAIL because drawing model exports are missing.
 
-- [ ] **Step 3: Implement drawing types**
+- [x] **Step 3: Implement drawing types**
 
 Create `packages/chart-engine/src/drawing/drawingTypes.ts`:
 
@@ -2380,7 +2380,7 @@ export interface DrawingObject {
 }
 ```
 
-- [ ] **Step 4: Implement serialization**
+- [x] **Step 4: Implement serialization**
 
 Create `packages/chart-engine/src/drawing/drawingSerialization.ts`:
 
@@ -2416,7 +2416,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-- [ ] **Step 5: Export drawing model**
+- [x] **Step 5: Export drawing model**
 
 Add to `packages/chart-engine/src/index.ts`:
 
@@ -2425,7 +2425,7 @@ export * from "./drawing/drawingSerialization";
 export * from "./drawing/drawingTypes";
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -2437,7 +2437,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/chart-engine/src/drawing packages/chart-engine/src/__tests__/drawingModel.test.ts packages/chart-engine/src/index.ts
