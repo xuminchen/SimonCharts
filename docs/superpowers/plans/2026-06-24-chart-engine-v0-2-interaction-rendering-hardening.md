@@ -613,7 +613,7 @@ git commit -m "test: cover interaction session lifecycle"
 - Test: `packages/chart-engine/src/__tests__/renderScheduler.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing scheduler tests**
+- [x] **Step 1: Write failing scheduler tests**
 
 Create `packages/chart-engine/src/__tests__/renderScheduler.test.ts`:
 
@@ -674,7 +674,7 @@ describe("render scheduler", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -684,7 +684,7 @@ npm run test -- packages/chart-engine/src/__tests__/renderScheduler.test.ts
 
 Expected: FAIL because `createRenderScheduler` is not exported.
 
-- [ ] **Step 3: Add scheduler type contracts**
+- [x] **Step 3: Add scheduler type contracts**
 
 Create `packages/chart-engine/src/render/scheduler/renderSchedulerTypes.ts`:
 
@@ -755,7 +755,7 @@ export const renderLayerPasses: Record<RenderLayerId, RenderPass[]> = {
 };
 ```
 
-- [ ] **Step 4: Implement scheduler**
+- [x] **Step 4: Implement scheduler**
 
 Create `packages/chart-engine/src/render/scheduler/renderScheduler.ts`:
 
@@ -915,7 +915,7 @@ function cloneMetrics(metrics: RenderMetrics): RenderMetrics {
 }
 ```
 
-- [ ] **Step 5: Export scheduler API**
+- [x] **Step 5: Export scheduler API**
 
 Modify `packages/chart-engine/src/index.ts`:
 
@@ -924,7 +924,7 @@ export * from "./render/scheduler/renderScheduler";
 export * from "./render/scheduler/renderSchedulerTypes";
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -936,7 +936,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/chart-engine/src/render/scheduler packages/chart-engine/src/__tests__/renderScheduler.test.ts packages/chart-engine/src/index.ts
