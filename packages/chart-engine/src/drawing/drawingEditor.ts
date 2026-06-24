@@ -1,3 +1,4 @@
+import { createCommandHistory } from "../commands/history";
 import type { DrawingEditorEvent, DrawingEditorTool } from "./drawingCommands";
 import { drawingTypes, type DrawingAnchor, type DrawingObject, type DrawingType } from "./drawingTypes";
 
@@ -32,7 +33,14 @@ export interface DrawingEditor {
   deleteSelected(): void;
   lockSelected(): void;
   hideSelected(): void;
+  undo(): void;
+  redo(): void;
   getState(): DrawingEditorState;
+}
+
+interface EditorSnapshot {
+  drawings: DrawingObject[];
+  selectedDrawingIds: string[];
 }
 
 export function createDrawingEditor(options: DrawingEditorOptions): DrawingEditor {
@@ -41,14 +49,10 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   let activeTool: DrawingEditorTool = "select";
   let pendingAnchors: DrawingAnchor[] = [];
   let nextDrawingNumber = 1;
+  const history = createCommandHistory<EditorSnapshot>(createSnapshot());
 
   const emit = (event: DrawingEditorEvent): void => {
     options.onEvent?.(event);
-  };
-
-  const updateDrawing = (drawing: DrawingObject): void => {
-    drawings = drawings.map((existing) => (existing.id === drawing.id ? cloneDrawing(drawing) : existing));
-    emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
   };
 
   return {
@@ -76,11 +80,15 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       };
 
       nextDrawingNumber += 1;
-      drawings = [...drawings, drawing];
-      selectedDrawingIds = [drawing.id];
       pendingAnchors = [];
-      emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
-      emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+      commitSnapshot(
+        "createDrawing",
+        { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id] },
+        () => {
+          emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
+          emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+        }
+      );
     },
     pointerMove() {},
     pointerUp() {},
@@ -96,17 +104,32 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     },
     dragSelected(delta) {
       const selectedIds = new Set(selectedDrawingIds);
+      const updatedDrawings: DrawingObject[] = [];
 
-      drawings = drawings.map((drawing) => {
+      const nextDrawings = drawings.map((drawing) => {
         if (!selectedIds.has(drawing.id) || drawing.locked) {
           return drawing;
         }
 
         const updated = moveDrawing(drawing, delta.dx, delta.dy);
 
-        emit({ type: "drawingUpdated", drawing: cloneDrawing(updated) });
+        updatedDrawings.push(updated);
         return updated;
       });
+
+      if (updatedDrawings.length === 0) {
+        return;
+      }
+
+      commitSnapshot(
+        "moveDrawing",
+        { drawings: nextDrawings, selectedDrawingIds },
+        () => {
+          for (const drawing of updatedDrawings) {
+            emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
+          }
+        }
+      );
     },
     dragAnchor(id, anchorIndex, point) {
       const drawing = drawings.find((existing) => existing.id === id);
@@ -122,7 +145,14 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         )
       };
 
-      updateDrawing(updated);
+      commitSnapshot(
+        "dragAnchor",
+        {
+          drawings: drawings.map((existing) => (existing.id === updated.id ? updated : existing)),
+          selectedDrawingIds
+        },
+        () => emit({ type: "drawingUpdated", drawing: cloneDrawing(updated) })
+      );
     },
     deleteSelected() {
       const selectedIds = new Set(selectedDrawingIds);
@@ -130,19 +160,41 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         .filter((drawing) => selectedIds.has(drawing.id) && !drawing.locked)
         .map((drawing) => drawing.id);
 
-      drawings = drawings.filter((drawing) => !selectedIds.has(drawing.id) || drawing.locked);
-      selectedDrawingIds = selectedDrawingIds.filter((id) => !deletedIds.includes(id));
-
-      for (const drawingId of deletedIds) {
-        emit({ type: "drawingDeleted", drawingId });
+      if (deletedIds.length === 0) {
+        return;
       }
-      emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+
+      const nextSelectedDrawingIds = selectedDrawingIds.filter((id) => !deletedIds.includes(id));
+
+      commitSnapshot(
+        "deleteDrawing",
+        {
+          drawings: drawings.filter((drawing) => !selectedIds.has(drawing.id) || drawing.locked),
+          selectedDrawingIds: nextSelectedDrawingIds
+        },
+        () => {
+          for (const drawingId of deletedIds) {
+            emit({ type: "drawingDeleted", drawingId });
+          }
+          emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+        }
+      );
     },
     lockSelected() {
       mutateSelected((drawing) => ({ ...drawing, locked: true }));
     },
     hideSelected() {
       mutateSelected((drawing) => ({ ...drawing, visible: false }));
+    },
+    undo() {
+      restoreSnapshot(history.undo());
+      pendingAnchors = [];
+      emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+    },
+    redo() {
+      restoreSnapshot(history.redo());
+      pendingAnchors = [];
+      emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
     },
     getState() {
       return {
@@ -156,17 +208,64 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
   function mutateSelected(update: (drawing: DrawingObject) => DrawingObject): void {
     const selectedIds = new Set(selectedDrawingIds);
+    const updatedDrawings: DrawingObject[] = [];
 
-    drawings = drawings.map((drawing) => {
+    const nextDrawings = drawings.map((drawing) => {
       if (!selectedIds.has(drawing.id) || drawing.locked) {
         return drawing;
       }
 
       const updated = update(drawing);
 
-      emit({ type: "drawingUpdated", drawing: cloneDrawing(updated) });
+      updatedDrawings.push(updated);
       return updated;
     });
+
+    if (updatedDrawings.length === 0) {
+      return;
+    }
+
+    commitSnapshot(
+      "updateDrawing",
+      { drawings: nextDrawings, selectedDrawingIds },
+      () => {
+        for (const drawing of updatedDrawings) {
+          emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
+        }
+      }
+    );
+  }
+
+  function commitSnapshot(
+    label: string,
+    nextSnapshot: EditorSnapshot,
+    afterCommit?: () => void
+  ): void {
+    const beforeSnapshot = createSnapshot();
+    const appliedSnapshot = history.apply({
+      label,
+      do() {
+        return cloneSnapshot(nextSnapshot);
+      },
+      undo() {
+        return cloneSnapshot(beforeSnapshot);
+      }
+    });
+
+    restoreSnapshot(appliedSnapshot);
+    afterCommit?.();
+  }
+
+  function createSnapshot(): EditorSnapshot {
+    return {
+      drawings: cloneDrawings(drawings),
+      selectedDrawingIds: [...selectedDrawingIds]
+    };
+  }
+
+  function restoreSnapshot(snapshot: EditorSnapshot): void {
+    drawings = cloneDrawings(snapshot.drawings);
+    selectedDrawingIds = [...snapshot.selectedDrawingIds];
   }
 }
 
@@ -220,6 +319,13 @@ function createDrawingId(drawings: DrawingObject[], nextDrawingNumber: number): 
 
 function cloneDrawings(drawings: DrawingObject[]): DrawingObject[] {
   return drawings.map(cloneDrawing);
+}
+
+function cloneSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
+  return {
+    drawings: cloneDrawings(snapshot.drawings),
+    selectedDrawingIds: [...snapshot.selectedDrawingIds]
+  };
 }
 
 function cloneDrawing(drawing: DrawingObject): DrawingObject {

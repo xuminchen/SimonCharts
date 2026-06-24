@@ -46,6 +46,61 @@ describe("drawing editor", () => {
     ]);
   });
 
+  it("undoes and redoes drawing creation", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 10, y: 20 });
+    editor.pointerDown({ x: 80, y: 60 });
+    editor.undo();
+
+    expect(editor.getState().drawings).toEqual([]);
+
+    editor.redo();
+
+    expect(editor.getState().drawings).toHaveLength(1);
+    expect(editor.getState().drawings[0].type).toBe("trendLine");
+  });
+
+  it("undoes and redoes drawing movement and anchor edits", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        {
+          id: "d1",
+          type: "trendLine",
+          anchors: [
+            { x: 10, y: 20 },
+            { x: 80, y: 60 }
+          ]
+        }
+      ]
+    });
+
+    editor.selectDrawing("d1");
+    editor.dragSelected({ dx: 5, dy: -10 });
+    editor.dragAnchor("d1", 0, { x: 100, y: 200 });
+
+    expect(editor.getState().drawings[0].anchors[0]).toEqual({ x: 100, y: 200 });
+
+    editor.undo();
+    expect(editor.getState().drawings[0].anchors).toEqual([
+      { x: 15, y: 10 },
+      { x: 85, y: 50 }
+    ]);
+
+    editor.undo();
+    expect(editor.getState().drawings[0].anchors).toEqual([
+      { x: 10, y: 20 },
+      { x: 80, y: 60 }
+    ]);
+
+    editor.redo();
+    expect(editor.getState().drawings[0].anchors).toEqual([
+      { x: 15, y: 10 },
+      { x: 85, y: 50 }
+    ]);
+  });
+
   it("does not edit locked drawings", () => {
     const editor = createDrawingEditor({
       drawings: [{ id: "d1", type: "trendLine", anchors: [{ x: 1, y: 1 }], locked: true }]
@@ -88,6 +143,20 @@ describe("drawing editor", () => {
 
     editor.deleteSelected();
     expect(editor.getState().drawings.map((drawing) => drawing.id)).toEqual(["d1"]);
+  });
+
+  it("clears redo state after a new drawing edit", () => {
+    const editor = createDrawingEditor({
+      drawings: [{ id: "d1", type: "trendLine", anchors: [{ x: 1, y: 1 }] }]
+    });
+
+    editor.selectDrawing("d1");
+    editor.dragSelected({ dx: 1, dy: 1 });
+    editor.undo();
+    editor.dragSelected({ dx: 3, dy: 3 });
+    editor.redo();
+
+    expect(editor.getState().drawings[0].anchors).toEqual([{ x: 4, y: 4 }]);
   });
 
   it("snaps points to nearby targets", () => {
