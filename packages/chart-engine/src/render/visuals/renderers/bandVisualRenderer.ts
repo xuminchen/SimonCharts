@@ -1,9 +1,11 @@
 import type { IndicatorPoint } from "../../../model/visual";
+import type { VisualRenderContext } from "../../../visuals/visualTypes";
 import {
   createTimeIndex,
   createVisualRenderer,
   getAutoscaleFromValues,
-  getPaddedRange,
+  getNearestVisualHit,
+  getVisualRenderRange,
   getVisibleIndicatorPoint,
   withPanelPlotClip,
   xForVisualIndex,
@@ -32,7 +34,7 @@ export function createBandVisualRenderer() {
         return;
       }
 
-      const renderRange = getPaddedRange(range);
+      const renderRange = getVisualRenderRange(renderContext, range);
       const lowerByTime = new Map(output.lower.map((point) => [point.time, point]));
       const indexByTime = createTimeIndex(renderContext.state.series);
       const { context, state } = renderContext;
@@ -66,7 +68,48 @@ export function createBandVisualRenderer() {
         drawBandSegment(renderContext, renderRange, segment);
       });
     },
-    (output) => (output.type === "band" ? getBandAutoscale(output.upper, output.lower) : undefined)
+    (output) => (output.type === "band" ? getBandAutoscale(output.upper, output.lower) : undefined),
+    (hitContext, x, y) => {
+      const output = hitContext.output;
+
+      if (output.type !== "band") {
+        return undefined;
+      }
+
+      const range = getBandAutoscale(output.upper, output.lower);
+
+      if (!range) {
+        return undefined;
+      }
+
+      const renderRange = getVisualRenderRange(hitContext, range);
+      const lowerByTime = new Map(output.lower.map((point) => [point.time, point]));
+      const indexByTime = createTimeIndex(hitContext.state.series);
+      const candidates = output.upper.flatMap((upperPoint) => {
+        const lowerPoint = lowerByTime.get(upperPoint.time);
+        const upperVisiblePoint = getVisibleIndicatorPoint(hitContext, indexByTime, upperPoint);
+        const lowerVisiblePoint = lowerPoint
+          ? getVisibleIndicatorPoint(hitContext, indexByTime, lowerPoint)
+          : undefined;
+
+        if (!upperVisiblePoint || !lowerVisiblePoint) {
+          return [];
+        }
+
+        const value = (upperVisiblePoint.value + lowerVisiblePoint.value) / 2;
+
+        return [
+          {
+            time: upperVisiblePoint.time,
+            value,
+            x: xForVisualIndex(hitContext, upperVisiblePoint.index),
+            y: yForVisualValue(hitContext, renderRange, value)
+          }
+        ];
+      });
+
+      return getNearestVisualHit(output, x, y, candidates);
+    }
   );
 }
 
@@ -81,7 +124,7 @@ function getBandAutoscale(
 }
 
 function drawBandSegment(
-  context: Parameters<typeof yForVisualValue>[0],
+  context: VisualRenderContext,
   range: Parameters<typeof yForVisualValue>[1],
   points: VisibleBandPoint[]
 ): void {

@@ -3,7 +3,8 @@ import {
   createTimeIndex,
   createVisualRenderer,
   getAutoscaleFromValues,
-  getPaddedRange,
+  getNearestVisualHit,
+  getVisualRenderRange,
   isFiniteNumber,
   isVisibleIndex,
   withPanelPlotClip,
@@ -29,7 +30,7 @@ export function createMarkerVisualRenderer() {
         return;
       }
 
-      const renderRange = getPaddedRange(range);
+      const renderRange = getVisualRenderRange(renderContext, range);
       const indexByTime = createTimeIndex(renderContext.state.series);
       const { context, state } = renderContext;
 
@@ -61,7 +62,45 @@ export function createMarkerVisualRenderer() {
     (output) =>
       output.type === "marker"
         ? getAutoscaleFromValues(output.marks.map((mark) => mark.price))
-        : undefined
+        : undefined,
+    (hitContext, x, y) => {
+      const output = hitContext.output;
+
+      if (output.type !== "marker") {
+        return undefined;
+      }
+
+      const range = getAutoscaleFromValues(output.marks.map((mark) => mark.price));
+
+      if (!range) {
+        return undefined;
+      }
+
+      const renderRange = getVisualRenderRange(hitContext, range);
+      const indexByTime = createTimeIndex(hitContext.state.series);
+      const candidates = output.marks.flatMap((mark) => {
+        if (!isFiniteNumber(mark.price)) {
+          return [];
+        }
+
+        const index = getMarkIndex(mark, indexByTime);
+
+        if (index === undefined || !isVisibleIndex(hitContext, index)) {
+          return [];
+        }
+
+        return [
+          {
+            time: mark.time,
+            value: mark.price,
+            x: xForVisualIndex(hitContext, index),
+            y: yForVisualValue(hitContext, renderRange, mark.price)
+          }
+        ];
+      });
+
+      return getNearestVisualHit(output, x, y, candidates);
+    }
   );
 }
 

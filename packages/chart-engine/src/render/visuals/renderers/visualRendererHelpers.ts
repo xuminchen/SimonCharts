@@ -1,8 +1,9 @@
 import type { CandleSeries } from "../../../model/market";
-import type { IndicatorPoint } from "../../../model/visual";
+import type { IndicatorPoint, IndicatorVisualOutput } from "../../../model/visual";
 import { formatVisualValue } from "../../../visuals/visualTooltip";
 import type {
   VisualAutoscaleRange,
+  VisualHitTestContext,
   VisualHitTestResult,
   VisualRenderer,
   VisualRenderContext,
@@ -16,18 +17,26 @@ export interface VisibleValuePoint {
   value: number;
 }
 
+export interface VisualHitPoint {
+  time: number;
+  value?: number;
+  x: number;
+  y: number;
+}
+
+type VisualCoordinateContext = VisualRenderContext | VisualHitTestContext;
+
 export function createVisualRenderer(
   type: VisualRenderer["type"],
   render: VisualRenderer["render"],
-  getAutoscale: VisualRenderer["getAutoscale"]
+  getAutoscale: VisualRenderer["getAutoscale"],
+  hitTest: VisualRenderer["hitTest"] = () => undefined
 ): VisualRenderer {
   return {
     type,
     render,
     getAutoscale,
-    hitTest() {
-      return undefined;
-    },
+    hitTest,
     getTooltipRows: getDefaultVisualTooltipRows
   };
 }
@@ -88,16 +97,16 @@ export function isFiniteNumber(value: number | null | undefined): value is numbe
   return typeof value === "number" && Number.isFinite(value);
 }
 
-export function isVisibleIndex(context: VisualRenderContext, index: number): boolean {
+export function isVisibleIndex(context: VisualCoordinateContext, index: number): boolean {
   return index >= context.state.viewport.visibleRange.from && index <= context.state.viewport.visibleRange.to;
 }
 
-export function xForVisualIndex(context: VisualRenderContext, index: number): number {
+export function xForVisualIndex(context: VisualCoordinateContext, index: number): number {
   return indexToX(index, context.state.viewport, context.panel.plotArea.x);
 }
 
 export function yForVisualValue(
-  context: VisualRenderContext,
+  context: VisualCoordinateContext,
   range: VisualAutoscaleRange,
   value: number
 ): number {
@@ -120,8 +129,15 @@ export function getPaddedRange(range: VisualAutoscaleRange): VisualAutoscaleRang
   };
 }
 
+export function getVisualRenderRange(
+  context: VisualCoordinateContext,
+  fallbackRange: VisualAutoscaleRange
+): VisualAutoscaleRange {
+  return getPaddedRange(context.valueRange ?? fallbackRange);
+}
+
 export function getVisibleIndicatorPoint(
-  context: VisualRenderContext,
+  context: VisualCoordinateContext,
   indexByTime: Map<number, number>,
   point: IndicatorPoint
 ): VisibleValuePoint | undefined {
@@ -140,6 +156,35 @@ export function getVisibleIndicatorPoint(
     time: point.time,
     value: point.value
   };
+}
+
+export function getNearestVisualHit(
+  output: IndicatorVisualOutput,
+  x: number,
+  y: number,
+  points: VisualHitPoint[]
+): VisualHitTestResult | undefined {
+  let nearestHit: VisualHitTestResult | undefined;
+
+  for (const point of points) {
+    const distance = Math.hypot(x - point.x, y - point.y);
+
+    if (!Number.isFinite(distance)) {
+      continue;
+    }
+
+    if (!nearestHit || distance < nearestHit.distance) {
+      nearestHit = {
+        outputId: output.id,
+        outputType: output.type,
+        time: point.time,
+        value: point.value,
+        distance
+      };
+    }
+  }
+
+  return nearestHit;
 }
 
 export function getDefaultVisualTooltipRows(hit: VisualHitTestResult): VisualTooltipRow[] {

@@ -12,6 +12,7 @@ import {
   type LayerRenderContext,
   type PanelArea,
   type RenderState,
+  type VisualAutoscaleRange,
   type ViewportState,
   type VisualRenderer,
   type VisualRendererRegistry
@@ -307,6 +308,23 @@ describe("visual renderers", () => {
 
     expect(callsNamed(fakeContext, "moveTo")).toHaveLength(2);
     expect(callsNamed(fakeContext, "lineTo")).toHaveLength(1);
+    expect(callsNamed(fakeContext, "fill")).toHaveLength(1);
+  });
+
+  it("draws a single visible line point", () => {
+    const output: IndicatorVisualOutput = {
+      type: "line",
+      id: "line",
+      label: "Line",
+      values: [{ time: 1, value: 10 }]
+    };
+    const renderContext = createVisualContext(output);
+    const fakeContext = renderContext.context as unknown as FakeCanvasContext;
+
+    createLineVisualRenderer().render(renderContext);
+
+    expect(callsNamed(fakeContext, "arc")).toHaveLength(1);
+    expect(callsNamed(fakeContext, "fill")).toHaveLength(1);
   });
 
   it("breaks band fills at null values instead of connecting across gaps", () => {
@@ -432,17 +450,38 @@ describe("visual renderers", () => {
       })
     ).toEqual([{ label: "Time", value: "5" }]);
   });
+
+  it.each([
+    ["line", createLineVisualRenderer()],
+    ["histogram", createHistogramVisualRenderer()],
+    ["band", createBandVisualRenderer()],
+    ["marker", createMarkerVisualRenderer()]
+  ] as const)("returns a hit-test contribution for %s output", (_type, renderer) => {
+    const output = createRenderableOutput(renderer.type);
+    const renderContext = createVisualContext(output);
+
+    const hit = renderer.hitTest(renderContext, 15, 50);
+
+    expect(hit).toMatchObject({
+      outputId: output.id,
+      outputType: output.type
+    });
+    expect(hit?.distance).toBeGreaterThanOrEqual(0);
+  });
 });
 
 describe("visual layer", () => {
-  it("routes visual outputs through registry.require and renders on the main panel", () => {
+  it("routes visual outputs through registry.require and panel ids", () => {
     const received: Array<{ type: IndicatorVisualOutput["type"]; panelId: string }> = [];
     const registry = createProbeRegistry((context) => {
       received.push({ type: context.output.type, panelId: context.panel.id });
     });
     const state = createState({
       panels: [createPanel("sub", "sub"), createPanel("main", "main")],
-      visualOutputs: [createRenderableOutput("line"), createRenderableOutput("histogram")]
+      visualOutputs: [
+        { ...createRenderableOutput("line"), panelId: "main" },
+        { ...createRenderableOutput("histogram"), panelId: "sub" }
+      ]
     });
 
     createVisualLayer(registry).render(createLayerContext(state));
@@ -450,23 +489,80 @@ describe("visual layer", () => {
     expect(registry.requiredTypes).toEqual(["line", "histogram"]);
     expect(received).toEqual([
       { type: "line", panelId: "main" },
-      { type: "histogram", panelId: "main" }
+      { type: "histogram", panelId: "sub" }
     ]);
   });
 
-  it("falls back to the first panel when no main panel is present", () => {
+  it("falls back to the main panel when no panel id is set", () => {
     const received: string[] = [];
     const registry = createProbeRegistry((context) => {
       received.push(context.panel.id);
     });
     const state = createState({
-      panels: [createPanel("sub", "sub")],
+      panels: [createPanel("sub", "sub"), createPanel("main", "main")],
       visualOutputs: [createRenderableOutput("marker")]
     });
 
     createVisualLayer(registry).render(createLayerContext(state));
 
-    expect(received).toEqual(["sub"]);
+    expect(received).toEqual(["main"]);
+  });
+
+  it("skips hidden outputs and outputs routed to unknown panels", () => {
+    const received: string[] = [];
+    const registry = createProbeRegistry((context) => {
+      received.push(context.output.id);
+    });
+    const state = createState({
+      panels: [createPanel("main", "main")],
+      visualOutputs: [
+        { ...createRenderableOutput("line"), id: "hidden", visible: false },
+        { ...createRenderableOutput("marker"), id: "missing-panel", panelId: "missing" }
+      ]
+    });
+
+    createVisualLayer(registry).render(createLayerContext(state));
+
+    expect(received).toEqual([]);
+    expect(registry.requiredTypes).toEqual([]);
+  });
+
+  it("passes shared autoscale ranges per panel to visual renderers", () => {
+    const rendered: Array<{
+      outputId: string;
+      panelId: string;
+      valueRange: VisualAutoscaleRange | undefined;
+    }> = [];
+    const registry = createRangeProbeRegistry(
+      {
+        mainLine: { min: 10, max: 20 },
+        mainBand: { min: -5, max: 30 },
+        subHistogram: { min: 100, max: 110 }
+      },
+      (context) => {
+        rendered.push({
+          outputId: context.output.id,
+          panelId: context.panel.id,
+          valueRange: context.valueRange
+        });
+      }
+    );
+    const state = createState({
+      panels: [createPanel("main", "main"), createPanel("sub", "sub")],
+      visualOutputs: [
+        { ...createRenderableOutput("line"), id: "mainLine", panelId: "main" },
+        { ...createRenderableOutput("band"), id: "mainBand", panelId: "main" },
+        { ...createRenderableOutput("histogram"), id: "subHistogram", panelId: "sub" }
+      ]
+    });
+
+    createVisualLayer(registry).render(createLayerContext(state));
+
+    expect(rendered).toEqual([
+      { outputId: "mainLine", panelId: "main", valueRange: { min: -5, max: 30 } },
+      { outputId: "mainBand", panelId: "main", valueRange: { min: -5, max: 30 } },
+      { outputId: "subHistogram", panelId: "sub", valueRange: { min: 100, max: 110 } }
+    ]);
   });
 });
 
@@ -500,6 +596,44 @@ function createProbeRegistry(render: VisualRenderer["render"]): VisualRendererRe
     },
     list() {
       return [renderer];
+    }
+  };
+}
+
+function createRangeProbeRegistry(
+  rangesByOutputId: Record<string, VisualAutoscaleRange | undefined>,
+  render: VisualRenderer["render"]
+): VisualRendererRegistry {
+  return {
+    register() {},
+    get(type) {
+      return createRangeProbeRenderer(type, rangesByOutputId, render);
+    },
+    require(type) {
+      return createRangeProbeRenderer(type, rangesByOutputId, render);
+    },
+    list() {
+      return [];
+    }
+  };
+}
+
+function createRangeProbeRenderer(
+  type: IndicatorVisualOutput["type"],
+  rangesByOutputId: Record<string, VisualAutoscaleRange | undefined>,
+  render: VisualRenderer["render"]
+): VisualRenderer {
+  return {
+    type,
+    render,
+    getAutoscale(output) {
+      return rangesByOutputId[output.id];
+    },
+    hitTest() {
+      return undefined;
+    },
+    getTooltipRows() {
+      return [];
     }
   };
 }

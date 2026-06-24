@@ -73,35 +73,34 @@ export interface IndicatorHistogramPoint {
   color?: string;
 }
 
-export interface IndicatorLineOutput {
-  type: "line";
+export interface IndicatorVisualOutputBase {
   id: string;
   label: string;
+  panelId?: string;
+  visible?: boolean;
+}
+
+export interface IndicatorLineOutput extends IndicatorVisualOutputBase {
+  type: "line";
   values: IndicatorPoint[];
   color?: string;
   lineWidth?: number;
 }
 
-export interface IndicatorHistogramOutput {
+export interface IndicatorHistogramOutput extends IndicatorVisualOutputBase {
   type: "histogram";
-  id: string;
-  label: string;
   values: IndicatorHistogramPoint[];
 }
 
-export interface IndicatorBandOutput {
+export interface IndicatorBandOutput extends IndicatorVisualOutputBase {
   type: "band";
-  id: string;
-  label: string;
   upper: IndicatorPoint[];
   lower: IndicatorPoint[];
   fill?: string;
 }
 
-export interface IndicatorMarkerOutput {
+export interface IndicatorMarkerOutput extends IndicatorVisualOutputBase {
   type: "marker";
-  id: string;
-  label: string;
   marks: ChartMark[];
 }
 

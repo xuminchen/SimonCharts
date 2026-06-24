@@ -2,7 +2,8 @@ import {
   createTimeIndex,
   createVisualRenderer,
   getAutoscaleFromIndicatorPoints,
-  getPaddedRange,
+  getNearestVisualHit,
+  getVisualRenderRange,
   getVisibleIndicatorPoint,
   withPanelPlotClip,
   xForVisualIndex,
@@ -25,7 +26,7 @@ export function createLineVisualRenderer() {
         return;
       }
 
-      const renderRange = getPaddedRange(range);
+      const renderRange = getVisualRenderRange(renderContext, range);
       const indexByTime = createTimeIndex(renderContext.state.series);
       const { context, state } = renderContext;
 
@@ -35,16 +36,27 @@ export function createLineVisualRenderer() {
 
         let hasOpenPath = false;
         let hasSegment = false;
+        let singlePoint: { x: number; y: number } | undefined;
+        const flushPath = () => {
+          if (hasSegment) {
+            context.stroke();
+          } else if (singlePoint) {
+            context.fillStyle = output.color ?? state.theme.colors.text;
+            context.beginPath();
+            context.arc(singlePoint.x, singlePoint.y, 2, 0, Math.PI * 2);
+            context.fill();
+          }
+
+          hasOpenPath = false;
+          hasSegment = false;
+          singlePoint = undefined;
+        };
 
         for (const point of output.values) {
           const visiblePoint = getVisibleIndicatorPoint(renderContext, indexByTime, point);
 
           if (!visiblePoint) {
-            if (hasSegment) {
-              context.stroke();
-            }
-            hasOpenPath = false;
-            hasSegment = false;
+            flushPath();
             continue;
           }
 
@@ -55,18 +67,45 @@ export function createLineVisualRenderer() {
             context.beginPath();
             context.moveTo(x, y);
             hasOpenPath = true;
+            singlePoint = { x, y };
             continue;
           }
 
           context.lineTo(x, y);
           hasSegment = true;
+          singlePoint = undefined;
         }
 
-        if (hasSegment) {
-          context.stroke();
-        }
+        flushPath();
       });
     },
-    (output) => (output.type === "line" ? getAutoscaleFromIndicatorPoints(output.values) : undefined)
+    (output) => (output.type === "line" ? getAutoscaleFromIndicatorPoints(output.values) : undefined),
+    (hitContext, x, y) => {
+      const output = hitContext.output;
+
+      if (output.type !== "line") {
+        return undefined;
+      }
+
+      const range = getAutoscaleFromIndicatorPoints(output.values);
+
+      if (!range) {
+        return undefined;
+      }
+
+      const renderRange = getVisualRenderRange(hitContext, range);
+      const indexByTime = createTimeIndex(hitContext.state.series);
+      const candidates = output.values
+        .map((point) => getVisibleIndicatorPoint(hitContext, indexByTime, point))
+        .filter((point): point is NonNullable<typeof point> => point !== undefined)
+        .map((point) => ({
+          time: point.time,
+          value: point.value,
+          x: xForVisualIndex(hitContext, point.index),
+          y: yForVisualValue(hitContext, renderRange, point.value)
+        }));
+
+      return getNearestVisualHit(output, x, y, candidates);
+    }
   );
 }

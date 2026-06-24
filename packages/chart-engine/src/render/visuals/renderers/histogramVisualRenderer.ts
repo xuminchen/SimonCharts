@@ -2,7 +2,8 @@ import {
   createTimeIndex,
   createVisualRenderer,
   getAutoscaleFromValues,
-  getPaddedRange,
+  getNearestVisualHit,
+  getVisualRenderRange,
   isFiniteNumber,
   isVisibleIndex,
   withPanelPlotClip,
@@ -26,7 +27,7 @@ export function createHistogramVisualRenderer() {
         return;
       }
 
-      const renderRange = getPaddedRange(range);
+      const renderRange = getVisualRenderRange(renderContext, range);
       const baselineValue =
         range.min <= 0 && range.max >= 0 ? 0 : range.min > 0 ? range.min : range.max;
       const baselineY = yForVisualValue(renderContext, renderRange, baselineValue);
@@ -58,6 +59,44 @@ export function createHistogramVisualRenderer() {
     (output) =>
       output.type === "histogram"
         ? getAutoscaleFromValues(output.values.map((point) => point.value))
-        : undefined
+        : undefined,
+    (hitContext, x, y) => {
+      const output = hitContext.output;
+
+      if (output.type !== "histogram") {
+        return undefined;
+      }
+
+      const range = getAutoscaleFromValues(output.values.map((point) => point.value));
+
+      if (!range) {
+        return undefined;
+      }
+
+      const renderRange = getVisualRenderRange(hitContext, range);
+      const indexByTime = createTimeIndex(hitContext.state.series);
+      const candidates = output.values.flatMap((point) => {
+        if (!isFiniteNumber(point.value)) {
+          return [];
+        }
+
+        const index = indexByTime.get(point.time);
+
+        if (index === undefined || !isVisibleIndex(hitContext, index)) {
+          return [];
+        }
+
+        return [
+          {
+            time: point.time,
+            value: point.value,
+            x: xForVisualIndex(hitContext, index),
+            y: yForVisualValue(hitContext, renderRange, point.value)
+          }
+        ];
+      });
+
+      return getNearestVisualHit(output, x, y, candidates);
+    }
   );
 }
