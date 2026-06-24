@@ -197,7 +197,7 @@ function cloneVisualOutputs(outputs: IndicatorVisualOutput[]): IndicatorVisualOu
       marks: output.marks.map((mark) => {
         const nextMark = { ...mark };
         if (mark.metadata) {
-          nextMark.metadata = { ...mark.metadata };
+          nextMark.metadata = cloneMetadata(mark.metadata);
         }
         return nextMark;
       })
@@ -220,11 +220,37 @@ function cloneDrawings(drawings: DrawingObject[]): DrawingObject[] {
     }
 
     if (drawing.metadata) {
-      nextDrawing.metadata = { ...drawing.metadata };
+      nextDrawing.metadata = cloneMetadata(drawing.metadata);
     }
 
     return nextDrawing;
   });
+}
+
+function cloneMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const nextMetadata: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(metadata)) {
+    nextMetadata[key] = cloneMetadataValue(value);
+  }
+
+  return nextMetadata;
+}
+
+function cloneMetadataValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(cloneMetadataValue);
+  }
+
+  if (isMetadataRecord(value)) {
+    return cloneMetadata(value);
+  }
+
+  return value;
+}
+
+function isMetadataRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function cloneInteractionState(interaction: InteractionSessionState): InteractionSessionState {

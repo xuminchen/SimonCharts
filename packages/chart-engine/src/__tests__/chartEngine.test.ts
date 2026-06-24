@@ -157,6 +157,8 @@ describe("chart engine facade", () => {
         if (marker) {
           marker.marks[0]!.price = 999;
           marker.marks[0]!.metadata!.source = "mutated";
+          (marker.marks[0]!.metadata!.nested as { value: number }).value = 999;
+          ((marker.marks[0]!.metadata!.tags as unknown[])[1] as { code: string }).code = "mutated";
         }
       }
 
@@ -164,6 +166,8 @@ describe("chart engine facade", () => {
         event.drawings[0]!.anchors[0]!.price = 999;
         event.drawings[0]!.style!.lineDash![0] = 99;
         event.drawings[0]!.metadata!.source = "mutated";
+        (event.drawings[0]!.metadata!.nested as { value: number }).value = 999;
+        ((event.drawings[0]!.metadata!.tags as unknown[])[1] as { code: string }).code = "mutated";
       }
     });
     engine.subscribe((event) => {
@@ -182,13 +186,21 @@ describe("chart engine facade", () => {
 
         observedLineValues.push(line?.values[0]?.value ?? -1);
         observedMarkerPrices.push(marker?.marks[0]?.price ?? -1);
-        expect(marker?.marks[0]?.metadata).toEqual({ source: "fixture" });
+        expect(marker?.marks[0]?.metadata).toEqual({
+          source: "fixture",
+          nested: { value: 1 },
+          tags: ["alpha", { code: "beta" }]
+        });
       }
 
       if (event.type === "drawingsChanged") {
         observedDrawingPrices.push(event.drawings[0]!.anchors[0]!.price!);
         observedDrawingDashes.push(event.drawings[0]!.style!.lineDash![0]!);
-        expect(event.drawings[0]!.metadata).toEqual({ source: "fixture" });
+        expect(event.drawings[0]!.metadata).toEqual({
+          source: "fixture",
+          nested: { value: 1 },
+          tags: ["alpha", { code: "beta" }]
+        });
       }
     });
 
@@ -213,10 +225,18 @@ describe("chart engine facade", () => {
     expect(state.viewport.visibleRange.from).toBe(1);
     expect(stateLine?.values[0]?.value).toBe(101);
     expect(stateMarker?.marks[0]?.price).toBe(101);
-    expect(stateMarker?.marks[0]?.metadata).toEqual({ source: "fixture" });
+    expect(stateMarker?.marks[0]?.metadata).toEqual({
+      source: "fixture",
+      nested: { value: 1 },
+      tags: ["alpha", { code: "beta" }]
+    });
     expect(state.drawings[0]!.anchors[0]!.price).toBe(100);
     expect(state.drawings[0]!.style!.lineDash).toEqual([4, 2]);
-    expect(state.drawings[0]!.metadata).toEqual({ source: "fixture" });
+    expect(state.drawings[0]!.metadata).toEqual({
+      source: "fixture",
+      nested: { value: 1 },
+      tags: ["alpha", { code: "beta" }]
+    });
   });
 
   it("isolates stored snapshots from returned state mutation", () => {
@@ -307,7 +327,7 @@ function createVisualOutputsSnapshot(): IndicatorVisualOutput[] {
           time: 1,
           price: 101,
           label: "E",
-          metadata: { source: "fixture" }
+          metadata: { source: "fixture", nested: { value: 1 }, tags: ["alpha", { code: "beta" }] }
         }
       ]
     }
@@ -324,7 +344,7 @@ function createDrawingsSnapshot(): DrawingObject[] {
         { time: 2, price: 102 }
       ],
       style: { color: "#d62728", lineWidth: 2, lineDash: [4, 2] },
-      metadata: { source: "fixture" }
+      metadata: { source: "fixture", nested: { value: 1 }, tags: ["alpha", { code: "beta" }] }
     }
   ];
 }
