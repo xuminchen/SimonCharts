@@ -1607,7 +1607,7 @@ git commit -m "docs: document interaction render lifecycle"
 
 - Modify only if verification exposes a defect.
 
-- [ ] **Step 1: Run unit tests**
+- [x] **Step 1: Run unit tests**
 
 Run:
 
@@ -1617,7 +1617,7 @@ npm run test
 
 Expected: all Vitest suites pass.
 
-- [ ] **Step 2: Run typecheck**
+- [x] **Step 2: Run typecheck**
 
 Run:
 
@@ -1627,7 +1627,7 @@ npm run typecheck
 
 Expected: TypeScript build passes for engine and playground.
 
-- [ ] **Step 3: Run boundary guard**
+- [x] **Step 3: Run boundary guard**
 
 Run:
 
@@ -1637,7 +1637,7 @@ npm run guard:engine-boundary
 
 Expected: engine boundary guard passes.
 
-- [ ] **Step 4: Run production build**
+- [x] **Step 4: Run production build**
 
 Run:
 
@@ -1647,7 +1647,7 @@ npm run build
 
 Expected: engine and playground builds pass.
 
-- [ ] **Step 5: Run full E2E**
+- [x] **Step 5: Run full E2E**
 
 Run:
 
@@ -1657,7 +1657,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Expected: all Playwright tests pass.
 
-- [ ] **Step 6: Clean generated artifacts**
+- [x] **Step 6: Clean generated artifacts**
 
 Run:
 
@@ -1667,7 +1667,7 @@ rm -rf apps/playground/dist test-results playwright-report
 
 Expected: build and test artifacts are removed.
 
-- [ ] **Step 7: Check git status**
+- [x] **Step 7: Check git status**
 
 Run:
 
@@ -1677,7 +1677,7 @@ git status --short
 
 Expected: no generated artifacts remain. Only intentional source or doc fixes are pending.
 
-- [ ] **Step 8: Commit final fixes if required**
+- [x] **Step 8: Commit final fixes if required**
 
 If verification changed source or docs:
 
@@ -1690,20 +1690,20 @@ If no files changed, do not create an empty commit.
 
 ## Final Acceptance Checklist
 
-- [ ] `createInteractionSession` is exported from `@simoncharts/chart-engine`.
-- [ ] `InteractionInput`, `InteractionSessionState`, and `InteractionSessionEvent` are exported.
-- [ ] Pointer, wheel, keyboard, crosshair, tooltip, cursor, and magnet state are unit-tested.
-- [ ] `createRenderScheduler` is exported from `@simoncharts/chart-engine`.
-- [ ] `RenderInvalidation`, `RenderSchedulerState`, and `RenderMetrics` are exported.
-- [ ] Render invalidation merging, pass ordering, coalescing, destroy behavior, and metrics are unit-tested.
-- [ ] `ChartEngine.getState()` can expose neutral interaction and render snapshots.
-- [ ] Playground shows cursor, magnet, keyboard command, render counts, and last invalidation diagnostics.
-- [ ] High-frequency pointer movement does not force repeated static redraws.
-- [ ] Keyboard `+`, `-`, and `0` trigger neutral zoom command events.
-- [ ] Wheel zoom invalidates chart layers and records a render reason.
-- [ ] Documentation covers v0.2 interaction and rendering lifecycle.
-- [ ] `npm run test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `npm run guard:engine-boundary` passes.
-- [ ] `npm run build` passes.
-- [ ] `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passes.
+- [x] `createInteractionSession` is exported from `@simoncharts/chart-engine`.
+- [x] `InteractionInput`, `InteractionSessionState`, and `InteractionSessionEvent` are exported.
+- [x] Pointer, wheel, keyboard, crosshair, tooltip, cursor, and magnet state are unit-tested.
+- [x] `createRenderScheduler` is exported from `@simoncharts/chart-engine`.
+- [x] `RenderInvalidation`, `RenderSchedulerState`, and `RenderMetrics` are exported.
+- [x] Render invalidation merging, pass ordering, coalescing, destroy behavior, and metrics are unit-tested.
+- [x] `ChartEngine.getState()` can expose neutral interaction and render snapshots.
+- [x] Playground shows cursor, magnet, keyboard command, render counts, and last invalidation diagnostics.
+- [x] High-frequency pointer movement does not force repeated static redraws.
+- [x] Keyboard `+`, `-`, and `0` trigger neutral zoom command events.
+- [x] Wheel zoom invalidates chart layers and records a render reason.
+- [x] Documentation covers v0.2 interaction and rendering lifecycle.
+- [x] `npm run test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `npm run guard:engine-boundary` passes.
+- [x] `npm run build` passes.
+- [x] `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passes.
