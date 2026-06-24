@@ -41,6 +41,87 @@ describe("interaction session contracts", () => {
     expect(events.map((event) => event.type)).toEqual(["pointerMoved", "cursorChanged"]);
   });
 
+  it("tracks drag lifecycle with deterministic no-ops", () => {
+    const events: InteractionSessionEvent[] = [];
+    const session = createInteractionSession({ onEvent: (event) => events.push(event) });
+
+    session.handleInput({ type: "pointerUp", point: { x: 1, y: 1 } });
+    expect(events).toEqual([]);
+
+    session.handleInput({ type: "pointerDown", point: { x: 10, y: 12 } });
+    session.handleInput({ type: "pointerDrag", point: { x: 16, y: 20 } });
+    session.handleInput({ type: "pointerUp", point: { x: 16, y: 20 } });
+
+    expect(session.getState().pointer).toEqual({ mode: "hover", point: { x: 16, y: 20 } });
+    expect(events.map((event) => event.type)).toEqual([
+      "pointerDragStarted",
+      "cursorChanged",
+      "pointerDragged",
+      "pointerDragEnded",
+      "cursorChanged"
+    ]);
+  });
+
+  it("tracks crosshair tooltip and magnet state", () => {
+    const session = createInteractionSession();
+
+    session.handleInput({
+      type: "crosshair",
+      crosshair: {
+        index: 3,
+        time: 100,
+        price: 12,
+        open: 10,
+        high: 14,
+        low: 9,
+        close: 13,
+        volume: 1000,
+        turnover: 13000
+      }
+    });
+    session.handleInput({
+      type: "tooltip",
+      tooltip: {
+        visible: true,
+        sourceType: "series",
+        rows: [{ label: "Close", value: "13" }]
+      }
+    });
+    session.handleInput({
+      type: "magnet",
+      magnet: {
+        mode: "ohlc",
+        target: {
+          id: "candle-3",
+          mode: "ohlc",
+          point: { x: 30, y: 40, index: 3, price: 13 },
+          distance: 2
+        }
+      }
+    });
+
+    expect(session.getState().crosshair.visible).toBe(true);
+    expect(session.getState().tooltip.rows).toEqual([{ label: "Close", value: "13" }]);
+    expect(session.getState().magnet.target?.id).toBe("candle-3");
+  });
+
+  it("maps keyboard commands to neutral zoom events", () => {
+    const events: InteractionSessionEvent[] = [];
+    const session = createInteractionSession({ onEvent: (event) => events.push(event) });
+
+    session.handleInput({ type: "keyboardDown", key: "+", shiftKey: true });
+    session.handleInput({ type: "keyboardDown", key: "-" });
+    session.handleInput({ type: "keyboardDown", key: "0" });
+    session.handleInput({ type: "keyboardUp", key: "0" });
+
+    expect(events.filter((event) => event.type === "keyboardCommand")).toEqual([
+      { type: "keyboardCommand", command: "zoomIn", key: "+" },
+      { type: "keyboardCommand", command: "zoomOut", key: "-" },
+      { type: "keyboardCommand", command: "resetZoom", key: "0" }
+    ]);
+    expect(session.getState().keyboard.lastKey).toBe("0");
+  });
+
   it("keeps event payload mutations isolated from session state", () => {
     const session = createInteractionSession({
       onEvent(event) {
@@ -123,6 +204,18 @@ describe("interaction session contracts", () => {
     expect(createInteractionSession().getState()).toStrictEqual(neutralIdleState);
   });
 
+  it("returns cloned state snapshots", () => {
+    const session = createInteractionSession();
+    session.handleInput({ type: "pointerMove", point: { x: 10, y: 20 } });
+
+    const snapshot = session.getState();
+    if (snapshot.pointer.point) {
+      snapshot.pointer.point.x = 999;
+    }
+
+    expect(session.getState().pointer.point).toEqual({ x: 10, y: 20 });
+  });
+
   it("emits deterministic cleanup events on leave", () => {
     const events: InteractionSessionEvent[] = [];
     const session = createInteractionSession({ onEvent: (event) => events.push(event) });
@@ -164,5 +257,14 @@ describe("interaction session contracts", () => {
       { type: "cursorChanged", cursor: "default" },
       { type: "magnetTargetChanged", magnet: { mode: "off" } }
     ]);
+  });
+
+  it("clears transient state on blur", () => {
+    const session = createInteractionSession();
+
+    session.handleInput({ type: "pointerMove", point: { x: 1, y: 1 } });
+    session.handleInput({ type: "blur" });
+
+    expect(session.getState().pointer.mode).toBe("idle");
   });
 });
