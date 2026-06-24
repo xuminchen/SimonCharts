@@ -1040,7 +1040,7 @@ git commit -m "test: cover render scheduler metrics"
 - Modify: `packages/chart-engine/src/engine/chartEngine.ts`
 - Test: `packages/chart-engine/src/__tests__/chartEngine.test.ts`
 
-- [ ] **Step 1: Add facade tests**
+- [x] **Step 1: Add facade tests**
 
 Append to `packages/chart-engine/src/__tests__/chartEngine.test.ts`:
 
@@ -1075,7 +1075,7 @@ it("stores neutral interaction and render snapshots", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1085,7 +1085,7 @@ npm run test -- packages/chart-engine/src/__tests__/chartEngine.test.ts
 
 Expected: FAIL because `setInteractionState` and `setRenderState` are missing.
 
-- [ ] **Step 3: Extend state and event contracts**
+- [x] **Step 3: Extend state and event contracts**
 
 Modify `packages/chart-engine/src/engine/chartState.ts`:
 
@@ -1115,7 +1115,7 @@ import type { InteractionSessionState } from "../interaction/sessionTypes";
 import type { RenderSchedulerState } from "../render/scheduler/renderSchedulerTypes";
 ```
 
-- [ ] **Step 4: Extend facade methods**
+- [x] **Step 4: Extend facade methods**
 
 Modify `ChartEngine` in `packages/chart-engine/src/engine/chartEngine.ts`:
 
@@ -1161,7 +1161,7 @@ Update `getState()` so it returns shallow clones:
           : undefined
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -1173,7 +1173,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/chart-engine/src/engine packages/chart-engine/src/__tests__/chartEngine.test.ts
