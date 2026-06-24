@@ -2,6 +2,7 @@ import {
   assertCandleSeries,
   calculateDefaultMovingAverages,
   createInteractionEngine,
+  createChartEngine,
   createChartLayout,
   computeVisibleRange,
   createInitialViewport,
@@ -26,6 +27,7 @@ import {
 import type {
   ChartCrosshairState,
   ChartLayout,
+  ChartTheme,
   InteractionEngine,
   InteractionEvent,
   LayerRenderContext,
@@ -34,6 +36,7 @@ import type {
   DrawingEditorTool,
   DrawingObject,
   SeriesType,
+  ThemeMode,
   ViewportState
 } from "@simoncharts/chart-engine";
 import { createDrawingToolbar } from "./drawingToolbar";
@@ -49,6 +52,10 @@ declare global {
 
 assertCandleSeries(fixtureDailyCandleSeries);
 window.__SIMON_CHART_EVENTS__ = [];
+const chartEngine = createChartEngine({
+  series: fixtureDailyCandleSeries,
+  seriesType: playgroundState.seriesType
+});
 
 const appElement = document.querySelector<HTMLDivElement>("#app");
 
@@ -64,6 +71,13 @@ const seriesTypeSelect = document.createElement("select");
 const activeSeriesType = document.createElement("span");
 const panelCount = document.createElement("span");
 const visualOutputCount = document.createElement("span");
+const toggleGridButton = document.createElement("button");
+const gridState = document.createElement("span");
+const invertPriceScaleButton = document.createElement("button");
+const scaleState = document.createElement("span");
+const themeModeLabel = document.createElement("label");
+const themeModeSelect = document.createElement("select");
+const themeState = document.createElement("span");
 const canvas = document.createElement("canvas");
 const overlayCanvas = document.createElement("canvas");
 const resetButton = document.createElement("button");
@@ -75,11 +89,31 @@ seriesTypeLabel.textContent = "Type";
 seriesTypeSelect.dataset.testid = "series-type";
 activeSeriesType.dataset.testid = "active-series-type";
 activeSeriesType.hidden = true;
-activeSeriesType.textContent = playgroundState.seriesType;
+activeSeriesType.textContent = chartEngine.getState().seriesType;
 panelCount.className = "status-item";
 panelCount.dataset.testid = "panel-count";
 visualOutputCount.className = "status-item";
 visualOutputCount.dataset.testid = "visual-output-count";
+toggleGridButton.type = "button";
+toggleGridButton.dataset.testid = "toggle-grid";
+toggleGridButton.textContent = "Grid";
+gridState.className = "status-item";
+gridState.dataset.testid = "grid-state";
+invertPriceScaleButton.type = "button";
+invertPriceScaleButton.dataset.testid = "invert-price-scale";
+invertPriceScaleButton.textContent = "Invert";
+scaleState.className = "status-item";
+scaleState.dataset.testid = "scale-state";
+themeModeLabel.textContent = "Theme";
+themeModeSelect.dataset.testid = "theme-mode";
+for (const mode of ["light", "dark"] as const) {
+  const option = document.createElement("option");
+  option.value = mode;
+  option.textContent = mode;
+  themeModeSelect.append(option);
+}
+themeState.className = "status-item";
+themeState.dataset.testid = "theme-state";
 canvas.dataset.testid = "chart-canvas";
 canvas.setAttribute("aria-label", "SimonCharts static chart");
 overlayCanvas.dataset.testid = "chart-overlay";
@@ -98,7 +132,19 @@ for (const type of supportedSeriesTypes) {
 }
 
 seriesTypeLabel.append(seriesTypeSelect);
-topControls.append(seriesTypeLabel, activeSeriesType, panelCount, visualOutputCount);
+themeModeLabel.append(themeModeSelect);
+topControls.append(
+  seriesTypeLabel,
+  activeSeriesType,
+  toggleGridButton,
+  gridState,
+  invertPriceScaleButton,
+  scaleState,
+  themeModeLabel,
+  themeState,
+  panelCount,
+  visualOutputCount
+);
 const playgroundPanelDefinitions: PanelDefinition[] = [
   { id: "main", kind: "main", label: "Main", heightRatio: 3 },
   { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
@@ -152,6 +198,21 @@ const staticLayers = [
   createDrawingLayer(drawingRendererRegistry)
 ];
 const movingAverages = Object.values(calculateDefaultMovingAverages(fixtureDailyCandleSeries));
+const darkChartTheme: ChartTheme = {
+  ...defaultChartTheme,
+  colors: {
+    ...defaultChartTheme.colors,
+    background: "#0f172a",
+    grid: "#334155",
+    text: "#e2e8f0",
+    panelSeparator: "#475569",
+    tooltip: {
+      background: "#020617",
+      text: "#f8fafc",
+      border: "#475569"
+    }
+  }
+};
 let viewport: ViewportState | undefined;
 let crosshair: ChartCrosshairState | undefined;
 let layout: ChartLayout | undefined;
@@ -192,6 +253,7 @@ function syncLayout(): void {
       visibleRange
     };
   }
+  chartEngine.setViewport(viewport);
 
   if (layoutChanged || !interactionEngine) {
     crosshair = undefined;
@@ -215,11 +277,12 @@ function renderStatic(): void {
   }
 
   const context = resizeCanvas(canvas, layout.width, layout.height, window.devicePixelRatio);
+  const activeTheme = getActiveTheme();
 
-  context.fillStyle = defaultChartTheme.colors.background;
+  context.fillStyle = activeTheme.colors.background;
   context.fillRect(0, 0, layout.width, layout.height);
 
-  renderStaticChart(createRenderContext(context, getMainPanelLayout()), staticLayers);
+  renderStaticChart(createRenderContext(context, getMainPanelLayout()), getStaticLayers());
 }
 
 function renderOverlayCanvas(): void {
@@ -252,11 +315,11 @@ function createRenderContext(
     state: {
       series: fixtureDailyCandleSeries,
       viewport,
-      theme: defaultChartTheme,
+      theme: getActiveTheme(),
       layout: renderLayout,
       movingAverages,
       crosshair,
-      seriesType: playgroundState.seriesType,
+      seriesType: chartEngine.getState().seriesType,
       panels,
       visualOutputs: playgroundVisualOutputs,
       drawings: drawingEditor.getState().drawings,
@@ -269,6 +332,27 @@ function syncDrawingStatus(): void {
   const count = drawingEditor.getState().drawings.filter((drawing) => drawing.visible !== false).length;
 
   drawingToolbar.countElement.textContent = `${count} ${count === 1 ? "drawing" : "drawings"}`;
+}
+
+function syncEngineStatus(): void {
+  const engineState = chartEngine.getState();
+
+  gridState.textContent = engineState.settings.gridVisible ? "grid on" : "grid off";
+  scaleState.textContent = engineState.invertedPriceScale ? "inverted" : "normal";
+  themeModeSelect.value = engineState.settings.themeMode;
+  themeState.textContent = engineState.settings.themeMode;
+}
+
+function getActiveTheme(): ChartTheme {
+  return chartEngine.getState().settings.themeMode === "dark" ? darkChartTheme : defaultChartTheme;
+}
+
+function getStaticLayers(): typeof staticLayers {
+  if (chartEngine.getState().settings.gridVisible) {
+    return staticLayers;
+  }
+
+  return staticLayers.filter((layer) => layer.id !== "grid");
 }
 
 function getMainPanelLayout(): ChartLayout {
@@ -368,8 +452,30 @@ resetButton.addEventListener("click", () => {
 });
 
 seriesTypeSelect.addEventListener("change", () => {
-  playgroundState.seriesType = seriesTypeSelect.value as SeriesType;
-  activeSeriesType.textContent = playgroundState.seriesType;
+  chartEngine.setSeriesType(seriesTypeSelect.value as SeriesType);
+  playgroundState.seriesType = chartEngine.getState().seriesType;
+  activeSeriesType.textContent = chartEngine.getState().seriesType;
+  render();
+});
+
+toggleGridButton.addEventListener("click", () => {
+  chartEngine.dispatch({ type: "toggleGrid" });
+  syncEngineStatus();
+  render();
+});
+
+invertPriceScaleButton.addEventListener("click", () => {
+  chartEngine.dispatch({ type: "invertPriceScale" });
+  syncEngineStatus();
+  render();
+});
+
+themeModeSelect.addEventListener("change", () => {
+  chartEngine.dispatch({
+    type: "setThemeMode",
+    themeMode: themeModeSelect.value as ThemeMode
+  });
+  syncEngineStatus();
   render();
 });
 
@@ -444,4 +550,5 @@ function hitTestDrawing(
 }
 
 window.addEventListener("resize", render);
+syncEngineStatus();
 requestAnimationFrame(render);

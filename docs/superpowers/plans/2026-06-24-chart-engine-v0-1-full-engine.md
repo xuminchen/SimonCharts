@@ -3592,7 +3592,7 @@ git commit -m "feat: add chart engine facade"
 - Modify: `apps/playground/src/styles.css`
 - Create: `apps/playground/tests/settings-actions.spec.ts`
 
-- [ ] **Step 1: Write failing settings/action E2E**
+- [x] **Step 1: Write failing settings/action E2E**
 
 Create `apps/playground/tests/settings-actions.spec.ts`:
 
@@ -3613,7 +3613,7 @@ test("toolbar actions update neutral engine state", async ({ page }) => {
 });
 ```
 
-- [ ] **Step 2: Verify test fails**
+- [x] **Step 2: Verify test fails**
 
 Run:
 
@@ -3623,7 +3623,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/settings-act
 
 Expected: FAIL because controls are missing.
 
-- [ ] **Step 3: Add controls**
+- [x] **Step 3: Add controls**
 
 Modify playground to add:
 
@@ -3636,7 +3636,7 @@ Modify playground to add:
 
 Controls must dispatch neutral engine commands or settings updates.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -3648,7 +3648,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/playground/src apps/playground/tests/settings-actions.spec.ts
