@@ -1,0 +1,211 @@
+import {
+  defaultInteractionSessionState,
+  type CursorMode,
+  type InteractionInput,
+  type InteractionPoint,
+  type InteractionSession,
+  type InteractionSessionEvent,
+  type InteractionSessionOptions,
+  type InteractionSessionState,
+  type KeyboardSessionState
+} from "./sessionTypes";
+
+export function createInteractionSession(
+  options: InteractionSessionOptions = {}
+): InteractionSession {
+  let state = cloneState(defaultInteractionSessionState);
+  let active = true;
+
+  function emit(event: InteractionSessionEvent): void {
+    if (active) {
+      options.onEvent?.(event);
+    }
+  }
+
+  function setCursor(cursor: CursorMode): void {
+    if (state.cursor === cursor) {
+      return;
+    }
+
+    state = { ...state, cursor };
+    emit({ type: "cursorChanged", cursor });
+  }
+
+  return {
+    handleInput(input) {
+      if (!active) {
+        return;
+      }
+
+      if (input.type === "pointerMove") {
+        state = { ...state, pointer: { mode: "hover", point: clonePoint(input.point) } };
+        emit({ type: "pointerMoved", point: clonePoint(input.point) });
+        setCursor("crosshair");
+        return;
+      }
+
+      if (input.type === "pointerDown") {
+        const mode = input.mode ?? "dragPan";
+        state = {
+          ...state,
+          pointer: {
+            mode,
+            point: clonePoint(input.point),
+            startPoint: clonePoint(input.point)
+          }
+        };
+        emit({ type: "pointerDragStarted", point: clonePoint(input.point) });
+        setCursor(mode === "dragPan" ? "grabbing" : mode === "drawing" ? "drawing" : "resize");
+        return;
+      }
+
+      if (input.type === "pointerDrag") {
+        const startPoint = state.pointer.startPoint;
+        if (!startPoint) {
+          return;
+        }
+        state = { ...state, pointer: { ...state.pointer, point: clonePoint(input.point) } };
+        emit({
+          type: "pointerDragged",
+          point: clonePoint(input.point),
+          startPoint: clonePoint(startPoint)
+        });
+        return;
+      }
+
+      if (input.type === "pointerUp") {
+        if (!state.pointer.startPoint) {
+          return;
+        }
+        state = { ...state, pointer: { mode: "hover", point: clonePoint(input.point) } };
+        emit({ type: "pointerDragEnded", point: clonePoint(input.point) });
+        setCursor("crosshair");
+        return;
+      }
+
+      if (input.type === "pointerCancel") {
+        state = { ...state, pointer: { mode: "canceled" } };
+        setCursor("default");
+        return;
+      }
+
+      if (input.type === "wheel") {
+        if (input.deltaY === 0) {
+          return;
+        }
+        emit({ type: "wheelZoomed", point: clonePoint(input.point), deltaY: input.deltaY });
+        return;
+      }
+
+      if (input.type === "keyboardDown" || input.type === "keyboardUp") {
+        state = { ...state, keyboard: toKeyboardState(input) };
+        const command = toKeyboardCommand(input.type, input.key);
+        if (command) {
+          emit({ type: "keyboardCommand", command, key: input.key });
+        }
+        return;
+      }
+
+      if (input.type === "crosshair") {
+        const crosshair = input.crosshair
+          ? { visible: true as const, ...input.crosshair }
+          : { visible: false as const };
+        state = { ...state, crosshair };
+        emit({ type: "crosshairChanged", crosshair });
+        return;
+      }
+
+      if (input.type === "tooltip") {
+        state = {
+          ...state,
+          tooltip: { ...input.tooltip, rows: input.tooltip.rows?.map((row) => ({ ...row })) }
+        };
+        emit({ type: "tooltipChanged", tooltip: state.tooltip });
+        return;
+      }
+
+      if (input.type === "magnet") {
+        state = {
+          ...state,
+          magnet: input.magnet.target
+            ? {
+                ...input.magnet,
+                target: { ...input.magnet.target, point: clonePoint(input.magnet.target.point) }
+              }
+            : { mode: input.magnet.mode }
+        };
+        emit({ type: "magnetTargetChanged", magnet: state.magnet });
+        return;
+      }
+
+      if (input.type === "leave" || input.type === "blur") {
+        state = {
+          ...state,
+          pointer: { mode: "idle" },
+          crosshair: { visible: false },
+          tooltip: { visible: false },
+          cursor: "default",
+          magnet: { mode: "off" }
+        };
+      }
+    },
+    getState() {
+      return cloneState(state);
+    },
+    destroy() {
+      active = false;
+    }
+  };
+}
+
+function toKeyboardState(
+  input: Extract<InteractionInput, { type: "keyboardDown" | "keyboardUp" }>
+): KeyboardSessionState {
+  return {
+    altKey: input.altKey ?? false,
+    ctrlKey: input.ctrlKey ?? false,
+    metaKey: input.metaKey ?? false,
+    shiftKey: input.shiftKey ?? false,
+    lastKey: input.key
+  };
+}
+
+function toKeyboardCommand(
+  type: "keyboardDown" | "keyboardUp",
+  key: string
+): "zoomIn" | "zoomOut" | "resetZoom" | undefined {
+  if (type !== "keyboardDown") {
+    return undefined;
+  }
+  if (key === "+" || key === "=") return "zoomIn";
+  if (key === "-") return "zoomOut";
+  if (key === "0") return "resetZoom";
+  return undefined;
+}
+
+function cloneState(state: InteractionSessionState): InteractionSessionState {
+  return {
+    pointer: {
+      ...state.pointer,
+      point: state.pointer.point ? clonePoint(state.pointer.point) : undefined,
+      startPoint: state.pointer.startPoint ? clonePoint(state.pointer.startPoint) : undefined
+    },
+    crosshair: { ...state.crosshair },
+    tooltip: {
+      ...state.tooltip,
+      rows: state.tooltip.rows?.map((row) => ({ ...row }))
+    },
+    cursor: state.cursor,
+    magnet: state.magnet.target
+      ? {
+          ...state.magnet,
+          target: { ...state.magnet.target, point: clonePoint(state.magnet.target.point) }
+        }
+      : { mode: state.magnet.mode },
+    keyboard: { ...state.keyboard }
+  };
+}
+
+function clonePoint(point: InteractionPoint): InteractionPoint {
+  return { ...point };
+}

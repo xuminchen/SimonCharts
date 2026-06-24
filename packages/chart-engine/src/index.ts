@@ -15,6 +15,8 @@ export * from "./engine/events";
 export * from "./indicators/movingAverage";
 export * from "./interaction/hitTest";
 export * from "./interaction/interactionEngine";
+export * from "./interaction/interactionSession";
+export * from "./interaction/sessionTypes";
 export * from "./model/adapter";
 export * from "./model/helpers";
 export * from "./model/market";
