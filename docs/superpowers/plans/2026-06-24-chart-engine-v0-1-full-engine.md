@@ -2658,7 +2658,7 @@ git commit -m "feat: add drawing geometry and registry"
 - Modify: `packages/chart-engine/src/render/renderTypes.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing drawing renderer tests**
+- [x] **Step 1: Write failing drawing renderer tests**
 
 Create `packages/chart-engine/src/__tests__/drawingRenderers.test.ts`:
 
@@ -2728,7 +2728,7 @@ describe("drawing renderers", () => {
 });
 ```
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -2738,7 +2738,7 @@ npm run test -- packages/chart-engine/src/__tests__/drawingRenderers.test.ts
 
 Expected: FAIL because drawing renderers are missing.
 
-- [ ] **Step 3: Extend render state**
+- [x] **Step 3: Extend render state**
 
 Modify `renderTypes.ts`:
 
@@ -2761,7 +2761,7 @@ export interface RenderState {
 }
 ```
 
-- [ ] **Step 4: Implement drawing renderers and layer**
+- [x] **Step 4: Implement drawing renderers and layer**
 
 Create:
 
@@ -2781,11 +2781,11 @@ The default registry factory must register all 23 drawing types:
 export function createDefaultDrawingRendererRegistry(): DrawingRendererRegistry
 ```
 
-- [ ] **Step 5: Export drawing renderers**
+- [x] **Step 5: Export drawing renderers**
 
 Add exports for `drawingLayer` and `createDefaultDrawingRendererRegistry`.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -2797,7 +2797,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/chart-engine/src/render/drawing packages/chart-engine/src/render/renderTypes.ts packages/chart-engine/src/__tests__/drawingRenderers.test.ts packages/chart-engine/src/index.ts

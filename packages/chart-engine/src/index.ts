@@ -17,6 +17,8 @@ export * from "./panels/panelLayout";
 export * from "./panels/panelScales";
 export * from "./panels/panelTypes";
 export * from "./render/canvasManager";
+export * from "./render/drawing/drawingLayer";
+export * from "./render/drawing/renderers/defaultDrawingRenderers";
 export * from "./render/layers/axisLayer";
 export * from "./render/layers/candlestickLayer";
 export * from "./render/layers/crosshairLayer";
