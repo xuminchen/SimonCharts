@@ -454,7 +454,7 @@ git commit -m "feat: add neutral interaction session"
 - Modify: `packages/chart-engine/src/__tests__/interactionSession.test.ts`
 - Modify: `packages/chart-engine/src/interaction/interactionSession.ts`
 
-- [ ] **Step 1: Add state transition tests**
+- [x] **Step 1: Add state transition tests**
 
 Append to `packages/chart-engine/src/__tests__/interactionSession.test.ts`:
 
@@ -557,7 +557,7 @@ it("clears transient state on leave and blur", () => {
 });
 ```
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run:
 
@@ -567,7 +567,7 @@ npm run test -- packages/chart-engine/src/__tests__/interactionSession.test.ts
 
 Expected: PASS. If event ordering differs, fix implementation to match deterministic event ordering in the test.
 
-- [ ] **Step 3: Verify immutability**
+- [x] **Step 3: Verify immutability**
 
 Append to `interactionSession.test.ts`:
 
@@ -585,7 +585,7 @@ it("returns cloned state snapshots", () => {
 });
 ```
 
-- [ ] **Step 4: Run verification**
+- [x] **Step 4: Run verification**
 
 Run:
 
@@ -597,7 +597,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/chart-engine/src/__tests__/interactionSession.test.ts packages/chart-engine/src/interaction/interactionSession.ts
