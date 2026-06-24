@@ -111,6 +111,38 @@ describe("render scheduler", () => {
     expect(scheduler.getState().metrics.totalRenderCount).toBe(1);
   });
 
+  it("defers render-pass invalidations when requestFrame runs synchronously", () => {
+    const calls: string[] = [];
+    let frameId = 0;
+    let scheduler!: ReturnType<typeof createRenderScheduler>;
+
+    scheduler = createRenderScheduler({
+      requestFrame(callback) {
+        callback();
+        frameId += 1;
+        return frameId;
+      },
+      renderPass(pass, invalidation) {
+        calls.push(`${pass}:${invalidation.reason}:start`);
+        if (pass === "static" && invalidation.reason === "initial") {
+          scheduler.invalidate({ layers: ["tooltip"], reason: "renderPassInvalidated" });
+          calls.push(`${pass}:${invalidation.reason}:after-invalidate`);
+        }
+      }
+    });
+
+    scheduler.invalidate({ layers: ["series", "crosshair"], reason: "initial" });
+
+    expect(calls).toEqual([
+      "static:initial:start",
+      "static:initial:after-invalidate",
+      "overlay:initial:start",
+      "overlay:renderPassInvalidated:start"
+    ]);
+    expect(scheduler.getState().pending).toBe(false);
+    expect(scheduler.getState().dirtyLayers).toEqual([]);
+  });
+
   it("stops later passes when destroyed during a render pass", () => {
     const calls: string[] = [];
     let frameCallback: (() => void) | undefined;

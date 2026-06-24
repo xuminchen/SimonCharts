@@ -214,7 +214,7 @@ Browser or host event flow:
 The engine should prefer deterministic no-op behavior for invalid interaction input:
 
 - ignored pointer up without active drag
-- ignored keyboard up for an inactive key
+- keyboard up remains command-neutral and only updates keyboard state
 - ignored unknown magnet target
 - ignored render invalidation with no layers
 

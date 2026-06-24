@@ -39,10 +39,11 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
   let layoutRequired = false;
   let frameId: number | undefined;
   let destroyed = false;
+  let isFlushing = false;
   let metrics = cloneMetrics(defaultMetrics);
 
   function schedule(): void {
-    if (frameId !== undefined || destroyed) {
+    if (frameId !== undefined || destroyed || isFlushing) {
       return;
     }
 
@@ -63,56 +64,65 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
   }
 
   function flush(): void {
-    if (destroyed || dirtyLayers.size === 0) {
+    if (destroyed || dirtyLayers.size === 0 || isFlushing) {
       return;
     }
 
-    if (frameId !== undefined) {
-      options.cancelFrame?.(frameId);
-      frameId = undefined;
-    }
+    isFlushing = true;
 
-    const layers = sortLayers([...dirtyLayers]);
-    const reasonSnapshot = [...reasons];
-    const layoutRequiredSnapshot = layoutRequired;
-    const timestamp = now();
-    const passes = getPassesForLayers(layers);
+    try {
+      if (frameId !== undefined) {
+        options.cancelFrame?.(frameId);
+        frameId = undefined;
+      }
 
-    dirtyLayers.clear();
-    reasons.length = 0;
-    layoutRequired = false;
+      const layers = sortLayers([...dirtyLayers]);
+      const reasonSnapshot = [...reasons];
+      const layoutRequiredSnapshot = layoutRequired;
+      const timestamp = now();
+      const passes = getPassesForLayers(layers);
 
-    const startedAt = now();
+      dirtyLayers.clear();
+      reasons.length = 0;
+      layoutRequired = false;
 
-    for (const pass of passes) {
-      const invalidation = createRenderInvalidation(
-        layers,
-        reasonSnapshot,
-        layoutRequiredSnapshot,
-        timestamp
-      );
-      options.renderPass(pass, invalidation);
+      const startedAt = now();
+
+      for (const pass of passes) {
+        const invalidation = createRenderInvalidation(
+          layers,
+          reasonSnapshot,
+          layoutRequiredSnapshot,
+          timestamp
+        );
+        options.renderPass(pass, invalidation);
+        metrics = {
+          ...metrics,
+          totalRenderCount: metrics.totalRenderCount + 1,
+          renderCountByPass: {
+            ...metrics.renderCountByPass,
+            [pass]: metrics.renderCountByPass[pass] + 1
+          }
+        };
+        if (destroyed) {
+          break;
+        }
+      }
+
+      const duration = Math.max(0, now() - startedAt);
       metrics = {
         ...metrics,
-        totalRenderCount: metrics.totalRenderCount + 1,
-        renderCountByPass: {
-          ...metrics.renderCountByPass,
-          [pass]: metrics.renderCountByPass[pass] + 1
-        }
+        lastRenderDuration: duration,
+        dirtyLayerCount: layers.length,
+        lastInvalidationReasons: reasonSnapshot,
+        slowFrameCount: duration > slowFrameThresholdMs ? metrics.slowFrameCount + 1 : metrics.slowFrameCount
       };
-      if (destroyed) {
-        break;
+    } finally {
+      isFlushing = false;
+      if (!destroyed && dirtyLayers.size > 0) {
+        schedule();
       }
     }
-
-    const duration = Math.max(0, now() - startedAt);
-    metrics = {
-      ...metrics,
-      lastRenderDuration: duration,
-      dirtyLayerCount: layers.length,
-      lastInvalidationReasons: reasonSnapshot,
-      slowFrameCount: duration > slowFrameThresholdMs ? metrics.slowFrameCount + 1 : metrics.slowFrameCount
-    };
   }
 
   return {

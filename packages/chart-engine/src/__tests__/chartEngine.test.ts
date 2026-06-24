@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { DrawingObject } from "../drawing/drawingTypes";
 import type { InteractionSessionState } from "../interaction/sessionTypes";
 import { createChartEngine, fixtureDailyCandleSeries } from "../index";
+import type { CandleSeries } from "../model/market";
+import type { ViewportState } from "../model/runtime";
+import type { IndicatorVisualOutput } from "../model/visual";
 import type { RenderSchedulerState } from "../render/scheduler/renderSchedulerTypes";
 
 describe("chart engine facade", () => {
@@ -123,6 +127,98 @@ describe("chart engine facade", () => {
     expect(engine.getState().render?.metrics.lastInvalidationReasons).toEqual(["pointerMoved"]);
   });
 
+  it("isolates mutable event payloads from other subscribers and state", () => {
+    const engine = createChartEngine({ series: createSeriesSnapshot() });
+    const observedSeriesCloses: number[] = [];
+    const observedSeriesLengths: number[] = [];
+    const observedViewportStarts: number[] = [];
+    const observedLineValues: number[] = [];
+    const observedMarkerPrices: number[] = [];
+    const observedDrawingPrices: number[] = [];
+    const observedDrawingDashes: number[] = [];
+
+    engine.subscribe((event) => {
+      if (event.type === "seriesChanged") {
+        event.series.candles[0]!.close = 999;
+        event.series.candles.push({ ...event.series.candles[0]! });
+      }
+
+      if (event.type === "viewportChanged") {
+        event.viewport.visibleRange.from = 99;
+      }
+
+      if (event.type === "visualOutputsChanged") {
+        const line = event.outputs.find((output) => output.type === "line");
+        const marker = event.outputs.find((output) => output.type === "marker");
+
+        if (line) {
+          line.values[0]!.value = 999;
+        }
+        if (marker) {
+          marker.marks[0]!.price = 999;
+          marker.marks[0]!.metadata!.source = "mutated";
+        }
+      }
+
+      if (event.type === "drawingsChanged") {
+        event.drawings[0]!.anchors[0]!.price = 999;
+        event.drawings[0]!.style!.lineDash![0] = 99;
+        event.drawings[0]!.metadata!.source = "mutated";
+      }
+    });
+    engine.subscribe((event) => {
+      if (event.type === "seriesChanged") {
+        observedSeriesCloses.push(event.series.candles[0]!.close);
+        observedSeriesLengths.push(event.series.candles.length);
+      }
+
+      if (event.type === "viewportChanged") {
+        observedViewportStarts.push(event.viewport.visibleRange.from);
+      }
+
+      if (event.type === "visualOutputsChanged") {
+        const line = event.outputs.find((output) => output.type === "line");
+        const marker = event.outputs.find((output) => output.type === "marker");
+
+        observedLineValues.push(line?.values[0]?.value ?? -1);
+        observedMarkerPrices.push(marker?.marks[0]?.price ?? -1);
+        expect(marker?.marks[0]?.metadata).toEqual({ source: "fixture" });
+      }
+
+      if (event.type === "drawingsChanged") {
+        observedDrawingPrices.push(event.drawings[0]!.anchors[0]!.price!);
+        observedDrawingDashes.push(event.drawings[0]!.style!.lineDash![0]!);
+        expect(event.drawings[0]!.metadata).toEqual({ source: "fixture" });
+      }
+    });
+
+    engine.setSeries(createSeriesSnapshot());
+    engine.setViewport(createViewportSnapshot());
+    engine.setVisualOutputs(createVisualOutputsSnapshot());
+    engine.setDrawings(createDrawingsSnapshot());
+
+    const state = engine.getState();
+    const stateLine = state.visualOutputs.find((output) => output.type === "line");
+    const stateMarker = state.visualOutputs.find((output) => output.type === "marker");
+
+    expect(observedSeriesCloses).toEqual([101]);
+    expect(observedSeriesLengths).toEqual([2]);
+    expect(observedViewportStarts).toEqual([1]);
+    expect(observedLineValues).toEqual([101]);
+    expect(observedMarkerPrices).toEqual([101]);
+    expect(observedDrawingPrices).toEqual([100]);
+    expect(observedDrawingDashes).toEqual([4]);
+    expect(state.series.candles[0]!.close).toBe(101);
+    expect(state.series.candles).toHaveLength(2);
+    expect(state.viewport.visibleRange.from).toBe(1);
+    expect(stateLine?.values[0]?.value).toBe(101);
+    expect(stateMarker?.marks[0]?.price).toBe(101);
+    expect(stateMarker?.marks[0]?.metadata).toEqual({ source: "fixture" });
+    expect(state.drawings[0]!.anchors[0]!.price).toBe(100);
+    expect(state.drawings[0]!.style!.lineDash).toEqual([4, 2]);
+    expect(state.drawings[0]!.metadata).toEqual({ source: "fixture" });
+  });
+
   it("isolates stored snapshots from returned state mutation", () => {
     const engine = createChartEngine({ series: fixtureDailyCandleSeries });
 
@@ -151,6 +247,86 @@ function createInteractionSnapshot(): InteractionSessionState {
     magnet: { mode: "off" },
     keyboard: { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
   };
+}
+
+function createSeriesSnapshot(): CandleSeries {
+  return {
+    symbol: "SIMON",
+    timeframe: "1d",
+    adjustMode: "none",
+    dataVersion: "event-isolation",
+    candles: [
+      {
+        time: 1,
+        open: 100,
+        high: 102,
+        low: 99,
+        close: 101,
+        volume: 1000,
+        turnover: 101000
+      },
+      {
+        time: 2,
+        open: 101,
+        high: 103,
+        low: 100,
+        close: 102,
+        volume: 1100,
+        turnover: 112200
+      }
+    ]
+  };
+}
+
+function createViewportSnapshot(): ViewportState {
+  return {
+    visibleRange: { from: 1, to: 2 },
+    candleWidth: 8,
+    scrollOffset: 0,
+    priceScaleMode: "linear"
+  };
+}
+
+function createVisualOutputsSnapshot(): IndicatorVisualOutput[] {
+  return [
+    {
+      type: "line",
+      id: "ma",
+      label: "MA",
+      values: [{ time: 1, value: 101 }],
+      color: "#1f77b4",
+      lineWidth: 2
+    },
+    {
+      type: "marker",
+      id: "events",
+      label: "Events",
+      marks: [
+        {
+          id: "m1",
+          time: 1,
+          price: 101,
+          label: "E",
+          metadata: { source: "fixture" }
+        }
+      ]
+    }
+  ];
+}
+
+function createDrawingsSnapshot(): DrawingObject[] {
+  return [
+    {
+      id: "d1",
+      type: "trendLine",
+      anchors: [
+        { time: 1, price: 100 },
+        { time: 2, price: 102 }
+      ],
+      style: { color: "#d62728", lineWidth: 2, lineDash: [4, 2] },
+      metadata: { source: "fixture" }
+    }
+  ];
 }
 
 function createRenderSnapshot(): RenderSchedulerState {

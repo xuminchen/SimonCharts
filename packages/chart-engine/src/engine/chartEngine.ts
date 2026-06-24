@@ -35,13 +35,14 @@ export interface ChartEngine {
 }
 
 export function createChartEngine(options: CreateChartEngineOptions): ChartEngine {
+  const initialSeries = cloneSeries(options.series);
   let state: ChartEngineState = {
-    series: options.series,
+    series: initialSeries,
     seriesType: options.seriesType ?? "candles",
     timeframe: "1d",
-    viewport: options.viewport ?? createDefaultViewport(options.series),
-    visualOutputs: options.visualOutputs ?? [],
-    drawings: options.drawings ?? [],
+    viewport: options.viewport ? cloneViewport(options.viewport) : createDefaultViewport(initialSeries),
+    visualOutputs: options.visualOutputs ? cloneVisualOutputs(options.visualOutputs) : [],
+    drawings: options.drawings ? cloneDrawings(options.drawings) : [],
     settings: { ...defaultChartSettings, ...options.settings },
     invertedPriceScale: false,
     drawingTool: "select"
@@ -60,32 +61,42 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
     getState() {
       return {
         ...state,
-        visualOutputs: [...state.visualOutputs],
-        drawings: [...state.drawings],
+        series: cloneSeries(state.series),
+        viewport: cloneViewport(state.viewport),
+        visualOutputs: cloneVisualOutputs(state.visualOutputs),
+        drawings: cloneDrawings(state.drawings),
         settings: { ...state.settings },
         interaction: state.interaction ? cloneInteractionState(state.interaction) : undefined,
         render: state.render ? cloneRenderState(state.render) : undefined
       };
     },
     setSeries(series) {
-      updateState({ ...state, series });
-      emit({ type: "seriesChanged", series });
+      const nextSeries = cloneSeries(series);
+
+      updateState({ ...state, series: nextSeries });
+      emit({ type: "seriesChanged", series: nextSeries });
     },
     setSeriesType(seriesType) {
       updateState({ ...state, seriesType });
       emit({ type: "seriesTypeChanged", seriesType });
     },
     setViewport(viewport) {
-      updateState({ ...state, viewport });
-      emit({ type: "viewportChanged", viewport });
+      const nextViewport = cloneViewport(viewport);
+
+      updateState({ ...state, viewport: nextViewport });
+      emit({ type: "viewportChanged", viewport: nextViewport });
     },
     setVisualOutputs(outputs) {
-      updateState({ ...state, visualOutputs: outputs });
-      emit({ type: "visualOutputsChanged", outputs });
+      const nextOutputs = cloneVisualOutputs(outputs);
+
+      updateState({ ...state, visualOutputs: nextOutputs });
+      emit({ type: "visualOutputsChanged", outputs: nextOutputs });
     },
     setDrawings(drawings) {
-      updateState({ ...state, drawings });
-      emit({ type: "drawingsChanged", drawings });
+      const nextDrawings = cloneDrawings(drawings);
+
+      updateState({ ...state, drawings: nextDrawings });
+      emit({ type: "drawingsChanged", drawings: nextDrawings });
     },
     setInteractionState(interaction) {
       const nextInteraction = cloneInteractionState(interaction);
@@ -117,7 +128,7 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
 
 function cloneEvent(event: ChartEngineEvent): ChartEngineEvent {
   if (event.type === "seriesChanged") {
-    return { ...event };
+    return { type: event.type, series: cloneSeries(event.series) };
   }
 
   if (event.type === "seriesTypeChanged") {
@@ -125,21 +136,15 @@ function cloneEvent(event: ChartEngineEvent): ChartEngineEvent {
   }
 
   if (event.type === "viewportChanged") {
-    return {
-      type: event.type,
-      viewport: {
-        ...event.viewport,
-        visibleRange: { ...event.viewport.visibleRange }
-      }
-    };
+    return { type: event.type, viewport: cloneViewport(event.viewport) };
   }
 
   if (event.type === "visualOutputsChanged") {
-    return { type: event.type, outputs: [...event.outputs] };
+    return { type: event.type, outputs: cloneVisualOutputs(event.outputs) };
   }
 
   if (event.type === "drawingsChanged") {
-    return { type: event.type, drawings: [...event.drawings] };
+    return { type: event.type, drawings: cloneDrawings(event.drawings) };
   }
 
   if (event.type === "interactionStateChanged") {
@@ -147,6 +152,79 @@ function cloneEvent(event: ChartEngineEvent): ChartEngineEvent {
   }
 
   return { type: event.type, render: cloneRenderState(event.render) };
+}
+
+function cloneSeries(series: CandleSeries): CandleSeries {
+  return {
+    ...series,
+    candles: series.candles.map((candle) => ({ ...candle }))
+  };
+}
+
+function cloneViewport(viewport: ViewportState): ViewportState {
+  return {
+    ...viewport,
+    visibleRange: { ...viewport.visibleRange }
+  };
+}
+
+function cloneVisualOutputs(outputs: IndicatorVisualOutput[]): IndicatorVisualOutput[] {
+  return outputs.map((output) => {
+    if (output.type === "line") {
+      return {
+        ...output,
+        values: output.values.map((point) => ({ ...point }))
+      };
+    }
+
+    if (output.type === "histogram") {
+      return {
+        ...output,
+        values: output.values.map((point) => ({ ...point }))
+      };
+    }
+
+    if (output.type === "band") {
+      return {
+        ...output,
+        upper: output.upper.map((point) => ({ ...point })),
+        lower: output.lower.map((point) => ({ ...point }))
+      };
+    }
+
+    return {
+      ...output,
+      marks: output.marks.map((mark) => {
+        const nextMark = { ...mark };
+        if (mark.metadata) {
+          nextMark.metadata = { ...mark.metadata };
+        }
+        return nextMark;
+      })
+    };
+  });
+}
+
+function cloneDrawings(drawings: DrawingObject[]): DrawingObject[] {
+  return drawings.map((drawing) => {
+    const nextDrawing: DrawingObject = {
+      ...drawing,
+      anchors: drawing.anchors.map((anchor) => ({ ...anchor }))
+    };
+
+    if (drawing.style) {
+      nextDrawing.style = { ...drawing.style };
+      if (drawing.style.lineDash) {
+        nextDrawing.style.lineDash = [...drawing.style.lineDash];
+      }
+    }
+
+    if (drawing.metadata) {
+      nextDrawing.metadata = { ...drawing.metadata };
+    }
+
+    return nextDrawing;
+  });
 }
 
 function cloneInteractionState(interaction: InteractionSessionState): InteractionSessionState {
@@ -199,7 +277,7 @@ function reduceCommand(state: ChartEngineState, command: ChartEngineCommand): Ch
   }
 
   if (command.type === "setViewport") {
-    return { ...nextState, viewport: command.viewport };
+    return { ...nextState, viewport: cloneViewport(command.viewport) };
   }
 
   if (command.type === "toggleGrid") {
