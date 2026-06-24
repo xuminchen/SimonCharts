@@ -51,4 +51,66 @@ describe("render scheduler", () => {
     expect(requested).toBe(false);
     expect(scheduler.getState().pending).toBe(false);
   });
+
+  it("preserves invalidations scheduled during a render pass for a follow-up frame", () => {
+    const calls: string[] = [];
+    const frameCallbacks: (() => void)[] = [];
+    let frameId = 0;
+    let scheduler!: ReturnType<typeof createRenderScheduler>;
+
+    scheduler = createRenderScheduler({
+      requestFrame(callback) {
+        frameCallbacks.push(callback);
+        frameId += 1;
+        return frameId;
+      },
+      renderPass(pass, invalidation) {
+        calls.push(`${pass}:${invalidation.layers.join(",")}`);
+        if (pass === "static" && invalidation.reason === "initial") {
+          scheduler.invalidate({ layers: ["tooltip"], reason: "renderPassInvalidated" });
+        }
+      }
+    });
+
+    scheduler.invalidate({ layers: ["series"], reason: "initial" });
+
+    expect(frameCallbacks).toHaveLength(1);
+    frameCallbacks.shift()?.();
+
+    expect(calls).toEqual(["static:series"]);
+    expect(scheduler.getState().pending).toBe(true);
+    expect(scheduler.getState().dirtyLayers).toEqual(["tooltip"]);
+
+    frameCallbacks.shift()?.();
+
+    expect(calls).toEqual(["static:series", "overlay:tooltip"]);
+    expect(scheduler.getState().pending).toBe(false);
+    expect(scheduler.getState().dirtyLayers).toEqual([]);
+  });
+
+  it("isolates render pass invalidation payloads from callback mutation", () => {
+    const calls: string[] = [];
+    let frameCallback: (() => void) | undefined;
+    const scheduler = createRenderScheduler({
+      requestFrame(callback) {
+        frameCallback = callback;
+        return 1;
+      },
+      renderPass(pass, invalidation) {
+        calls.push(`${pass}:${invalidation.layers.join(",")}`);
+        if (pass === "static") {
+          invalidation.layers.push("tooltip");
+        }
+      }
+    });
+
+    scheduler.invalidate({ layers: ["series", "crosshair"], reason: "mixed" });
+    frameCallback?.();
+
+    expect(calls).toEqual([
+      "static:series,crosshair",
+      "overlay:series,crosshair"
+    ]);
+    expect(scheduler.getState().metrics.dirtyLayerCount).toBe(2);
+  });
 });

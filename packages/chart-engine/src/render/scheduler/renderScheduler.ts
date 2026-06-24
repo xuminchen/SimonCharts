@@ -63,16 +63,24 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
     }
 
     const layers = sortLayers([...dirtyLayers]);
-    const invalidation: RenderInvalidation = {
-      layers,
-      reason: reasons[reasons.length - 1] ?? "unspecified",
-      layoutRequired,
-      timestamp: now()
-    };
+    const reasonSnapshot = [...reasons];
+    const layoutRequiredSnapshot = layoutRequired;
+    const timestamp = now();
     const passes = getPassesForLayers(layers);
+
+    dirtyLayers.clear();
+    reasons.length = 0;
+    layoutRequired = false;
+
     const startedAt = now();
 
     for (const pass of passes) {
+      const invalidation = createRenderInvalidation(
+        layers,
+        reasonSnapshot,
+        layoutRequiredSnapshot,
+        timestamp
+      );
       options.renderPass(pass, invalidation);
       metrics = {
         ...metrics,
@@ -89,13 +97,9 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
       ...metrics,
       lastRenderDuration: duration,
       dirtyLayerCount: layers.length,
-      lastInvalidationReasons: [...reasons],
+      lastInvalidationReasons: reasonSnapshot,
       slowFrameCount: duration > slowFrameThresholdMs ? metrics.slowFrameCount + 1 : metrics.slowFrameCount
     };
-
-    dirtyLayers.clear();
-    reasons.length = 0;
-    layoutRequired = false;
   }
 
   return {
@@ -145,6 +149,20 @@ function getPassesForLayers(layers: RenderLayerId[]): RenderPass[] {
 
 function sortLayers(layers: RenderLayerId[]): RenderLayerId[] {
   return [...layers].sort((left, right) => renderLayerOrder.indexOf(left) - renderLayerOrder.indexOf(right));
+}
+
+function createRenderInvalidation(
+  layers: RenderLayerId[],
+  reasons: string[],
+  layoutRequired: boolean,
+  timestamp: number
+): RenderInvalidation {
+  return {
+    layers: [...layers],
+    reason: reasons[reasons.length - 1] ?? "unspecified",
+    layoutRequired,
+    timestamp
+  };
 }
 
 function cloneMetrics(metrics: RenderMetrics): RenderMetrics {

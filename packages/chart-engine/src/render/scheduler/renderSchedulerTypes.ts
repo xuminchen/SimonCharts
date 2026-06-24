@@ -49,16 +49,20 @@ export interface RenderScheduler {
   destroy(): void;
 }
 
-export const defaultRenderPassOrder: RenderPass[] = ["static", "dynamic", "overlay"];
+export const defaultRenderPassOrder: readonly RenderPass[] = Object.freeze([
+  "static",
+  "dynamic",
+  "overlay"
+]);
 
-export const renderLayerPasses: Record<RenderLayerId, RenderPass[]> = {
-  grid: ["static"],
-  axis: ["static"],
-  series: ["static"],
-  volume: ["static"],
-  indicators: ["static"],
-  visuals: ["static"],
-  drawings: ["static", "dynamic"],
-  crosshair: ["overlay"],
-  tooltip: ["overlay"]
-};
+export const renderLayerPasses: Readonly<Record<RenderLayerId, readonly RenderPass[]>> = Object.freeze({
+  grid: Object.freeze(["static"] as const),
+  axis: Object.freeze(["static"] as const),
+  series: Object.freeze(["static"] as const),
+  volume: Object.freeze(["static"] as const),
+  indicators: Object.freeze(["static"] as const),
+  visuals: Object.freeze(["static"] as const),
+  drawings: Object.freeze(["static", "dynamic"] as const),
+  crosshair: Object.freeze(["overlay"] as const),
+  tooltip: Object.freeze(["overlay"] as const)
+});
