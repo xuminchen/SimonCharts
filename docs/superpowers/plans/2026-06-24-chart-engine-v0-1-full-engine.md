@@ -2171,6 +2171,10 @@ export const playgroundVisualOutputs: IndicatorVisualOutput[] = [
 ];
 ```
 
+Implementation note: the committed fixture uses the same daily timestamp helper as
+`fixtureDailyCandleSeries` and sets neutral `panelId` values so line, band, and marker
+route to the main panel while histogram routes to the sub panel.
+
 - [x] **Step 4: Wire panels and visual outputs into playground render state**
 
 Modify `main.ts` to:

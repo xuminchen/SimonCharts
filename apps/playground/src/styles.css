@@ -88,3 +88,9 @@ canvas {
 .reset-view:hover {
   background: #f6f8fa;
 }
+
+@media (max-width: 520px) {
+  .status-item {
+    display: none;
+  }
+}

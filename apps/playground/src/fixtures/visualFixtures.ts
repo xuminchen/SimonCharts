@@ -30,7 +30,7 @@ export const playgroundVisualOutputs: IndicatorVisualOutput[] = [
     id: "playground-main-band",
     label: "Main Band",
     panelId: "main",
-    fill: "rgba(37, 99, 235, 0.14)",
+    fill: "rgba(245, 158, 11, 0.32)",
     upper: [
       { time: timeAt(72), value: 119 },
       { time: timeAt(80), value: 121 },

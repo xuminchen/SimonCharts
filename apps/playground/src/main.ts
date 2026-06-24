@@ -171,7 +171,7 @@ function renderStatic(): void {
   context.fillStyle = defaultChartTheme.colors.background;
   context.fillRect(0, 0, layout.width, layout.height);
 
-  renderStaticChart(createRenderContext(context), staticLayers);
+  renderStaticChart(createRenderContext(context, getMainPanelLayout()), staticLayers);
 }
 
 function renderOverlayCanvas(): void {
@@ -191,7 +191,10 @@ function renderOverlayCanvas(): void {
   renderOverlay(createRenderContext(context));
 }
 
-function createRenderContext(context: CanvasRenderingContext2D): LayerRenderContext {
+function createRenderContext(
+  context: CanvasRenderingContext2D,
+  renderLayout: ChartLayout = layout as ChartLayout
+): LayerRenderContext {
   if (!layout || !viewport) {
     throw new Error("Chart layout is not ready");
   }
@@ -202,13 +205,31 @@ function createRenderContext(context: CanvasRenderingContext2D): LayerRenderCont
       series: fixtureDailyCandleSeries,
       viewport,
       theme: defaultChartTheme,
-      layout,
+      layout: renderLayout,
       movingAverages,
       crosshair,
       seriesType: playgroundState.seriesType,
       panels,
       visualOutputs: playgroundVisualOutputs
     }
+  };
+}
+
+function getMainPanelLayout(): ChartLayout {
+  if (!layout) {
+    throw new Error("Chart layout is not ready");
+  }
+
+  const mainPanel = panels.find((panel) => panel.kind === "main") ?? panels[0];
+
+  if (!mainPanel) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    plotArea: mainPanel.plotArea,
+    priceAxisArea: mainPanel.priceAxisArea
   };
 }
 
