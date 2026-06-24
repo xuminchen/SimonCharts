@@ -88,12 +88,16 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
       emit({ type: "drawingsChanged", drawings });
     },
     setInteractionState(interaction) {
-      updateState({ ...state, interaction });
-      emit({ type: "interactionStateChanged", interaction });
+      const nextInteraction = cloneInteractionState(interaction);
+
+      updateState({ ...state, interaction: nextInteraction });
+      emit({ type: "interactionStateChanged", interaction: cloneInteractionState(nextInteraction) });
     },
     setRenderState(render) {
-      updateState({ ...state, render });
-      emit({ type: "renderStateChanged", render });
+      const nextRender = cloneRenderState(render);
+
+      updateState({ ...state, render: nextRender });
+      emit({ type: "renderStateChanged", render: cloneRenderState(nextRender) });
     },
     dispatch(command) {
       updateState(reduceCommand(state, command));
