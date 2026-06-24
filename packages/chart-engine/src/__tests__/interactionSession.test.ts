@@ -263,8 +263,44 @@ describe("interaction session contracts", () => {
     const session = createInteractionSession();
 
     session.handleInput({ type: "pointerMove", point: { x: 1, y: 1 } });
+    session.handleInput({
+      type: "crosshair",
+      crosshair: {
+        index: 2,
+        time: 200,
+        price: 20,
+        open: 18,
+        high: 22,
+        low: 17,
+        close: 21,
+        volume: 2000,
+        turnover: 42000
+      }
+    });
+    session.handleInput({
+      type: "tooltip",
+      tooltip: { visible: true, sourceType: "drawing", rows: [{ label: "Line", value: "21" }] }
+    });
+    session.handleInput({
+      type: "magnet",
+      magnet: {
+        mode: "drawingAnchor",
+        target: {
+          id: "anchor-2",
+          mode: "drawingAnchor",
+          point: { x: 10, y: 12, index: 2, price: 21 },
+          distance: 1
+        }
+      }
+    });
+
+    expect(session.getState().cursor).toBe("crosshair");
+    expect(session.getState().crosshair.visible).toBe(true);
+    expect(session.getState().tooltip.visible).toBe(true);
+    expect(session.getState().magnet.target?.id).toBe("anchor-2");
+
     session.handleInput({ type: "blur" });
 
-    expect(session.getState().pointer.mode).toBe("idle");
+    expect(session.getState()).toStrictEqual(neutralIdleState);
   });
 });
