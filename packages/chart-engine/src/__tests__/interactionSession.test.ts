@@ -45,7 +45,9 @@ describe("interaction session contracts", () => {
     const events: InteractionSessionEvent[] = [];
     const session = createInteractionSession({ onEvent: (event) => events.push(event) });
 
+    const before = session.getState();
     session.handleInput({ type: "pointerUp", point: { x: 1, y: 1 } });
+    expect(session.getState()).toStrictEqual(before);
     expect(events).toEqual([]);
 
     session.handleInput({ type: "pointerDown", point: { x: 10, y: 12 } });
@@ -100,9 +102,32 @@ describe("interaction session contracts", () => {
       }
     });
 
-    expect(session.getState().crosshair.visible).toBe(true);
-    expect(session.getState().tooltip.rows).toEqual([{ label: "Close", value: "13" }]);
-    expect(session.getState().magnet.target?.id).toBe("candle-3");
+    expect(session.getState().crosshair).toStrictEqual({
+      visible: true,
+      index: 3,
+      time: 100,
+      price: 12,
+      open: 10,
+      high: 14,
+      low: 9,
+      close: 13,
+      volume: 1000,
+      turnover: 13000
+    });
+    expect(session.getState().tooltip).toStrictEqual({
+      visible: true,
+      sourceType: "series",
+      rows: [{ label: "Close", value: "13" }]
+    });
+    expect(session.getState().magnet).toStrictEqual({
+      mode: "ohlc",
+      target: {
+        id: "candle-3",
+        mode: "ohlc",
+        point: { x: 30, y: 40, index: 3, price: 13 },
+        distance: 2
+      }
+    });
   });
 
   it("maps keyboard commands to neutral zoom events", () => {
@@ -207,13 +232,32 @@ describe("interaction session contracts", () => {
   it("returns cloned state snapshots", () => {
     const session = createInteractionSession();
     session.handleInput({ type: "pointerMove", point: { x: 10, y: 20 } });
+    session.handleInput({
+      type: "tooltip",
+      tooltip: { visible: true, sourceType: "series", rows: [{ label: "Close", value: "20" }] }
+    });
+    session.handleInput({
+      type: "magnet",
+      magnet: {
+        mode: "ohlc",
+        target: { id: "candle-2", mode: "ohlc", point: { x: 10, y: 20 }, distance: 2 }
+      }
+    });
 
     const snapshot = session.getState();
     if (snapshot.pointer.point) {
       snapshot.pointer.point.x = 999;
     }
+    if (snapshot.tooltip.rows) {
+      snapshot.tooltip.rows[0].value = "mutated";
+    }
+    if (snapshot.magnet.target) {
+      snapshot.magnet.target.point.x = 999;
+    }
 
     expect(session.getState().pointer.point).toEqual({ x: 10, y: 20 });
+    expect(session.getState().tooltip.rows).toEqual([{ label: "Close", value: "20" }]);
+    expect(session.getState().magnet.target?.point).toEqual({ x: 10, y: 20 });
   });
 
   it("emits deterministic cleanup events on leave", () => {
