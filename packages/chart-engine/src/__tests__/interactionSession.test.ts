@@ -6,7 +6,7 @@ describe("interaction session contracts", () => {
   it("starts with neutral idle state", () => {
     const session = createInteractionSession();
 
-    expect(session.getState()).toEqual({
+    expect(session.getState()).toStrictEqual({
       pointer: { mode: "idle" },
       crosshair: { visible: false },
       tooltip: { visible: false },

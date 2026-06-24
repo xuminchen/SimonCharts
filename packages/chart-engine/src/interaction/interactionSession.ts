@@ -116,10 +116,7 @@ export function createInteractionSession(
       }
 
       if (input.type === "tooltip") {
-        state = {
-          ...state,
-          tooltip: { ...input.tooltip, rows: input.tooltip.rows?.map((row) => ({ ...row })) }
-        };
+        state = { ...state, tooltip: cloneTooltip(input.tooltip) };
         emit({ type: "tooltipChanged", tooltip: state.tooltip });
         return;
       }
@@ -185,16 +182,9 @@ function toKeyboardCommand(
 
 function cloneState(state: InteractionSessionState): InteractionSessionState {
   return {
-    pointer: {
-      ...state.pointer,
-      point: state.pointer.point ? clonePoint(state.pointer.point) : undefined,
-      startPoint: state.pointer.startPoint ? clonePoint(state.pointer.startPoint) : undefined
-    },
+    pointer: clonePointer(state.pointer),
     crosshair: { ...state.crosshair },
-    tooltip: {
-      ...state.tooltip,
-      rows: state.tooltip.rows?.map((row) => ({ ...row }))
-    },
+    tooltip: cloneTooltip(state.tooltip),
     cursor: state.cursor,
     magnet: state.magnet.target
       ? {
@@ -204,6 +194,32 @@ function cloneState(state: InteractionSessionState): InteractionSessionState {
       : { mode: state.magnet.mode },
     keyboard: { ...state.keyboard }
   };
+}
+
+function clonePointer(
+  pointer: InteractionSessionState["pointer"]
+): InteractionSessionState["pointer"] {
+  const next: InteractionSessionState["pointer"] = { mode: pointer.mode };
+  if (pointer.point) {
+    next.point = clonePoint(pointer.point);
+  }
+  if (pointer.startPoint) {
+    next.startPoint = clonePoint(pointer.startPoint);
+  }
+  return next;
+}
+
+function cloneTooltip(
+  tooltip: InteractionSessionState["tooltip"]
+): InteractionSessionState["tooltip"] {
+  const next: InteractionSessionState["tooltip"] = { visible: tooltip.visible };
+  if (tooltip.sourceType) {
+    next.sourceType = tooltip.sourceType;
+  }
+  if (tooltip.rows) {
+    next.rows = tooltip.rows.map((row) => ({ ...row }));
+  }
+  return next;
 }
 
 function clonePoint(point: InteractionPoint): InteractionPoint {
