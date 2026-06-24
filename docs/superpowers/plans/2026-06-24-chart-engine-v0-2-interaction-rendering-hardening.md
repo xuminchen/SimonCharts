@@ -950,7 +950,7 @@ git commit -m "feat: add render scheduler"
 - Modify: `packages/chart-engine/src/__tests__/renderScheduler.test.ts`
 - Modify: `packages/chart-engine/src/render/scheduler/renderScheduler.ts`
 
-- [ ] **Step 1: Add metrics tests**
+- [x] **Step 1: Add metrics tests**
 
 Append to `packages/chart-engine/src/__tests__/renderScheduler.test.ts`:
 
@@ -1002,7 +1002,7 @@ it("cancels pending frame on destroy", () => {
 });
 ```
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run:
 
@@ -1012,7 +1012,7 @@ npm run test -- packages/chart-engine/src/__tests__/renderScheduler.test.ts
 
 Expected: PASS. If `pending` stays true after destroy, update `destroy()` to clear `frameId`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -1024,7 +1024,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/chart-engine/src/__tests__/renderScheduler.test.ts packages/chart-engine/src/render/scheduler/renderScheduler.ts
