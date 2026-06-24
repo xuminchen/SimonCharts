@@ -9,23 +9,6 @@ function timeAt(index: number): number {
 
 export const playgroundVisualOutputs: IndicatorVisualOutput[] = [
   {
-    type: "line",
-    id: "playground-main-line",
-    label: "Main Line",
-    panelId: "main",
-    color: "#0891b2",
-    lineWidth: 2,
-    values: [
-      { time: timeAt(72), value: 116 },
-      { time: timeAt(80), value: 118 },
-      { time: timeAt(88), value: 113 },
-      { time: timeAt(96), value: 121 },
-      { time: timeAt(104), value: 117 },
-      { time: timeAt(112), value: 123 },
-      { time: timeAt(118), value: 119 }
-    ]
-  },
-  {
     type: "band",
     id: "playground-main-band",
     label: "Main Band",
@@ -48,6 +31,23 @@ export const playgroundVisualOutputs: IndicatorVisualOutput[] = [
       { time: timeAt(104), value: 112 },
       { time: timeAt(112), value: 118 },
       { time: timeAt(118), value: 114 }
+    ]
+  },
+  {
+    type: "line",
+    id: "playground-main-line",
+    label: "Main Line",
+    panelId: "main",
+    color: "#00c8d7",
+    lineWidth: 2,
+    values: [
+      { time: timeAt(72), value: 116 },
+      { time: timeAt(80), value: 118 },
+      { time: timeAt(88), value: 113 },
+      { time: timeAt(96), value: 121 },
+      { time: timeAt(104), value: 117 },
+      { time: timeAt(112), value: 123 },
+      { time: timeAt(118), value: 119 }
     ]
   },
   {

@@ -45,8 +45,8 @@ test("renders main and sub panel visual outputs", async ({ page }) => {
         minYRatio: 0,
         maxYRatio: 0.72,
         red: [0, 20],
-        green: [135, 160],
-        blue: [165, 190],
+        green: [180, 220],
+        blue: [195, 230],
         alpha: [201, 255]
       })
     )
