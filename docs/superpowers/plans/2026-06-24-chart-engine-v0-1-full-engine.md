@@ -2454,7 +2454,7 @@ git commit -m "feat: define neutral drawing model"
 - Test: `packages/chart-engine/src/__tests__/drawingModel.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Add failing drawing geometry tests**
+- [x] **Step 1: Add failing drawing geometry tests**
 
 Append to `drawingModel.test.ts`:
 
@@ -2494,7 +2494,7 @@ it("registers drawing renderers by type", () => {
 });
 ```
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -2504,7 +2504,7 @@ npm run test -- packages/chart-engine/src/__tests__/drawingModel.test.ts
 
 Expected: FAIL because geometry, hit-test, and registry functions are missing.
 
-- [ ] **Step 3: Implement geometry and hit tests**
+- [x] **Step 3: Implement geometry and hit tests**
 
 Create `drawingGeometry.ts` and `drawingHitTest.ts`:
 
@@ -2568,7 +2568,7 @@ export function hitTestDrawingAnchor(
 }
 ```
 
-- [ ] **Step 4: Implement drawing renderer registry**
+- [x] **Step 4: Implement drawing renderer registry**
 
 Create `packages/chart-engine/src/drawing/drawingRegistry.ts`:
 
@@ -2620,7 +2620,7 @@ export function createDrawingRendererRegistry(): DrawingRendererRegistry {
 }
 ```
 
-- [ ] **Step 5: Export drawing helpers**
+- [x] **Step 5: Export drawing helpers**
 
 Add to `packages/chart-engine/src/index.ts`:
 
@@ -2630,7 +2630,7 @@ export * from "./drawing/drawingHitTest";
 export * from "./drawing/drawingRegistry";
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -2642,7 +2642,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/chart-engine/src/drawing packages/chart-engine/src/__tests__/drawingModel.test.ts packages/chart-engine/src/index.ts

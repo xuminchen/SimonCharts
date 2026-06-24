@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDrawingRendererRegistry,
   drawingTypes,
+  getDrawingBounds,
+  hitTestDrawingAnchor,
   parseDrawingObject,
   serializeDrawingObject,
+  type DrawingRenderer,
   type DrawingObject
 } from "../index";
 
@@ -76,5 +80,86 @@ describe("drawing model", () => {
         anchors: "not-array"
       })
     ).toThrow("Drawing object anchors must be an array");
+  });
+});
+
+describe("drawing geometry and registry", () => {
+  it("computes drawing bounds from finite xy anchors", () => {
+    expect(
+      getDrawingBounds({
+        id: "d1",
+        type: "rectangle",
+        anchors: [
+          { x: 10, y: 20 },
+          { x: 30, y: 40 },
+          { time: 1, price: 12 }
+        ]
+      })
+    ).toEqual({ x: 10, y: 20, width: 20, height: 20 });
+  });
+
+  it("returns undefined bounds without xy anchors", () => {
+    expect(
+      getDrawingBounds({
+        id: "d1",
+        type: "trendLine",
+        anchors: [{ time: 1, price: 10 }]
+      })
+    ).toBeUndefined();
+  });
+
+  it("hit-tests drawing anchors", () => {
+    const hit = hitTestDrawingAnchor(
+      {
+        id: "d1",
+        type: "trendLine",
+        anchors: [
+          { x: 10, y: 20 },
+          { x: 30, y: 40 }
+        ]
+      },
+      { x: 11, y: 21 },
+      4
+    );
+
+    expect(hit).toEqual({ drawingId: "d1", anchorIndex: 0, distance: expect.any(Number) });
+  });
+
+  it("returns undefined when drawing anchors miss the hit radius", () => {
+    expect(
+      hitTestDrawingAnchor(
+        {
+          id: "d1",
+          type: "trendLine",
+          anchors: [{ x: 10, y: 20 }]
+        },
+        { x: 20, y: 30 },
+        2
+      )
+    ).toBeUndefined();
+  });
+
+  it("registers drawing renderers by type", () => {
+    const registry = createDrawingRendererRegistry();
+    const renderer: DrawingRenderer = {
+      type: "trendLine",
+      render() {},
+      hitTest() {
+        return undefined;
+      }
+    };
+
+    registry.register(renderer);
+
+    expect(registry.require("trendLine")).toBe(renderer);
+    expect(registry.list()).toEqual([renderer]);
+  });
+
+  it("throws a clear error when a drawing renderer is missing", () => {
+    const registry = createDrawingRendererRegistry();
+
+    expect(() => registry.require("trendLine")).toThrow(
+      "Drawing renderer is not registered: trendLine"
+    );
   });
 });

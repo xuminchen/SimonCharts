@@ -1,4 +1,7 @@
 export * from "./fixtures/dailyCandles";
+export * from "./drawing/drawingGeometry";
+export * from "./drawing/drawingHitTest";
+export * from "./drawing/drawingRegistry";
 export * from "./drawing/drawingSerialization";
 export * from "./drawing/drawingTypes";
 export * from "./indicators/movingAverage";
