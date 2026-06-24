@@ -137,7 +137,8 @@ canvas {
 
 @media (max-width: 520px) {
   .top-controls {
-    right: 12px;
+    right: auto;
+    max-width: calc(100vw - 120px);
     flex-wrap: wrap;
   }
 
@@ -146,6 +147,7 @@ canvas {
   }
 
   .drawing-controls {
+    top: 104px;
     right: 12px;
     flex-wrap: wrap;
   }

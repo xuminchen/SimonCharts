@@ -3705,7 +3705,7 @@ git commit -m "docs: add chart engine v0.1 documentation"
 
 - Modify only if final verification exposes a defect.
 
-- [ ] **Step 1: Run full unit tests**
+- [x] **Step 1: Run full unit tests**
 
 Run:
 
@@ -3715,7 +3715,7 @@ npm run test
 
 Expected: all Vitest suites pass.
 
-- [ ] **Step 2: Run typecheck**
+- [x] **Step 2: Run typecheck**
 
 Run:
 
@@ -3725,7 +3725,7 @@ npm run typecheck
 
 Expected: TypeScript build passes for engine and playground.
 
-- [ ] **Step 3: Run boundary guard**
+- [x] **Step 3: Run boundary guard**
 
 Run:
 
@@ -3735,7 +3735,7 @@ npm run guard:engine-boundary
 
 Expected: engine boundary guard passes.
 
-- [ ] **Step 4: Run build**
+- [x] **Step 4: Run build**
 
 Run:
 
@@ -3745,7 +3745,7 @@ npm run build
 
 Expected: engine and playground build pass.
 
-- [ ] **Step 5: Run full E2E**
+- [x] **Step 5: Run full E2E**
 
 Run:
 
@@ -3755,7 +3755,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Expected: all Playwright tests pass.
 
-- [ ] **Step 6: Clean generated artifacts**
+- [x] **Step 6: Clean generated artifacts**
 
 Run:
 
@@ -3765,7 +3765,7 @@ rm -rf apps/playground/dist test-results playwright-report
 
 Expected: generated build and test artifacts are removed.
 
-- [ ] **Step 7: Check git status**
+- [x] **Step 7: Check git status**
 
 Run:
 
@@ -3775,7 +3775,7 @@ git status --short
 
 Expected: no generated artifacts are pending. Source changes from v0.1 tasks are committed.
 
-- [ ] **Step 8: Commit final fixes if any were needed**
+- [x] **Step 8: Commit final fixes if any were needed**
 
 If final verification required source changes:
 
@@ -3790,19 +3790,19 @@ If no source changes were required, do not create an empty commit.
 
 ## Final Acceptance Checklist
 
-- [ ] All 17 chart types render and switch in playground.
-- [ ] Direct and synthetic chart types have autoscale, hit-test, and tooltip support.
-- [ ] Synthetic chart types preserve source candle traceability.
-- [ ] `line`, `histogram`, `band`, and `marker` visual outputs render through registry.
-- [ ] Main and sub panels share x viewport and keep independent y scales.
-- [ ] Drawing objects serialize as neutral JSON.
-- [ ] All v0.1 drawing types render from neutral JSON.
-- [ ] Drawing editor can create, select, move, edit anchors, delete, lock, hide, undo, and redo.
-- [ ] Command/settings contracts support chart type, grid, scale, theme, drawing tool, delete, lock, hide, undo, redo.
-- [ ] Playground demonstrates v0.1 engine behavior without becoming a business product.
-- [ ] Documentation covers public API, chart types, visual outputs, panels, drawing editor, actions, host integration, boundary rules, and testing.
-- [ ] `npm run test` passes.
-- [ ] `npm run typecheck` passes.
-- [ ] `npm run build` passes.
-- [ ] `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passes.
-- [ ] `npm run guard:engine-boundary` passes.
+- [x] All 17 chart types render and switch in playground.
+- [x] Direct and synthetic chart types have autoscale, hit-test, and tooltip support.
+- [x] Synthetic chart types preserve source candle traceability.
+- [x] `line`, `histogram`, `band`, and `marker` visual outputs render through registry.
+- [x] Main and sub panels share x viewport and keep independent y scales.
+- [x] Drawing objects serialize as neutral JSON.
+- [x] All v0.1 drawing types render from neutral JSON.
+- [x] Drawing editor can create, select, move, edit anchors, delete, lock, hide, undo, and redo.
+- [x] Command/settings contracts support chart type, grid, scale, theme, drawing tool, delete, lock, hide, undo, redo.
+- [x] Playground demonstrates v0.1 engine behavior without becoming a business product.
+- [x] Documentation covers public API, chart types, visual outputs, panels, drawing editor, actions, host integration, boundary rules, and testing.
+- [x] `npm run test` passes.
+- [x] `npm run typecheck` passes.
+- [x] `npm run build` passes.
+- [x] `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passes.
+- [x] `npm run guard:engine-boundary` passes.
