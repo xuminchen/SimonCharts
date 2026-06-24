@@ -8,12 +8,14 @@ import {
   createInitialViewport,
   createBandVisualRenderer,
   createHistogramVisualRenderer,
+  createInteractionSession,
   createLineVisualRenderer,
   createMarkerVisualRenderer,
   createDefaultDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingLayer,
   createPanelLayout,
+  createRenderScheduler,
   createStaticLayers,
   createVisualLayer,
   createVisualRendererRegistry,
@@ -30,9 +32,11 @@ import type {
   ChartTheme,
   InteractionEngine,
   InteractionEvent,
+  InteractionSessionEvent,
   LayerRenderContext,
   PanelArea,
   PanelDefinition,
+  RenderInvalidation,
   DrawingEditorTool,
   DrawingObject,
   SeriesType,
@@ -78,6 +82,13 @@ const scaleState = document.createElement("span");
 const themeModeLabel = document.createElement("label");
 const themeModeSelect = document.createElement("select");
 const themeState = document.createElement("span");
+const cursorState = document.createElement("span");
+const magnetState = document.createElement("span");
+const lastKeyboardCommand = document.createElement("span");
+const totalRenderCount = document.createElement("span");
+const staticRenderCount = document.createElement("span");
+const overlayRenderCount = document.createElement("span");
+const lastInvalidationReason = document.createElement("span");
 const canvas = document.createElement("canvas");
 const overlayCanvas = document.createElement("canvas");
 const resetButton = document.createElement("button");
@@ -114,6 +125,24 @@ for (const mode of ["light", "dark"] as const) {
 }
 themeState.className = "status-item";
 themeState.dataset.testid = "theme-state";
+for (const element of [
+  cursorState,
+  magnetState,
+  lastKeyboardCommand,
+  totalRenderCount,
+  staticRenderCount,
+  overlayRenderCount,
+  lastInvalidationReason
+]) {
+  element.className = "status-item diagnostics-item";
+}
+cursorState.dataset.testid = "cursor-state";
+magnetState.dataset.testid = "magnet-state";
+lastKeyboardCommand.dataset.testid = "last-keyboard-command";
+totalRenderCount.dataset.testid = "total-render-count";
+staticRenderCount.dataset.testid = "static-render-count";
+overlayRenderCount.dataset.testid = "overlay-render-count";
+lastInvalidationReason.dataset.testid = "last-invalidation-reason";
 canvas.dataset.testid = "chart-canvas";
 canvas.setAttribute("aria-label", "SimonCharts static chart");
 overlayCanvas.dataset.testid = "chart-overlay";
@@ -143,7 +172,14 @@ topControls.append(
   themeModeLabel,
   themeState,
   panelCount,
-  visualOutputCount
+  visualOutputCount,
+  cursorState,
+  magnetState,
+  lastKeyboardCommand,
+  totalRenderCount,
+  staticRenderCount,
+  overlayRenderCount,
+  lastInvalidationReason
 );
 const playgroundPanelDefinitions: PanelDefinition[] = [
   { id: "main", kind: "main", label: "Main", heightRatio: 3 },
@@ -219,6 +255,31 @@ let layout: ChartLayout | undefined;
 let panels: PanelArea[] = [];
 let interactionEngine: InteractionEngine | undefined;
 let drawingDragStart: { x: number; y: number } | undefined;
+let lastKeyboardCommandText = "none";
+
+const interactionSession = createInteractionSession({
+  onEvent(event) {
+    handleInteractionSessionEvent(event);
+  }
+});
+
+const renderScheduler = createRenderScheduler({
+  requestFrame(callback) {
+    return window.requestAnimationFrame(callback);
+  },
+  cancelFrame(frameId) {
+    window.cancelAnimationFrame(frameId);
+  },
+  renderPass(pass, invalidation) {
+    if (pass === "static" || pass === "dynamic") {
+      renderStatic();
+    }
+    if (pass === "overlay") {
+      renderOverlayCanvas();
+    }
+    queueMicrotask(() => syncRenderDiagnostics(invalidation));
+  }
+});
 
 function syncLayout(): void {
   const width = Math.max(1, Math.floor(app.clientWidth));
@@ -373,18 +434,81 @@ function getMainPanelLayout(): ChartLayout {
   };
 }
 
+function invalidateRender(invalidation: RenderInvalidation): void {
+  renderScheduler.invalidate(invalidation);
+  syncRenderDiagnostics(invalidation);
+}
+
+function handleInteractionSessionEvent(event: InteractionSessionEvent): void {
+  window.__SIMON_CHART_EVENTS__?.push(event);
+
+  if (event.type === "keyboardCommand") {
+    lastKeyboardCommandText = event.command;
+    chartEngine.dispatch({ type: event.command });
+    invalidateRender({
+      layers: ["axis", "series", "crosshair"],
+      reason: "keyboardCommand",
+      layoutRequired: true
+    });
+  }
+
+  if (
+    event.type === "pointerMoved" ||
+    event.type === "pointerDragged" ||
+    event.type === "pointerDragStarted" ||
+    event.type === "pointerDragEnded" ||
+    event.type === "wheelZoomed" ||
+    event.type === "crosshairChanged" ||
+    event.type === "tooltipChanged" ||
+    event.type === "cursorChanged" ||
+    event.type === "magnetTargetChanged"
+  ) {
+    invalidateRender({ layers: ["crosshair", "tooltip"], reason: event.type });
+  }
+
+  chartEngine.setInteractionState(interactionSession.getState());
+  syncInteractionDiagnostics();
+}
+
+function syncInteractionDiagnostics(): void {
+  const state = interactionSession.getState();
+
+  cursorState.textContent = state.cursor;
+  magnetState.textContent = state.magnet.mode;
+  lastKeyboardCommand.textContent = lastKeyboardCommandText;
+}
+
+function syncRenderDiagnostics(invalidation?: RenderInvalidation): void {
+  const schedulerState = renderScheduler.getState();
+  const metrics = schedulerState.metrics;
+  const lastReason =
+    invalidation?.reason ??
+    metrics.lastInvalidationReasons[metrics.lastInvalidationReasons.length - 1] ??
+    "none";
+
+  totalRenderCount.textContent = String(metrics.totalRenderCount);
+  staticRenderCount.textContent = String(metrics.renderCountByPass.static);
+  overlayRenderCount.textContent = String(metrics.renderCountByPass.overlay);
+  lastInvalidationReason.textContent = lastReason;
+  chartEngine.setRenderState(schedulerState);
+}
+
 function handleInteractionEvent(event: InteractionEvent): void {
   window.__SIMON_CHART_EVENTS__?.push(event);
 
   if (event.type === "viewportChanged") {
     viewport = event.viewport;
-    renderStatic();
-    renderOverlayCanvas();
+    chartEngine.setViewport(viewport);
+    invalidateRender({
+      layers: ["axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair"],
+      reason: "viewportChanged",
+      layoutRequired: true
+    });
     return;
   }
 
   crosshair = event.crosshair;
-  renderOverlayCanvas();
+  interactionSession.handleInput({ type: "crosshair", crosshair });
 }
 
 function getCanvasPoint(event: PointerEvent): { x: number; y: number } {
@@ -396,11 +520,12 @@ function getCanvasPoint(event: PointerEvent): { x: number; y: number } {
   };
 }
 
-function getWheelPoint(event: WheelEvent): { x: number } {
+function getWheelPoint(event: WheelEvent): { x: number; y: number } {
   const rect = overlayCanvas.getBoundingClientRect();
 
   return {
-    x: event.clientX - rect.left
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
   };
 }
 
@@ -408,8 +533,14 @@ overlayCanvas.addEventListener(
   "wheel",
   (event) => {
     event.preventDefault();
+    const point = getWheelPoint(event);
+    interactionSession.handleInput({
+      type: "wheel",
+      point,
+      deltaY: event.deltaY
+    });
     interactionEngine?.handleWheel({
-      ...getWheelPoint(event),
+      x: point.x,
       deltaY: event.deltaY
     });
   },
@@ -418,20 +549,36 @@ overlayCanvas.addEventListener(
 
 overlayCanvas.addEventListener("pointerdown", (event) => {
   overlayCanvas.setPointerCapture(event.pointerId);
+  const point = getCanvasPoint(event);
+  interactionSession.handleInput({
+    type: "pointerDown",
+    point,
+    mode: drawingEditor.getState().activeTool === "select" ? "dragPan" : "drawing"
+  });
   if (handleDrawingPointerDown(event)) {
     return;
   }
-  interactionEngine?.handlePointerDown(getCanvasPoint(event));
+  interactionEngine?.handlePointerDown(point);
 });
 
 overlayCanvas.addEventListener("pointermove", (event) => {
+  const point = getCanvasPoint(event);
+  interactionSession.handleInput(
+    interactionSession.getState().pointer.startPoint
+      ? { type: "pointerDrag", point }
+      : { type: "pointerMove", point }
+  );
   if (handleDrawingPointerMove(event)) {
     return;
   }
-  interactionEngine?.handlePointerMove(getCanvasPoint(event));
+  interactionEngine?.handlePointerMove(point);
 });
 
-function finishPointerInteraction(event: PointerEvent): void {
+function finishPointerInteraction(event: PointerEvent, canceled = false): void {
+  const point = getCanvasPoint(event);
+
+  interactionSession.handleInput(canceled ? { type: "pointerCancel" } : { type: "pointerUp", point });
+
   if (overlayCanvas.hasPointerCapture(event.pointerId)) {
     overlayCanvas.releasePointerCapture(event.pointerId);
   }
@@ -440,12 +587,50 @@ function finishPointerInteraction(event: PointerEvent): void {
     return;
   }
 
-  interactionEngine?.handlePointerUp(getCanvasPoint(event));
+  interactionEngine?.handlePointerUp(point);
 }
 
 overlayCanvas.addEventListener("pointerup", finishPointerInteraction);
-overlayCanvas.addEventListener("pointercancel", finishPointerInteraction);
+overlayCanvas.addEventListener("pointercancel", (event) => finishPointerInteraction(event, true));
 overlayCanvas.addEventListener("lostpointercapture", finishPointerInteraction);
+
+window.addEventListener("keydown", (event) => {
+  if (isEditableTarget(event.target)) {
+    return;
+  }
+
+  interactionSession.handleInput({
+    type: "keyboardDown",
+    key: event.key,
+    altKey: event.altKey,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    shiftKey: event.shiftKey
+  });
+});
+
+window.addEventListener("keyup", (event) => {
+  if (isEditableTarget(event.target)) {
+    return;
+  }
+
+  interactionSession.handleInput({
+    type: "keyboardUp",
+    key: event.key,
+    altKey: event.altKey,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    shiftKey: event.shiftKey
+  });
+});
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
+}
 
 resetButton.addEventListener("click", () => {
   interactionEngine?.resetView();
@@ -551,4 +736,6 @@ function hitTestDrawing(
 
 window.addEventListener("resize", render);
 syncEngineStatus();
+syncInteractionDiagnostics();
+syncRenderDiagnostics();
 requestAnimationFrame(render);

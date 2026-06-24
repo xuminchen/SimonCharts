@@ -116,6 +116,10 @@ canvas {
   white-space: nowrap;
 }
 
+.diagnostics-item {
+  font-variant-numeric: tabular-nums;
+}
+
 .reset-view {
   position: absolute;
   top: 12px;
