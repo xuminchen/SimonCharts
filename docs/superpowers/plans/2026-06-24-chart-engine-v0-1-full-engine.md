@@ -2091,7 +2091,7 @@ git commit -m "feat: render visual outputs"
 - Modify: `apps/playground/src/styles.css`
 - Create: `apps/playground/tests/visual-panels.spec.ts`
 
-- [ ] **Step 1: Write failing E2E for panel and visual outputs**
+- [x] **Step 1: Write failing E2E for panel and visual outputs**
 
 Create `apps/playground/tests/visual-panels.spec.ts`:
 
@@ -2120,7 +2120,7 @@ test("renders main and sub panel visual outputs", async ({ page }) => {
 });
 ```
 
-- [ ] **Step 2: Verify the test fails**
+- [x] **Step 2: Verify the test fails**
 
 Run:
 
@@ -2130,7 +2130,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/visual-panel
 
 Expected: FAIL because panel count and visual output controls are missing.
 
-- [ ] **Step 3: Add visual fixtures**
+- [x] **Step 3: Add visual fixtures**
 
 Create `apps/playground/src/fixtures/visualFixtures.ts`:
 
@@ -2171,7 +2171,7 @@ export const playgroundVisualOutputs: IndicatorVisualOutput[] = [
 ];
 ```
 
-- [ ] **Step 4: Wire panels and visual outputs into playground render state**
+- [x] **Step 4: Wire panels and visual outputs into playground render state**
 
 Modify `main.ts` to:
 
@@ -2181,7 +2181,7 @@ Modify `main.ts` to:
 - render visual layer through registered visual renderers;
 - add `data-testid="panel-count"` and `data-testid="visual-output-count"` labels.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -2193,7 +2193,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/playground/src apps/playground/tests/visual-panels.spec.ts

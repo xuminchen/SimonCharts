@@ -5,6 +5,14 @@ import {
   createChartLayout,
   computeVisibleRange,
   createInitialViewport,
+  createBandVisualRenderer,
+  createHistogramVisualRenderer,
+  createLineVisualRenderer,
+  createMarkerVisualRenderer,
+  createPanelLayout,
+  createStaticLayers,
+  createVisualLayer,
+  createVisualRendererRegistry,
   defaultChartTheme,
   renderOverlay,
   fixtureDailyCandleSeries,
@@ -18,9 +26,12 @@ import type {
   InteractionEngine,
   InteractionEvent,
   LayerRenderContext,
+  PanelArea,
+  PanelDefinition,
   SeriesType,
   ViewportState
 } from "@simoncharts/chart-engine";
+import { playgroundVisualOutputs } from "./fixtures/visualFixtures";
 import { playgroundState } from "./playgroundState";
 import "./styles.css";
 
@@ -45,6 +56,8 @@ const topControls = document.createElement("div");
 const seriesTypeLabel = document.createElement("label");
 const seriesTypeSelect = document.createElement("select");
 const activeSeriesType = document.createElement("span");
+const panelCount = document.createElement("span");
+const visualOutputCount = document.createElement("span");
 const canvas = document.createElement("canvas");
 const overlayCanvas = document.createElement("canvas");
 const resetButton = document.createElement("button");
@@ -56,6 +69,10 @@ seriesTypeSelect.dataset.testid = "series-type";
 activeSeriesType.dataset.testid = "active-series-type";
 activeSeriesType.hidden = true;
 activeSeriesType.textContent = playgroundState.seriesType;
+panelCount.className = "status-item";
+panelCount.dataset.testid = "panel-count";
+visualOutputCount.className = "status-item";
+visualOutputCount.dataset.testid = "visual-output-count";
 canvas.dataset.testid = "chart-canvas";
 canvas.setAttribute("aria-label", "SimonCharts static chart");
 overlayCanvas.dataset.testid = "chart-overlay";
@@ -74,14 +91,25 @@ for (const type of supportedSeriesTypes) {
 }
 
 seriesTypeLabel.append(seriesTypeSelect);
-topControls.append(seriesTypeLabel, activeSeriesType);
+topControls.append(seriesTypeLabel, activeSeriesType, panelCount, visualOutputCount);
 chartSurface.replaceChildren(canvas, overlayCanvas, topControls, resetButton);
 app.replaceChildren(chartSurface);
 
+const playgroundPanelDefinitions: PanelDefinition[] = [
+  { id: "main", kind: "main", label: "Main", heightRatio: 3 },
+  { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
+];
+const visualRendererRegistry = createVisualRendererRegistry();
+visualRendererRegistry.register(createLineVisualRenderer());
+visualRendererRegistry.register(createHistogramVisualRenderer());
+visualRendererRegistry.register(createBandVisualRenderer());
+visualRendererRegistry.register(createMarkerVisualRenderer());
+const staticLayers = [...createStaticLayers(), createVisualLayer(visualRendererRegistry)];
 const movingAverages = Object.values(calculateDefaultMovingAverages(fixtureDailyCandleSeries));
 let viewport: ViewportState | undefined;
 let crosshair: ChartCrosshairState | undefined;
 let layout: ChartLayout | undefined;
+let panels: PanelArea[] = [];
 let interactionEngine: InteractionEngine | undefined;
 
 function syncLayout(): void {
@@ -91,6 +119,15 @@ function syncLayout(): void {
   const layoutChanged = !layout || layout.width !== width || layout.height !== height;
 
   layout = nextLayout;
+  panels = createPanelLayout({
+    width: layout.width,
+    height: layout.height,
+    rightAxisWidth: layout.rightAxisWidth,
+    bottomAxisHeight: layout.bottomAxisHeight,
+    panels: playgroundPanelDefinitions
+  });
+  panelCount.textContent = `${panels.length} panels`;
+  visualOutputCount.textContent = `${playgroundVisualOutputs.length} visuals`;
 
   if (!viewport) {
     viewport = createInitialViewport(fixtureDailyCandleSeries.candles.length, layout.plotArea.width);
@@ -134,7 +171,7 @@ function renderStatic(): void {
   context.fillStyle = defaultChartTheme.colors.background;
   context.fillRect(0, 0, layout.width, layout.height);
 
-  renderStaticChart(createRenderContext(context));
+  renderStaticChart(createRenderContext(context), staticLayers);
 }
 
 function renderOverlayCanvas(): void {
@@ -168,7 +205,9 @@ function createRenderContext(context: CanvasRenderingContext2D): LayerRenderCont
       layout,
       movingAverages,
       crosshair,
-      seriesType: playgroundState.seriesType
+      seriesType: playgroundState.seriesType,
+      panels,
+      visualOutputs: playgroundVisualOutputs
     }
   };
 }
