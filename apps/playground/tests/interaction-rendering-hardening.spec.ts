@@ -167,11 +167,13 @@ test("wheel zoom invalidates chart layers and records render reason", async ({ p
     throw new Error("overlay missing");
   }
 
+  const staticBefore = Number(await page.getByTestId("static-render-count").textContent());
+
   await page.mouse.move(box.x + 180, box.y + 220);
   await page.mouse.wheel(0, -180);
 
-  await expect(page.getByTestId("last-invalidation-reason")).toHaveText(
-    /viewportChanged|wheelZoomed|keyboardCommand/
-  );
-  expect(Number(await page.getByTestId("static-render-count").textContent())).toBeGreaterThan(0);
+  await expect
+    .poll(async () => Number(await page.getByTestId("static-render-count").textContent()))
+    .toBeGreaterThan(staticBefore);
+  await expect(page.getByTestId("last-invalidation-reason")).toHaveText("viewportChanged");
 });
