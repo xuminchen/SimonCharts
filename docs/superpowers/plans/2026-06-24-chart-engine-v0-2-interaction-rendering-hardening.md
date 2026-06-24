@@ -48,7 +48,7 @@ The spec covers interaction hardening and render lifecycle hardening. These are 
 - Test: `packages/chart-engine/src/__tests__/interactionSession.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 Create `packages/chart-engine/src/__tests__/interactionSession.test.ts`:
 
@@ -96,7 +96,7 @@ describe("interaction session contracts", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -106,7 +106,7 @@ npm run test -- packages/chart-engine/src/__tests__/interactionSession.test.ts
 
 Expected: FAIL because `createInteractionSession` is not exported.
 
-- [ ] **Step 3: Add session type contracts**
+- [x] **Step 3: Add session type contracts**
 
 Create `packages/chart-engine/src/interaction/sessionTypes.ts`:
 
@@ -219,7 +219,7 @@ export const defaultInteractionSessionState: InteractionSessionState = {
 };
 ```
 
-- [ ] **Step 4: Add minimal session implementation**
+- [x] **Step 4: Add minimal session implementation**
 
 Create `packages/chart-engine/src/interaction/interactionSession.ts`:
 
@@ -419,7 +419,7 @@ function clonePoint(point: InteractionPoint): InteractionPoint {
 }
 ```
 
-- [ ] **Step 5: Export session API**
+- [x] **Step 5: Export session API**
 
 Modify `packages/chart-engine/src/index.ts`:
 
@@ -428,7 +428,7 @@ export * from "./interaction/interactionSession";
 export * from "./interaction/sessionTypes";
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -440,7 +440,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/chart-engine/src/interaction/sessionTypes.ts packages/chart-engine/src/interaction/interactionSession.ts packages/chart-engine/src/__tests__/interactionSession.test.ts packages/chart-engine/src/index.ts
