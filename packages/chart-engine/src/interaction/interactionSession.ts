@@ -111,27 +111,19 @@ export function createInteractionSession(
           ? { visible: true as const, ...input.crosshair }
           : { visible: false as const };
         state = { ...state, crosshair };
-        emit({ type: "crosshairChanged", crosshair });
+        emit({ type: "crosshairChanged", crosshair: cloneCrosshair(crosshair) });
         return;
       }
 
       if (input.type === "tooltip") {
         state = { ...state, tooltip: cloneTooltip(input.tooltip) };
-        emit({ type: "tooltipChanged", tooltip: state.tooltip });
+        emit({ type: "tooltipChanged", tooltip: cloneTooltip(state.tooltip) });
         return;
       }
 
       if (input.type === "magnet") {
-        state = {
-          ...state,
-          magnet: input.magnet.target
-            ? {
-                ...input.magnet,
-                target: { ...input.magnet.target, point: clonePoint(input.magnet.target.point) }
-              }
-            : { mode: input.magnet.mode }
-        };
-        emit({ type: "magnetTargetChanged", magnet: state.magnet });
+        state = { ...state, magnet: cloneMagnet(input.magnet) };
+        emit({ type: "magnetTargetChanged", magnet: cloneMagnet(state.magnet) });
         return;
       }
 
@@ -144,6 +136,10 @@ export function createInteractionSession(
           cursor: "default",
           magnet: { mode: "off" }
         };
+        emit({ type: "crosshairChanged", crosshair: cloneCrosshair(state.crosshair) });
+        emit({ type: "tooltipChanged", tooltip: cloneTooltip(state.tooltip) });
+        emit({ type: "cursorChanged", cursor: state.cursor });
+        emit({ type: "magnetTargetChanged", magnet: cloneMagnet(state.magnet) });
       }
     },
     getState() {
@@ -183,15 +179,10 @@ function toKeyboardCommand(
 function cloneState(state: InteractionSessionState): InteractionSessionState {
   return {
     pointer: clonePointer(state.pointer),
-    crosshair: { ...state.crosshair },
+    crosshair: cloneCrosshair(state.crosshair),
     tooltip: cloneTooltip(state.tooltip),
     cursor: state.cursor,
-    magnet: state.magnet.target
-      ? {
-          ...state.magnet,
-          target: { ...state.magnet.target, point: clonePoint(state.magnet.target.point) }
-        }
-      : { mode: state.magnet.mode },
+    magnet: cloneMagnet(state.magnet),
     keyboard: { ...state.keyboard }
   };
 }
@@ -220,6 +211,21 @@ function cloneTooltip(
     next.rows = tooltip.rows.map((row) => ({ ...row }));
   }
   return next;
+}
+
+function cloneCrosshair(
+  crosshair: InteractionSessionState["crosshair"]
+): InteractionSessionState["crosshair"] {
+  return crosshair.visible ? { ...crosshair } : { visible: false };
+}
+
+function cloneMagnet(magnet: InteractionSessionState["magnet"]): InteractionSessionState["magnet"] {
+  return magnet.target
+    ? {
+        ...magnet,
+        target: { ...magnet.target, point: clonePoint(magnet.target.point) }
+      }
+    : { mode: magnet.mode };
 }
 
 function clonePoint(point: InteractionPoint): InteractionPoint {

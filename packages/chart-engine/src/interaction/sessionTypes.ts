@@ -9,6 +9,7 @@ export interface InteractionPoint {
 }
 
 export type PointerMode = "idle" | "hover" | "dragPan" | "drawing" | "resize" | "canceled";
+export type ActivePointerMode = Extract<PointerMode, "dragPan" | "drawing" | "resize">;
 export type CursorMode = "default" | "crosshair" | "grab" | "grabbing" | "drawing" | "resize";
 export type MagnetMode = "off" | "ohlc" | "drawingAnchor" | "visualPoint";
 export type TooltipSourceType = "series" | "visual" | "drawing";
@@ -56,7 +57,7 @@ export interface InteractionSessionState {
 
 export type InteractionInput =
   | { type: "pointerMove"; point: InteractionPoint }
-  | { type: "pointerDown"; point: InteractionPoint; mode?: PointerMode }
+  | { type: "pointerDown"; point: InteractionPoint; mode?: ActivePointerMode }
   | { type: "pointerDrag"; point: InteractionPoint }
   | { type: "pointerUp"; point: InteractionPoint }
   | { type: "pointerCancel" }
@@ -105,16 +106,16 @@ export interface InteractionSession {
   destroy(): void;
 }
 
-export const defaultInteractionSessionState: InteractionSessionState = {
-  pointer: { mode: "idle" },
-  crosshair: { visible: false },
-  tooltip: { visible: false },
+export const defaultInteractionSessionState: InteractionSessionState = Object.freeze({
+  pointer: Object.freeze({ mode: "idle" as const }),
+  crosshair: Object.freeze({ visible: false as const }),
+  tooltip: Object.freeze({ visible: false }),
   cursor: "default",
-  magnet: { mode: "off" },
-  keyboard: {
+  magnet: Object.freeze({ mode: "off" as const }),
+  keyboard: Object.freeze({
     altKey: false,
     ctrlKey: false,
     metaKey: false,
     shiftKey: false
-  }
-};
+  })
+});
