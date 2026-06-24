@@ -1,3 +1,4 @@
+export * from "./commands/chartCommands";
 export * from "./commands/history";
 export * from "./fixtures/dailyCandles";
 export * from "./drawing/drawingGeometry";

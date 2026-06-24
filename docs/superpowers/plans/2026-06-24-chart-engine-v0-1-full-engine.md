@@ -3221,7 +3221,7 @@ git commit -m "feat: add playground drawing editor"
 - Test: `packages/chart-engine/src/__tests__/commands.test.ts`
 - Modify: `packages/chart-engine/src/index.ts`
 
-- [ ] **Step 1: Add failing command dispatcher tests**
+- [x] **Step 1: Add failing command dispatcher tests**
 
 Append to `commands.test.ts`:
 
@@ -3247,7 +3247,7 @@ it("dispatches neutral chart commands", () => {
 });
 ```
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -3257,7 +3257,7 @@ npm run test -- packages/chart-engine/src/__tests__/commands.test.ts
 
 Expected: FAIL because chart command dispatcher is missing.
 
-- [ ] **Step 3: Implement command dispatcher**
+- [x] **Step 3: Implement command dispatcher**
 
 Create `packages/chart-engine/src/commands/chartCommands.ts`:
 
@@ -3334,7 +3334,7 @@ export function createChartCommandDispatcher(initialState: ChartCommandState): C
 }
 ```
 
-- [ ] **Step 4: Export commands**
+- [x] **Step 4: Export commands**
 
 Add:
 
@@ -3343,7 +3343,7 @@ export * from "./commands/chartCommands";
 export * from "./commands/history";
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -3355,7 +3355,7 @@ npm run guard:engine-boundary
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/chart-engine/src/commands packages/chart-engine/src/__tests__/commands.test.ts packages/chart-engine/src/index.ts
