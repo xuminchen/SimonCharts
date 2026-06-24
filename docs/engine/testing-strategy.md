@@ -36,3 +36,35 @@ npm run guard:engine-boundary
 npm run build
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ```
+
+## v0.2 Interaction And Rendering Verification
+
+`InteractionSession` verification covers neutral idle state, pointer and drag lifecycle, crosshair, tooltip, magnet, keyboard zoom commands, cleanup on leave or blur, and cloned event/state payloads:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/interactionSession.test.ts
+```
+
+`RenderScheduler` verification covers `RenderInvalidation` coalescing, render pass order, pending dirty layers, follow-up invalidations, `RenderMetrics`, slow frame counts, and destroy cleanup:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/renderScheduler.test.ts
+```
+
+`ChartEngine` facade verification covers neutral interaction and render snapshots through `setInteractionState()`, `setRenderState()`, `getState()`, and facade events:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/chartEngine.test.ts
+```
+
+Playground integration verifies that browser input is translated outside the engine, high-frequency pointer movement updates overlay diagnostics without static redraw spam, and keyboard zoom commands use neutral interaction events:
+
+```bash
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/interaction-rendering-hardening.spec.ts
+```
+
+Boundary verification confirms the engine does not import DOM events, host APIs, stores, schemas, routes, TradingReviewSystem, review, strategy, watchlist, AI, or other product business models:
+
+```bash
+npm run guard:engine-boundary
+```
