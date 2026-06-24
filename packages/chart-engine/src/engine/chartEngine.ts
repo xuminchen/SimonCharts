@@ -1,8 +1,10 @@
 import type { ChartEngineCommand } from "../commands/chartCommands";
 import type { DrawingObject } from "../drawing/drawingTypes";
+import type { InteractionSessionState } from "../interaction/sessionTypes";
 import type { CandleSeries } from "../model/market";
 import type { ViewportState } from "../model/runtime";
 import type { IndicatorVisualOutput } from "../model/visual";
+import type { RenderSchedulerState } from "../render/scheduler/renderSchedulerTypes";
 import { defaultChartSettings } from "../settings/chartSettings";
 import type { ChartSettings } from "../settings/chartSettings";
 import type { SeriesType } from "../series/seriesTypes";
@@ -25,6 +27,8 @@ export interface ChartEngine {
   setViewport(viewport: ViewportState): void;
   setVisualOutputs(outputs: IndicatorVisualOutput[]): void;
   setDrawings(drawings: DrawingObject[]): void;
+  setInteractionState(interaction: InteractionSessionState): void;
+  setRenderState(render: RenderSchedulerState): void;
   dispatch(command: ChartEngineCommand): void;
   subscribe(listener: ChartEngineEventListener): () => void;
   destroy(): void;
@@ -58,7 +62,9 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
         ...state,
         visualOutputs: [...state.visualOutputs],
         drawings: [...state.drawings],
-        settings: { ...state.settings }
+        settings: { ...state.settings },
+        interaction: state.interaction ? cloneInteractionState(state.interaction) : undefined,
+        render: state.render ? cloneRenderState(state.render) : undefined
       };
     },
     setSeries(series) {
@@ -81,6 +87,14 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
       updateState({ ...state, drawings });
       emit({ type: "drawingsChanged", drawings });
     },
+    setInteractionState(interaction) {
+      updateState({ ...state, interaction });
+      emit({ type: "interactionStateChanged", interaction });
+    },
+    setRenderState(render) {
+      updateState({ ...state, render });
+      emit({ type: "renderStateChanged", render });
+    },
     dispatch(command) {
       updateState(reduceCommand(state, command));
     },
@@ -93,6 +107,44 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
     },
     destroy() {
       listeners.clear();
+    }
+  };
+}
+
+function cloneInteractionState(interaction: InteractionSessionState): InteractionSessionState {
+  return {
+    ...interaction,
+    pointer: {
+      ...interaction.pointer,
+      point: interaction.pointer.point ? { ...interaction.pointer.point } : undefined,
+      startPoint: interaction.pointer.startPoint ? { ...interaction.pointer.startPoint } : undefined
+    },
+    crosshair: { ...interaction.crosshair } as InteractionSessionState["crosshair"],
+    tooltip: {
+      ...interaction.tooltip,
+      rows: interaction.tooltip.rows?.map((row) => ({ ...row }))
+    },
+    magnet: {
+      ...interaction.magnet,
+      target: interaction.magnet.target
+        ? {
+            ...interaction.magnet.target,
+            point: { ...interaction.magnet.target.point }
+          }
+        : undefined
+    },
+    keyboard: { ...interaction.keyboard }
+  };
+}
+
+function cloneRenderState(render: RenderSchedulerState): RenderSchedulerState {
+  return {
+    ...render,
+    dirtyLayers: [...render.dirtyLayers],
+    metrics: {
+      ...render.metrics,
+      renderCountByPass: { ...render.metrics.renderCountByPass },
+      lastInvalidationReasons: [...render.metrics.lastInvalidationReasons]
     }
   };
 }

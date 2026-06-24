@@ -28,4 +28,33 @@ describe("chart engine facade", () => {
 
     expect(events).toEqual([{ type: "seriesTypeChanged", seriesType: "area" }]);
   });
+
+  it("stores neutral interaction and render snapshots", () => {
+    const engine = createChartEngine({ series: fixtureDailyCandleSeries });
+
+    engine.setInteractionState({
+      pointer: { mode: "hover", point: { x: 10, y: 20 } },
+      crosshair: { visible: false },
+      tooltip: { visible: false },
+      cursor: "crosshair",
+      magnet: { mode: "off" },
+      keyboard: { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
+    });
+    engine.setRenderState({
+      pending: false,
+      dirtyLayers: ["crosshair"],
+      layoutRequired: false,
+      metrics: {
+        totalRenderCount: 2,
+        renderCountByPass: { static: 1, dynamic: 0, overlay: 1 },
+        lastRenderDuration: 3,
+        dirtyLayerCount: 1,
+        lastInvalidationReasons: ["pointerMoved"],
+        slowFrameCount: 0
+      }
+    });
+
+    expect(engine.getState().interaction?.cursor).toBe("crosshair");
+    expect(engine.getState().render?.metrics.totalRenderCount).toBe(2);
+  });
 });
