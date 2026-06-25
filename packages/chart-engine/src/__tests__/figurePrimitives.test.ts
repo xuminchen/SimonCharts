@@ -96,18 +96,21 @@ describe("figure primitives", () => {
     ).toEqual({ minX: 0, minY: 5, maxX: 10, maxY: 20 });
   });
 
-  it("keeps arc and curve bounds as deterministic point bounds", () => {
-    expect(
-      getFigureBounds({
-        id: "curve-1",
-        type: "curve",
-        points: [
-          { x: 0, y: 0 },
-          { x: 5, y: 10 },
-          { x: 10, y: 0 }
-        ]
-      })
-    ).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
+  it("computes curve bounds from sampled quadratic Bezier geometry", () => {
+    const bounds = getFigureBounds({
+      id: "curve-1",
+      type: "curve",
+      points: [
+        { x: 0, y: 0 },
+        { x: 5, y: 10 },
+        { x: 10, y: 0 }
+      ]
+    });
+
+    expect(bounds?.minX).toBe(0);
+    expect(bounds?.minY).toBe(0);
+    expect(bounds?.maxX).toBe(10);
+    expect(bounds?.maxY).toBeCloseTo(5);
   });
 
   it("computes arc bounds from rendered radius and cardinal extrema", () => {

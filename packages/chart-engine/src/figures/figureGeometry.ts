@@ -21,6 +21,8 @@ export function getFigureBounds(figure: FigureObject): FigureBounds | undefined 
       return getTwoPointBounds(figure.points) ?? getPointBounds(figure.points);
     case "arc":
       return getArcBounds(figure) ?? getPointBounds(figure.points);
+    case "curve":
+      return getCurveBounds(figure);
     case "arrow":
       return getArrowBounds(figure);
     case "marker":
@@ -303,16 +305,24 @@ function hitTestCurve(
   point: FigurePoint,
   tolerance: number
 ): FigureHitTestResult | undefined {
-  const start = figure.points[0];
-  const control = figure.points[1];
-  const end = figure.points[2];
-  const curvePoints =
-    start && control && end
-      ? getQuadraticCurvePoints(start, control, end)
-      : figure.points;
+  const curvePoints = getCurvePoints(figure);
   const distance = getMinimumSegmentDistance(curvePoints, point, false);
 
   return distance <= tolerance ? { figureId: figure.id, distance } : undefined;
+}
+
+function getCurveBounds(figure: FigureObject): FigureBounds | undefined {
+  return getPointBounds(getCurvePoints(figure));
+}
+
+function getCurvePoints(figure: FigureObject): FigurePoint[] {
+  const start = figure.points[0];
+  const control = figure.points[1];
+  const end = figure.points[2];
+
+  return start && control && end
+    ? getQuadraticCurvePoints(start, control, end)
+    : figure.points;
 }
 
 function getQuadraticCurvePoints(
