@@ -6,6 +6,8 @@ import type {
   FigureType
 } from "./figureTypes";
 
+const ellipseBoundarySampleSteps = 64;
+
 export function getFigureBounds(figure: FigureObject): FigureBounds | undefined {
   switch (figure.type) {
     case "circle":
@@ -189,13 +191,31 @@ function hitTestEllipse(
     }
   }
 
-  const distance = getMinimumSegmentDistance(
-    getRectPoints(figure.points) ?? figure.points,
-    point,
-    true
-  );
+  const distance =
+    radiusX > 0 && radiusY > 0
+      ? getMinimumSegmentDistance(
+          getEllipseBoundaryPoints(center, radiusX, radiusY),
+          point,
+          true
+        )
+      : getMinimumSegmentDistance(figure.points, point, false);
 
   return distance <= tolerance ? { figureId: figure.id, distance } : undefined;
+}
+
+function getEllipseBoundaryPoints(
+  center: FigurePoint,
+  radiusX: number,
+  radiusY: number
+): FigurePoint[] {
+  return Array.from({ length: ellipseBoundarySampleSteps }, (_, index) => {
+    const angle = (index / ellipseBoundarySampleSteps) * Math.PI * 2;
+
+    return {
+      x: center.x + Math.cos(angle) * radiusX,
+      y: center.y + Math.sin(angle) * radiusY
+    };
+  });
 }
 
 function hitTestMarker(

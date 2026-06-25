@@ -176,7 +176,7 @@ describe("figure primitives", () => {
     });
   });
 
-  it("hit-tests ellipse fill and bounding box edge approximation", () => {
+  it("hit-tests ellipse fill and sampled ellipse boundary", () => {
     const ellipse: FigureObject = {
       id: "ellipse-1",
       type: "ellipse",
@@ -194,7 +194,40 @@ describe("figure primitives", () => {
       figureId: "ellipse-1",
       distance: 1
     });
-    expect(hitTestFigure(ellipse, { x: 19, y: 9.5 }, 0)).toBeUndefined();
+    expect(hitTestFigure(ellipse, { x: 19, y: 9.5 }, 1)).toBeUndefined();
+  });
+
+  it("hit-tests arc circumference with deterministic center radius angles", () => {
+    const arc: FigureObject = {
+      id: "arc-1",
+      type: "arc",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 0, y: 10 }
+      ]
+    };
+    const hit = hitTestFigure(arc, { x: 7, y: 7 }, 0.2);
+
+    expect(hit?.figureId).toBe("arc-1");
+    expect(hit?.distance).toBeCloseTo(Math.abs(Math.hypot(7, 7) - 10));
+  });
+
+  it("hit-tests curve geometry using its control polyline approximation", () => {
+    const curve: FigureObject = {
+      id: "curve-1",
+      type: "curve",
+      points: [
+        { x: 0, y: 0 },
+        { x: 5, y: 10 },
+        { x: 10, y: 0 }
+      ]
+    };
+
+    expect(hitTestFigure(curve, { x: 5, y: 8 }, 1)).toEqual({
+      figureId: "curve-1",
+      distance: expect.closeTo(0.8944271909999159)
+    });
   });
 
   it("renders semantic geometry for registered figure types", () => {
