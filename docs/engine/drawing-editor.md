@@ -14,7 +14,7 @@ const drawing: DrawingObject = {
 };
 ```
 
-Supported `DrawingType` values include lines, rays, channels, Fibonacci tools, text, callouts, rectangles, circles, ellipses, polygons, paths, brush, arrows, long and short position shapes, and date-price range shapes.
+The built-in tool capability matrix is locked in [drawing-tool-coverage.md](./drawing-tool-coverage.md). It lists each engine-owned drawing type, anchor count, drawing mode, and editor coverage.
 
 Use `createDrawingEditor()` for interaction state:
 
