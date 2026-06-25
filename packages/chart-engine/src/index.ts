@@ -11,6 +11,8 @@ export * from "./drawing/drawingCommands";
 export * from "./drawing/drawingEditor";
 export * from "./drawing/drawingMagnet";
 export * from "./drawing/drawingRegistry";
+export * from "./drawing/drawingMigrations";
+export * from "./drawing/drawingSchema";
 export * from "./drawing/drawingSerialization";
 export * from "./drawing/drawingToolDefinitions";
 export * from "./drawing/drawingToolRegistry";

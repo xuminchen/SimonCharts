@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDrawingRendererRegistry,
+  deserializeDrawingObject,
   drawingTypes,
   getDrawingBounds,
   hitTestDrawingAnchor,
@@ -35,7 +36,8 @@ describe("drawing model", () => {
       metadata: { hostId: "opaque" }
     };
 
-    expect(parseDrawingObject(serializeDrawingObject(drawing))).toEqual(drawing);
+    expect(deserializeDrawingObject(serializeDrawingObject(drawing))).toEqual(drawing);
+    expect(parseDrawingObject(drawing)).toEqual(drawing);
   });
 
   it("serializes to a deep clone", () => {
@@ -46,9 +48,13 @@ describe("drawing model", () => {
       metadata: { nested: { value: 1 } }
     };
 
-    expect(serializeDrawingObject(drawing)).toEqual(drawing);
-    expect(serializeDrawingObject(drawing)).not.toBe(drawing);
-    expect(serializeDrawingObject(drawing).metadata).not.toBe(drawing.metadata);
+    const serialized = serializeDrawingObject(drawing);
+
+    expect(serialized).toEqual({ schemaVersion: 1, ...drawing });
+    expect(serialized).not.toBe(drawing);
+    expect(serialized.anchors).not.toBe(drawing.anchors);
+    expect(serialized.metadata).not.toBe(drawing.metadata);
+    expect(serialized.metadata?.nested).not.toBe(drawing.metadata?.nested);
   });
 
   it("rejects non-object drawing payloads", () => {

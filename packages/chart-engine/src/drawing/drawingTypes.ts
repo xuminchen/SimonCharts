@@ -91,5 +91,6 @@ export interface DrawingObject {
   text?: string;
   visible?: boolean;
   locked?: boolean;
+  zIndex?: number;
   metadata?: Record<string, unknown>;
 }
