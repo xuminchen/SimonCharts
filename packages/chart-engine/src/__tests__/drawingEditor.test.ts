@@ -26,6 +26,19 @@ describe("drawing editor", () => {
     expect(events.map((event) => (event as { type: string }).type)).toContain("drawingCreated");
   });
 
+  it("uses built-in registry anchor counts when creating drawings", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+
+    editor.setTool("horizontalLine");
+    editor.pointerDown({ x: 10, y: 20, time: 1, price: 10 });
+
+    expect(editor.getState().drawings).toHaveLength(1);
+    expect(editor.getState().drawings[0]).toMatchObject({
+      type: "horizontalLine",
+      anchors: [{ x: 10, y: 20, time: 1, price: 10 }]
+    });
+  });
+
   it("moves a selected drawing", () => {
     const drawing: DrawingObject = {
       id: "d1",
