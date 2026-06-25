@@ -14,7 +14,7 @@ const drawing: DrawingObject = {
 };
 ```
 
-The built-in tool capability matrix is locked in [drawing-tool-coverage.md](./drawing-tool-coverage.md). It lists each engine-owned drawing type, anchor count, drawing mode, and editor coverage.
+The built-in tool capability matrix is locked in [drawing-tool-coverage.md](./drawing-tool-coverage.md). It lists each target built-in drawing type, anchor count, drawing mode, and target editor coverage.
 
 Use `createDrawingEditor()` for interaction state:
 

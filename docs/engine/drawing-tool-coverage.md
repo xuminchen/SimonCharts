@@ -19,6 +19,7 @@
 | Basic overlay | verticalRayLine | 1 | step | create, select, drag, style, hide, lock, delete, undo, redo |
 | Basic overlay | verticalSegment | 2 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |
 | Basic overlay | verticalStraightLine | 1 | step | create, select, drag, style, hide, lock, delete, undo, redo |
+| Basic overlay | priceLine | 1 | step | create, select, drag, style, hide, lock, delete, undo, redo |
 | Channel | parallelChannel | 3 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |
 | Channel | regressionChannel | 3 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |
 | Channel | priceChannelLine | 3 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |

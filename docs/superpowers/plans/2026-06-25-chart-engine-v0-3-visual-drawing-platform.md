@@ -116,6 +116,7 @@ Create `docs/engine/drawing-tool-coverage.md` with this structure:
 | Basic overlay | verticalRayLine | 1 | step | create, select, drag, style, hide, lock, delete, undo, redo |
 | Basic overlay | verticalSegment | 2 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |
 | Basic overlay | verticalStraightLine | 1 | step | create, select, drag, style, hide, lock, delete, undo, redo |
+| Basic overlay | priceLine | 1 | step | create, select, drag, style, hide, lock, delete, undo, redo |
 | Channel | parallelChannel | 3 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |
 | Channel | regressionChannel | 3 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |
 | Channel | priceChannelLine | 3 | step | create, select, drag, edit anchors, style, hide, lock, delete, undo, redo |
@@ -170,7 +171,7 @@ Create `docs/engine/drawing-tool-coverage.md` with this structure:
 Run:
 
 ```bash
-rg -n "fibWedge|insidePitchfork|headAndShouldersPattern|forecastPath" docs/engine/drawing-tool-coverage.md
+rg -n "priceLine|fibWedge|insidePitchfork|headAndShouldersPattern|forecastPath" docs/engine/drawing-tool-coverage.md
 ```
 
 Expected: each name appears exactly once in the coverage table.
