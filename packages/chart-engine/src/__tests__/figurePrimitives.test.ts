@@ -48,6 +48,80 @@ describe("figure primitives", () => {
     expect(getFigureBounds(figure)).toEqual({ minX: 10, minY: 20, maxX: 40, maxY: 60 });
   });
 
+  it("computes circle bounds from center and radius", () => {
+    expect(
+      getFigureBounds({
+        id: "circle-1",
+        type: "circle",
+        points: [
+          { x: 10, y: 10 },
+          { x: 13, y: 14 }
+        ]
+      })
+    ).toEqual({ minX: 5, minY: 5, maxX: 15, maxY: 15 });
+  });
+
+  it("computes marker bounds from marker radius", () => {
+    expect(
+      getFigureBounds({
+        id: "marker-1",
+        type: "marker",
+        points: [{ x: 4, y: 6 }],
+        style: { lineWidth: 5 }
+      })
+    ).toEqual({ minX: -1, minY: 1, maxX: 9, maxY: 11 });
+  });
+
+  it("computes semantic bounds for ellipse and rect figures", () => {
+    expect(
+      getFigureBounds({
+        id: "ellipse-1",
+        type: "ellipse",
+        points: [
+          { x: 20, y: 30 },
+          { x: 10, y: 5 }
+        ]
+      })
+    ).toEqual({ minX: 10, minY: 5, maxX: 20, maxY: 30 });
+
+    expect(
+      getFigureBounds({
+        id: "rect-1",
+        type: "rect",
+        points: [
+          { x: 10, y: 20 },
+          { x: 0, y: 5 }
+        ]
+      })
+    ).toEqual({ minX: 0, minY: 5, maxX: 10, maxY: 20 });
+  });
+
+  it("keeps arc and curve bounds as deterministic point bounds", () => {
+    expect(
+      getFigureBounds({
+        id: "arc-1",
+        type: "arc",
+        points: [
+          { x: 5, y: 5 },
+          { x: 10, y: 5 },
+          { x: 5, y: 12 }
+        ]
+      })
+    ).toEqual({ minX: 5, minY: 5, maxX: 10, maxY: 12 });
+
+    expect(
+      getFigureBounds({
+        id: "curve-1",
+        type: "curve",
+        points: [
+          { x: 0, y: 0 },
+          { x: 5, y: 10 },
+          { x: 10, y: 0 }
+        ]
+      })
+    ).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
+  });
+
   it("hit-tests line geometry by pixel distance", () => {
     const figure: FigureObject = {
       id: "line-1",
@@ -64,6 +138,65 @@ describe("figure primitives", () => {
     });
   });
 
+  it("hit-tests circle fill and circumference", () => {
+    const circle: FigureObject = {
+      id: "circle-1",
+      type: "circle",
+      points: [
+        { x: 10, y: 10 },
+        { x: 15, y: 10 }
+      ]
+    };
+
+    expect(hitTestFigure(circle, { x: 10, y: 14 }, 0)).toEqual({
+      figureId: "circle-1",
+      distance: 0
+    });
+    expect(hitTestFigure(circle, { x: 10, y: 16 }, 1)).toEqual({
+      figureId: "circle-1",
+      distance: 1
+    });
+  });
+
+  it("hit-tests marker radius", () => {
+    const marker: FigureObject = {
+      id: "marker-1",
+      type: "marker",
+      points: [{ x: 0, y: 0 }],
+      style: { lineWidth: 5 }
+    };
+
+    expect(hitTestFigure(marker, { x: 4, y: 0 }, 0)).toEqual({
+      figureId: "marker-1",
+      distance: 0
+    });
+    expect(hitTestFigure(marker, { x: 6, y: 0 }, 1)).toEqual({
+      figureId: "marker-1",
+      distance: 1
+    });
+  });
+
+  it("hit-tests ellipse fill and bounding box edge approximation", () => {
+    const ellipse: FigureObject = {
+      id: "ellipse-1",
+      type: "ellipse",
+      points: [
+        { x: 0, y: 0 },
+        { x: 20, y: 10 }
+      ]
+    };
+
+    expect(hitTestFigure(ellipse, { x: 10, y: 8 }, 0)).toEqual({
+      figureId: "ellipse-1",
+      distance: 0
+    });
+    expect(hitTestFigure(ellipse, { x: 21, y: 5 }, 1)).toEqual({
+      figureId: "ellipse-1",
+      distance: 1
+    });
+    expect(hitTestFigure(ellipse, { x: 19, y: 9.5 }, 0)).toBeUndefined();
+  });
+
   it("renders semantic geometry for registered figure types", () => {
     const line = renderFigure({
       id: "line-1",
@@ -75,6 +208,20 @@ describe("figure primitives", () => {
       ]
     });
     expect(getCallArgs(line, "lineTo")).toEqual([[10, 0]]);
+
+    const polyline = renderFigure({
+      id: "polyline-1",
+      type: "polyline",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 }
+      ]
+    });
+    expect(getCallArgs(polyline, "lineTo")).toEqual([
+      [10, 0],
+      [10, 10]
+    ]);
 
     const rect = renderFigure({
       id: "rect-1",
@@ -146,6 +293,24 @@ describe("figure primitives", () => {
     });
     expect(getCallNames(arrow).filter((name) => name === "beginPath")).toHaveLength(2);
     expect(getCallArgs(arrow, "lineTo").length).toBeGreaterThan(1);
+
+    const text = renderFigure({
+      id: "text-1",
+      type: "text",
+      points: [{ x: 3, y: 4 }],
+      text: "Hello",
+      style: { fontSize: 16, textColor: "#f00" }
+    });
+    expect(getCallArgs(text, "fillText")).toEqual([["Hello", 3, 4]]);
+    expect(getCallNames(text)).not.toContain("stroke");
+
+    const label = renderFigure({
+      id: "label-1",
+      type: "label",
+      points: [{ x: 5, y: 6 }],
+      text: "Label"
+    });
+    expect(getCallArgs(label, "fillText")).toEqual([["Label", 5, 6]]);
   });
 
   it.each(["polygon", "band", "rotatedRect"] as const)(
