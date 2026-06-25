@@ -213,7 +213,28 @@ describe("figure primitives", () => {
     expect(hit?.distance).toBeCloseTo(Math.abs(Math.hypot(7, 7) - 10));
   });
 
-  it("hit-tests curve geometry using its control polyline approximation", () => {
+  it("hit-tests arc start and end endpoints within tolerance", () => {
+    const arc: FigureObject = {
+      id: "arc-1",
+      type: "arc",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 0, y: 10 }
+      ]
+    };
+
+    expect(hitTestFigure(arc, { x: 10, y: -0.5 }, 0.5)).toEqual({
+      figureId: "arc-1",
+      distance: 0.5
+    });
+    expect(hitTestFigure(arc, { x: -0.5, y: 10 }, 0.5)).toEqual({
+      figureId: "arc-1",
+      distance: 0.5
+    });
+  });
+
+  it("hit-tests curve geometry using sampled quadratic Bezier segments", () => {
     const curve: FigureObject = {
       id: "curve-1",
       type: "curve",
@@ -224,10 +245,11 @@ describe("figure primitives", () => {
       ]
     };
 
-    expect(hitTestFigure(curve, { x: 5, y: 8 }, 1)).toEqual({
+    expect(hitTestFigure(curve, { x: 5, y: 5.5 }, 0.6)).toEqual({
       figureId: "curve-1",
-      distance: expect.closeTo(0.8944271909999159)
+      distance: expect.closeTo(0.5)
     });
+    expect(hitTestFigure(curve, { x: 5, y: 8 }, 1)).toBeUndefined();
   });
 
   it("renders semantic geometry for registered figure types", () => {

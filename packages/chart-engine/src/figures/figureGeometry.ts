@@ -6,6 +6,7 @@ import type {
   FigureType
 } from "./figureTypes";
 
+const curveSampleSteps = 64;
 const ellipseBoundarySampleSteps = 64;
 
 export function getFigureBounds(figure: FigureObject): FigureBounds | undefined {
@@ -128,13 +129,21 @@ function hitTestSemanticFigure(
       return hitTestMarker(figure, point, tolerance);
     case "arc":
       return hitTestArc(figure, point, tolerance);
+    case "curve":
+      return hitTestCurve(figure, point, tolerance);
     default:
       return undefined;
   }
 }
 
 function isSemanticHitType(type: FigureType): boolean {
-  return type === "circle" || type === "ellipse" || type === "marker" || type === "arc";
+  return (
+    type === "circle" ||
+    type === "ellipse" ||
+    type === "marker" ||
+    type === "arc" ||
+    type === "curve"
+  );
 }
 
 function hitTestCircle(
@@ -247,6 +256,12 @@ function hitTestArc(
     return undefined;
   }
 
+  const endpointDistance = Math.min(getPointDistance(start, point), getPointDistance(end, point));
+
+  if (endpointDistance <= tolerance) {
+    return { figureId: figure.id, distance: endpointDistance };
+  }
+
   const radius = getPointDistance(center, start);
   const distance = Math.abs(getPointDistance(center, point) - radius);
 
@@ -255,6 +270,39 @@ function hitTestArc(
   }
 
   return { figureId: figure.id, distance };
+}
+
+function hitTestCurve(
+  figure: FigureObject,
+  point: FigurePoint,
+  tolerance: number
+): FigureHitTestResult | undefined {
+  const start = figure.points[0];
+  const control = figure.points[1];
+  const end = figure.points[2];
+  const curvePoints =
+    start && control && end
+      ? getQuadraticCurvePoints(start, control, end)
+      : figure.points;
+  const distance = getMinimumSegmentDistance(curvePoints, point, false);
+
+  return distance <= tolerance ? { figureId: figure.id, distance } : undefined;
+}
+
+function getQuadraticCurvePoints(
+  start: FigurePoint,
+  control: FigurePoint,
+  end: FigurePoint
+): FigurePoint[] {
+  return Array.from({ length: curveSampleSteps + 1 }, (_, index) => {
+    const t = index / curveSampleSteps;
+    const inverseT = 1 - t;
+
+    return {
+      x: inverseT * inverseT * start.x + 2 * inverseT * t * control.x + t * t * end.x,
+      y: inverseT * inverseT * start.y + 2 * inverseT * t * control.y + t * t * end.y
+    };
+  });
 }
 
 function getMarkerRadius(figure: FigureObject): number {
