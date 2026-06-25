@@ -8,14 +8,21 @@ import type {
 
 const curveSampleSteps = 64;
 const ellipseBoundarySampleSteps = 64;
+const hitTestEpsilon = 1e-9;
 
 export function getFigureBounds(figure: FigureObject): FigureBounds | undefined {
   switch (figure.type) {
+    case "line":
+      return getPointBounds(getLinePoints(figure));
     case "circle":
       return getCircleBounds(figure) ?? getPointBounds(figure.points);
     case "ellipse":
     case "rect":
       return getTwoPointBounds(figure.points) ?? getPointBounds(figure.points);
+    case "arc":
+      return getArcBounds(figure) ?? getPointBounds(figure.points);
+    case "arrow":
+      return getArrowBounds(figure);
     case "marker":
       return getMarkerBounds(figure);
     default:
@@ -121,6 +128,8 @@ function hitTestSemanticFigure(
   tolerance: number
 ): FigureHitTestResult | undefined {
   switch (figure.type) {
+    case "line":
+      return hitTestLine(figure, point, tolerance);
     case "circle":
       return hitTestCircle(figure, point, tolerance);
     case "ellipse":
@@ -131,6 +140,8 @@ function hitTestSemanticFigure(
       return hitTestArc(figure, point, tolerance);
     case "curve":
       return hitTestCurve(figure, point, tolerance);
+    case "arrow":
+      return hitTestArrow(figure, point, tolerance);
     default:
       return undefined;
   }
@@ -138,12 +149,24 @@ function hitTestSemanticFigure(
 
 function isSemanticHitType(type: FigureType): boolean {
   return (
+    type === "line" ||
     type === "circle" ||
     type === "ellipse" ||
     type === "marker" ||
     type === "arc" ||
-    type === "curve"
+    type === "curve" ||
+    type === "arrow"
   );
+}
+
+function hitTestLine(
+  figure: FigureObject,
+  point: FigurePoint,
+  tolerance: number
+): FigureHitTestResult | undefined {
+  const distance = getMinimumSegmentDistance(getLinePoints(figure), point, false);
+
+  return distance <= tolerance ? { figureId: figure.id, distance } : undefined;
 }
 
 function hitTestCircle(
@@ -248,24 +271,27 @@ function hitTestArc(
   point: FigurePoint,
   tolerance: number
 ): FigureHitTestResult | undefined {
-  const center = figure.points[0];
-  const start = figure.points[1];
-  const end = figure.points[2];
+  const arc = getArcGeometry(figure);
 
-  if (!center || !start || !end) {
+  if (!arc) {
     return undefined;
   }
 
-  const endpointDistance = Math.min(getPointDistance(start, point), getPointDistance(end, point));
+  const endpointDistance = Math.min(
+    getPointDistance(arc.startPoint, point),
+    getPointDistance(arc.endPoint, point)
+  );
 
-  if (endpointDistance <= tolerance) {
+  if (isWithinTolerance(endpointDistance, tolerance)) {
     return { figureId: figure.id, distance: endpointDistance };
   }
 
-  const radius = getPointDistance(center, start);
-  const distance = Math.abs(getPointDistance(center, point) - radius);
+  const distance = Math.abs(getPointDistance(arc.center, point) - arc.radius);
 
-  if (distance > tolerance || !isAngleOnArc(center, start, end, point)) {
+  if (
+    distance > tolerance ||
+    !isAngleWithinArcSpan(arc.startAngle, arc.endAngle, getAngle(arc.center, point))
+  ) {
     return undefined;
   }
 
@@ -307,6 +333,123 @@ function getQuadraticCurvePoints(
 
 function getMarkerRadius(figure: FigureObject): number {
   return Math.max(3, figure.style?.lineWidth ?? 2);
+}
+
+function getLinePoints(figure: FigureObject): FigurePoint[] {
+  return figure.points.slice(0, 2);
+}
+
+interface ArcGeometry {
+  center: FigurePoint;
+  radius: number;
+  startAngle: number;
+  endAngle: number;
+  startPoint: FigurePoint;
+  endPoint: FigurePoint;
+}
+
+function getArcGeometry(figure: FigureObject): ArcGeometry | undefined {
+  const center = figure.points[0];
+  const start = figure.points[1];
+  const end = figure.points[2];
+
+  if (!center || !start || !end) {
+    return undefined;
+  }
+
+  const radius = getPointDistance(center, start);
+  const startAngle = getAngle(center, start);
+  const endAngle = getAngle(center, end);
+
+  return {
+    center,
+    radius,
+    startAngle,
+    endAngle,
+    startPoint: getPointAtAngle(center, radius, startAngle),
+    endPoint: getPointAtAngle(center, radius, endAngle)
+  };
+}
+
+function getArcBounds(figure: FigureObject): FigureBounds | undefined {
+  const arc = getArcGeometry(figure);
+
+  if (!arc) {
+    return undefined;
+  }
+
+  const points = [arc.startPoint, arc.endPoint];
+  const cardinalAngles = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2];
+
+  for (const angle of cardinalAngles) {
+    if (isAngleWithinArcSpan(arc.startAngle, arc.endAngle, angle)) {
+      points.push(getPointAtAngle(arc.center, arc.radius, angle));
+    }
+  }
+
+  return getPointBounds(points);
+}
+
+function getPointAtAngle(center: FigurePoint, radius: number, angle: number): FigurePoint {
+  return {
+    x: center.x + Math.cos(angle) * radius,
+    y: center.y + Math.sin(angle) * radius
+  };
+}
+
+interface ArrowheadPoints {
+  end: FigurePoint;
+  left: FigurePoint;
+  right: FigurePoint;
+}
+
+function getArrowheadPoints(figure: FigureObject): ArrowheadPoints | undefined {
+  if (figure.points.length < 2) {
+    return undefined;
+  }
+
+  const end = figure.points[figure.points.length - 1];
+  const previous = figure.points[figure.points.length - 2];
+  const angle = getAngle(previous, end);
+  const size = Math.max(6, (figure.style?.lineWidth ?? 2) * 4);
+
+  return {
+    end,
+    left: {
+      x: end.x - Math.cos(angle - Math.PI / 6) * size,
+      y: end.y - Math.sin(angle - Math.PI / 6) * size
+    },
+    right: {
+      x: end.x - Math.cos(angle + Math.PI / 6) * size,
+      y: end.y - Math.sin(angle + Math.PI / 6) * size
+    }
+  };
+}
+
+function getArrowBounds(figure: FigureObject): FigureBounds | undefined {
+  const arrowhead = getArrowheadPoints(figure);
+
+  return getPointBounds(
+    arrowhead ? [...figure.points, arrowhead.left, arrowhead.right] : figure.points
+  );
+}
+
+function hitTestArrow(
+  figure: FigureObject,
+  point: FigurePoint,
+  tolerance: number
+): FigureHitTestResult | undefined {
+  const arrowhead = getArrowheadPoints(figure);
+  const pathDistance = getMinimumSegmentDistance(figure.points, point, false);
+  const arrowheadDistance = arrowhead
+    ? Math.min(
+        getSegmentDistance(arrowhead.left, arrowhead.end, point),
+        getSegmentDistance(arrowhead.end, arrowhead.right, point)
+      )
+    : Number.POSITIVE_INFINITY;
+  const distance = Math.min(pathDistance, arrowheadDistance);
+
+  return distance <= tolerance ? { figureId: figure.id, distance } : undefined;
 }
 
 interface HitTestPath {
@@ -415,14 +558,13 @@ function getSegmentDistance(a: FigurePoint, b: FigurePoint, point: FigurePoint):
   return getPointDistance({ x: a.x + t * dx, y: a.y + t * dy }, point);
 }
 
-function isAngleOnArc(
-  center: FigurePoint,
-  start: FigurePoint,
-  end: FigurePoint,
-  point: FigurePoint
-): boolean {
-  const arcAngle = normalizeAngle(getAngle(center, end) - getAngle(center, start));
-  const pointAngle = normalizeAngle(getAngle(center, point) - getAngle(center, start));
+function isWithinTolerance(distance: number, tolerance: number): boolean {
+  return distance <= tolerance + hitTestEpsilon;
+}
+
+function isAngleWithinArcSpan(startAngle: number, endAngle: number, angle: number): boolean {
+  const arcAngle = normalizeAngle(endAngle - startAngle);
+  const pointAngle = normalizeAngle(angle - startAngle);
 
   return pointAngle <= arcAngle;
 }

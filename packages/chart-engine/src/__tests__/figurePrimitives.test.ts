@@ -99,18 +99,6 @@ describe("figure primitives", () => {
   it("keeps arc and curve bounds as deterministic point bounds", () => {
     expect(
       getFigureBounds({
-        id: "arc-1",
-        type: "arc",
-        points: [
-          { x: 5, y: 5 },
-          { x: 10, y: 5 },
-          { x: 5, y: 12 }
-        ]
-      })
-    ).toEqual({ minX: 5, minY: 5, maxX: 10, maxY: 12 });
-
-    expect(
-      getFigureBounds({
         id: "curve-1",
         type: "curve",
         points: [
@@ -120,6 +108,55 @@ describe("figure primitives", () => {
         ]
       })
     ).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
+  });
+
+  it("computes arc bounds from rendered radius and cardinal extrema", () => {
+    const radiusPoint = Math.sqrt(50);
+    const bounds = getFigureBounds({
+      id: "arc-1",
+      type: "arc",
+      points: [
+        { x: 0, y: 0 },
+        { x: radiusPoint, y: radiusPoint },
+        { x: -radiusPoint, y: radiusPoint }
+      ]
+    });
+
+    expect(bounds?.minX).toBeCloseTo(-radiusPoint);
+    expect(bounds?.minY).toBeCloseTo(radiusPoint);
+    expect(bounds?.maxX).toBeCloseTo(radiusPoint);
+    expect(bounds?.maxY).toBeCloseTo(10);
+  });
+
+  it("computes arrow bounds with arrowhead points", () => {
+    const bounds = getFigureBounds({
+      id: "arrow-1",
+      type: "arrow",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 }
+      ],
+      style: { lineWidth: 2 }
+    });
+
+    expect(bounds?.minX).toBe(0);
+    expect(bounds?.maxX).toBe(10);
+    expect(bounds?.minY).toBeCloseTo(-4);
+    expect(bounds?.maxY).toBeCloseTo(4);
+  });
+
+  it("uses only the first two line points for line bounds", () => {
+    expect(
+      getFigureBounds({
+        id: "line-1",
+        type: "line",
+        points: [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 100 }
+        ]
+      })
+    ).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
   });
 
   it("hit-tests line geometry by pixel distance", () => {
@@ -136,6 +173,24 @@ describe("figure primitives", () => {
       figureId: "line-1",
       distance: 3
     });
+  });
+
+  it("uses only the first two line points for line hit testing", () => {
+    const line: FigureObject = {
+      id: "line-1",
+      type: "line",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 100 }
+      ]
+    };
+
+    expect(hitTestFigure(line, { x: 5, y: 1 }, 1)).toEqual({
+      figureId: "line-1",
+      distance: 1
+    });
+    expect(hitTestFigure(line, { x: 10, y: 50 }, 1)).toBeUndefined();
   });
 
   it("hit-tests circle fill and circumference", () => {
@@ -224,14 +279,31 @@ describe("figure primitives", () => {
       ]
     };
 
-    expect(hitTestFigure(arc, { x: 10, y: -0.5 }, 0.5)).toEqual({
-      figureId: "arc-1",
-      distance: 0.5
-    });
-    expect(hitTestFigure(arc, { x: -0.5, y: 10 }, 0.5)).toEqual({
-      figureId: "arc-1",
-      distance: 0.5
-    });
+    const startHit = hitTestFigure(arc, { x: 10, y: -0.5 }, 0.5);
+    const endHit = hitTestFigure(arc, { x: -0.5, y: 10 }, 0.5);
+
+    expect(startHit?.figureId).toBe("arc-1");
+    expect(startHit?.distance).toBeCloseTo(0.5);
+    expect(endHit?.figureId).toBe("arc-1");
+    expect(endHit?.distance).toBeCloseTo(0.5);
+  });
+
+  it("hit-tests rendered arc endpoint when the third point is off-radius", () => {
+    const arc: FigureObject = {
+      id: "arc-1",
+      type: "arc",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 0, y: 20 }
+      ]
+    };
+
+    const hit = hitTestFigure(arc, { x: -0.5, y: 10 }, 0.5);
+
+    expect(hit?.figureId).toBe("arc-1");
+    expect(hit?.distance).toBeCloseTo(0.5);
+    expect(hitTestFigure(arc, { x: 0, y: 20 }, 0.5)).toBeUndefined();
   });
 
   it("hit-tests curve geometry using sampled quadratic Bezier segments", () => {
@@ -250,6 +322,22 @@ describe("figure primitives", () => {
       distance: expect.closeTo(0.5)
     });
     expect(hitTestFigure(curve, { x: 5, y: 8 }, 1)).toBeUndefined();
+  });
+
+  it("hit-tests arrowhead segments", () => {
+    const arrow: FigureObject = {
+      id: "arrow-1",
+      type: "arrow",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 }
+      ],
+      style: { lineWidth: 2 }
+    };
+    const hit = hitTestFigure(arrow, { x: 6.535898384862246, y: 2 }, 0.001);
+
+    expect(hit?.figureId).toBe("arrow-1");
+    expect(hit?.distance).toBeCloseTo(0);
   });
 
   it("renders semantic geometry for registered figure types", () => {
