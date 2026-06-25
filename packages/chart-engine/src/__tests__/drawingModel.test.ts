@@ -11,11 +11,14 @@ import {
 } from "../index";
 
 describe("drawing model", () => {
-  it("declares v0.1 drawing types", () => {
+  it("declares drawing tool coverage types", () => {
     expect(drawingTypes).toContain("trendLine");
+    expect(drawingTypes).toContain("priceLine");
     expect(drawingTypes).toContain("fibonacciRetracement");
     expect(drawingTypes).toContain("datePriceRange");
-    expect(drawingTypes).toHaveLength(23);
+    expect(drawingTypes).toContain("elliottImpulseWave");
+    expect(drawingTypes).toContain("forecastPath");
+    expect(drawingTypes).toHaveLength(63);
   });
 
   it("round-trips a neutral drawing object", () => {

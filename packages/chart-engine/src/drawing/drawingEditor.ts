@@ -1,6 +1,8 @@
 import { createCommandHistory } from "../commands/history";
 import type { DrawingEditorEvent, DrawingEditorTool } from "./drawingCommands";
-import { drawingTypes, type DrawingAnchor, type DrawingObject, type DrawingType } from "./drawingTypes";
+import { builtInDrawingToolDefinitions } from "./drawingToolDefinitions";
+import { createDrawingToolRegistry, type DrawingToolRegistry } from "./drawingToolRegistry";
+import type { DrawingAnchor, DrawingObject } from "./drawingTypes";
 
 export interface DrawingEditorPoint {
   x: number;
@@ -19,6 +21,7 @@ export interface DrawingEditorState {
 export interface DrawingEditorOptions {
   drawings: DrawingObject[];
   onEvent?: (event: DrawingEditorEvent) => void;
+  toolRegistry?: DrawingToolRegistry;
 }
 
 export interface DrawingEditor {
@@ -49,6 +52,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   let activeTool: DrawingEditorTool = "select";
   let pendingAnchors: DrawingAnchor[] = [];
   let nextDrawingNumber = 1;
+  const toolRegistry = options.toolRegistry ?? createBuiltInDrawingToolRegistry();
   const history = createCommandHistory<EditorSnapshot>(createSnapshot());
 
   const emit = (event: DrawingEditorEvent): void => {
@@ -57,7 +61,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
   return {
     setTool(tool) {
-      assertDrawingTool(tool);
+      assertDrawingTool(tool, toolRegistry);
       activeTool = tool;
       pendingAnchors = [];
       emit({ type: "toolChanged", tool });
@@ -69,7 +73,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
       pendingAnchors = [...pendingAnchors, pointToAnchor(point)];
 
-      if (pendingAnchors.length < getRequiredAnchorCount(activeTool)) {
+      if (pendingAnchors.length < toolRegistry.require(activeTool).anchorCount) {
         return;
       }
 
@@ -278,23 +282,6 @@ function pointToAnchor(point: DrawingEditorPoint): DrawingAnchor {
   };
 }
 
-function getRequiredAnchorCount(type: DrawingType): number {
-  if (
-    type === "horizontalLine" ||
-    type === "verticalLine" ||
-    type === "crossLine" ||
-    type === "text"
-  ) {
-    return 1;
-  }
-
-  if (type === "parallelChannel" || type === "regressionChannel" || type === "polygon") {
-    return 3;
-  }
-
-  return 2;
-}
-
 function moveDrawing(drawing: DrawingObject, dx: number, dy: number): DrawingObject {
   return {
     ...drawing,
@@ -332,8 +319,20 @@ function cloneDrawing(drawing: DrawingObject): DrawingObject {
   return JSON.parse(JSON.stringify(drawing)) as DrawingObject;
 }
 
-function assertDrawingTool(tool: DrawingEditorTool): void {
-  if (tool !== "select" && !drawingTypes.includes(tool)) {
-    throw new Error(`Unsupported drawing tool: ${String(tool)}`);
+function createBuiltInDrawingToolRegistry(): DrawingToolRegistry {
+  const registry = createDrawingToolRegistry();
+
+  for (const definition of builtInDrawingToolDefinitions) {
+    registry.register(definition);
   }
+
+  return registry;
+}
+
+function assertDrawingTool(tool: DrawingEditorTool, registry: DrawingToolRegistry): void {
+  if (tool === "select") {
+    return;
+  }
+
+  registry.require(tool);
 }

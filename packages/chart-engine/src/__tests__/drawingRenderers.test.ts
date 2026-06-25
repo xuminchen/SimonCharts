@@ -3,10 +3,10 @@ import {
   createDefaultDrawingRendererRegistry,
   createDrawingLayer,
   defaultChartTheme,
-  drawingTypes,
   type CandleSeries,
   type ChartLayout,
   type DrawingObject,
+  type DrawingType,
   type LayerRenderContext,
   type RenderState,
   type ViewportState
@@ -97,8 +97,34 @@ class FakeCanvasContext {
   }
 }
 
+const rendererBackedDrawingTypes = [
+  "trendLine",
+  "ray",
+  "extendedLine",
+  "horizontalLine",
+  "verticalLine",
+  "crossLine",
+  "parallelChannel",
+  "regressionChannel",
+  "fibonacciRetracement",
+  "fibonacciExtension",
+  "text",
+  "callout",
+  "rectangle",
+  "rotatedRectangle",
+  "circle",
+  "ellipse",
+  "polygon",
+  "path",
+  "brush",
+  "arrow",
+  "longPosition",
+  "shortPosition",
+  "datePriceRange"
+] satisfies DrawingType[];
+
 describe("drawing renderers", () => {
-  it.each(drawingTypes)("renders %s from neutral JSON", (type) => {
+  it.each(rendererBackedDrawingTypes)("renders %s from neutral JSON", (type) => {
     const registry = createDefaultDrawingRendererRegistry();
     const layer = createDrawingLayer(registry);
     const drawing: DrawingObject = {
@@ -164,10 +190,10 @@ describe("drawing renderers", () => {
     );
   });
 
-  it("registers all drawing types in the default registry", () => {
+  it("registers all renderer-backed drawing types in the default registry", () => {
     const registry = createDefaultDrawingRendererRegistry();
 
-    expect(registry.list().map((renderer) => renderer.type)).toEqual([...drawingTypes]);
+    expect(registry.list().map((renderer) => renderer.type)).toEqual(rendererBackedDrawingTypes);
   });
 });
 
