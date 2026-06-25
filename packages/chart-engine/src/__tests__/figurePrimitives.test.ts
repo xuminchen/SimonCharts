@@ -4,7 +4,9 @@ import {
   createFigureRendererRegistry,
   getFigureBounds,
   hitTestFigure,
-  type FigureObject
+  type FigureObject,
+  type FigureRenderer,
+  type FigureType
 } from "../index";
 
 describe("figure primitives", () => {
@@ -61,4 +63,316 @@ describe("figure primitives", () => {
       distance: 3
     });
   });
+
+  it("renders semantic geometry for registered figure types", () => {
+    const line = renderFigure({
+      id: "line-1",
+      type: "line",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 20, y: 0 }
+      ]
+    });
+    expect(getCallArgs(line, "lineTo")).toEqual([[10, 0]]);
+
+    const rect = renderFigure({
+      id: "rect-1",
+      type: "rect",
+      points: [
+        { x: 10, y: 20 },
+        { x: 0, y: 0 }
+      ]
+    });
+    expect(getCallArgs(rect, "rect")).toEqual([[0, 0, 10, 20]]);
+    expect(getCallNames(rect)).toEqual(expect.arrayContaining(["fill", "stroke"]));
+
+    const circle = renderFigure({
+      id: "circle-1",
+      type: "circle",
+      points: [
+        { x: 5, y: 5 },
+        { x: 10, y: 5 }
+      ]
+    });
+    expect(getCallArgs(circle, "arc")).toEqual([[5, 5, 5, 0, Math.PI * 2]]);
+
+    const ellipse = renderFigure({
+      id: "ellipse-1",
+      type: "ellipse",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 20 }
+      ]
+    });
+    expect(getCallArgs(ellipse, "ellipse")).toEqual([[5, 10, 5, 10, 0, 0, Math.PI * 2]]);
+
+    const arc = renderFigure({
+      id: "arc-1",
+      type: "arc",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 0, y: 10 }
+      ]
+    });
+    expect(getCallArgs(arc, "arc")).toEqual([[0, 0, 10, 0, Math.PI / 2]]);
+
+    const curve = renderFigure({
+      id: "curve-1",
+      type: "curve",
+      points: [
+        { x: 0, y: 0 },
+        { x: 5, y: 10 },
+        { x: 10, y: 0 }
+      ]
+    });
+    expect(getCallArgs(curve, "quadraticCurveTo")).toEqual([[5, 10, 10, 0]]);
+
+    const marker = renderFigure({
+      id: "marker-1",
+      type: "marker",
+      points: [{ x: 2, y: 3 }]
+    });
+    expect(getCallArgs(marker, "arc")).toEqual([[2, 3, 3, 0, Math.PI * 2]]);
+
+    const arrow = renderFigure({
+      id: "arrow-1",
+      type: "arrow",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 }
+      ]
+    });
+    expect(getCallNames(arrow).filter((name) => name === "beginPath")).toHaveLength(2);
+    expect(getCallArgs(arrow, "lineTo").length).toBeGreaterThan(1);
+  });
+
+  it.each(["polygon", "band", "rotatedRect"] as const)(
+    "renders %s as a closed filled polygon",
+    (type) => {
+      const context = renderFigure({
+        id: `${type}-1`,
+        type,
+        points: [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 10 },
+          { x: 0, y: 10 }
+        ]
+      });
+
+      expect(getCallNames(context)).toEqual(expect.arrayContaining(["closePath", "fill", "stroke"]));
+    }
+  );
+
+  it("restores the canvas context when rendering throws", () => {
+    const renderer = requireBuiltInRenderer("line");
+    const context = createFakeCanvasContext();
+    context.stroke = () => {
+      context.calls.push({ name: "stroke", args: [] });
+      throw new Error("stroke failed");
+    };
+
+    expect(() =>
+      renderer.render({
+        context: context as unknown as CanvasRenderingContext2D,
+        figure: {
+          id: "line-1",
+          type: "line",
+          points: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 }
+          ]
+        }
+      })
+    ).toThrow("stroke failed");
+    expect(context.calls[context.calls.length - 1]).toEqual({ name: "restore", args: [] });
+  });
+
+  it("hit-tests closed shape edges and filled interiors", () => {
+    const squarePoints = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 }
+    ];
+    const polygon: FigureObject = {
+      id: "polygon-1",
+      type: "polygon",
+      points: squarePoints
+    };
+    const band: FigureObject = {
+      id: "band-1",
+      type: "band",
+      points: squarePoints
+    };
+    const rotatedRect: FigureObject = {
+      id: "rotatedRect-1",
+      type: "rotatedRect",
+      points: squarePoints
+    };
+    const polyline: FigureObject = {
+      id: "polyline-1",
+      type: "polyline",
+      points: squarePoints
+    };
+    const rect: FigureObject = {
+      id: "rect-1",
+      type: "rect",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 10 }
+      ]
+    };
+
+    expect(hitTestFigure(polygon, { x: 5, y: 5 }, 0)).toEqual({
+      figureId: "polygon-1",
+      distance: 0
+    });
+    expect(hitTestFigure(polygon, { x: -1, y: 5 }, 1.1)).toEqual({
+      figureId: "polygon-1",
+      distance: 1
+    });
+    expect(hitTestFigure(band, { x: -1, y: 5 }, 1.1)).toEqual({
+      figureId: "band-1",
+      distance: 1
+    });
+    expect(hitTestFigure(rotatedRect, { x: -1, y: 5 }, 1.1)).toEqual({
+      figureId: "rotatedRect-1",
+      distance: 1
+    });
+    expect(hitTestFigure(polyline, { x: -1, y: 5 }, 1.1)).toBeUndefined();
+    expect(hitTestFigure(rect, { x: -1, y: 5 }, 1.1)).toEqual({
+      figureId: "rect-1",
+      distance: 1
+    });
+  });
 });
+
+interface CanvasCall {
+  name: string;
+  args: unknown[];
+}
+
+interface FakeCanvasContext {
+  calls: CanvasCall[];
+  fillStyle: string;
+  font: string;
+  lineWidth: number;
+  strokeStyle: string;
+  arc(x: number, y: number, radius: number, startAngle: number, endAngle: number): void;
+  beginPath(): void;
+  closePath(): void;
+  ellipse(
+    x: number,
+    y: number,
+    radiusX: number,
+    radiusY: number,
+    rotation: number,
+    startAngle: number,
+    endAngle: number
+  ): void;
+  fill(): void;
+  fillText(text: string, x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  moveTo(x: number, y: number): void;
+  quadraticCurveTo(controlX: number, controlY: number, x: number, y: number): void;
+  rect(x: number, y: number, width: number, height: number): void;
+  restore(): void;
+  save(): void;
+  scale(x: number, y: number): void;
+  setLineDash(lineDash: number[]): void;
+  stroke(): void;
+  translate(x: number, y: number): void;
+}
+
+function renderFigure(figure: FigureObject): FakeCanvasContext {
+  const renderer = requireBuiltInRenderer(figure.type);
+  const context = createFakeCanvasContext();
+
+  renderer.render({ context: context as unknown as CanvasRenderingContext2D, figure });
+
+  return context;
+}
+
+function requireBuiltInRenderer(type: FigureType): FigureRenderer {
+  const renderer = createBuiltInFigureRenderers().find((entry) => entry.type === type);
+
+  if (!renderer) {
+    throw new Error(`Missing built-in renderer: ${type}`);
+  }
+
+  return renderer;
+}
+
+function createFakeCanvasContext(): FakeCanvasContext {
+  const calls: CanvasCall[] = [];
+  const record = (name: string, ...args: unknown[]) => {
+    calls.push({ name, args });
+  };
+
+  return {
+    calls,
+    fillStyle: "",
+    font: "",
+    lineWidth: 1,
+    strokeStyle: "",
+    arc(x, y, radius, startAngle, endAngle) {
+      record("arc", x, y, radius, startAngle, endAngle);
+    },
+    beginPath() {
+      record("beginPath");
+    },
+    closePath() {
+      record("closePath");
+    },
+    ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle) {
+      record("ellipse", x, y, radiusX, radiusY, rotation, startAngle, endAngle);
+    },
+    fill() {
+      record("fill");
+    },
+    fillText(text, x, y) {
+      record("fillText", text, x, y);
+    },
+    lineTo(x, y) {
+      record("lineTo", x, y);
+    },
+    moveTo(x, y) {
+      record("moveTo", x, y);
+    },
+    quadraticCurveTo(controlX, controlY, x, y) {
+      record("quadraticCurveTo", controlX, controlY, x, y);
+    },
+    rect(x, y, width, height) {
+      record("rect", x, y, width, height);
+    },
+    restore() {
+      record("restore");
+    },
+    save() {
+      record("save");
+    },
+    scale(x, y) {
+      record("scale", x, y);
+    },
+    setLineDash(lineDash) {
+      record("setLineDash", [...lineDash]);
+    },
+    stroke() {
+      record("stroke");
+    },
+    translate(x, y) {
+      record("translate", x, y);
+    }
+  };
+}
+
+function getCallNames(context: FakeCanvasContext): string[] {
+  return context.calls.map((call) => call.name);
+}
+
+function getCallArgs(context: FakeCanvasContext, name: string): unknown[][] {
+  return context.calls.filter((call) => call.name === name).map((call) => call.args);
+}
