@@ -16,7 +16,14 @@ const tools = [
   "longPosition",
   "datePriceRange",
   "elliottImpulseWave",
+  "headAndShouldersPattern",
   "forecastPath"
+];
+
+const longLabelTools = [
+  ["fibonacciRetracement", "Fibonacci Retracement"],
+  ["elliottImpulseWave", "Elliott Impulse Wave"],
+  ["headAndShouldersPattern", "Head And Shoulders"]
 ];
 
 test("playground exposes drawing tool categories and creates representative tools", async ({ page }) => {
@@ -24,6 +31,13 @@ test("playground exposes drawing tool categories and creates representative tool
 
   for (const tool of tools) {
     await expect(page.getByTestId(`drawing-tool-${tool}`)).toBeVisible();
+  }
+
+  for (const [tool, label] of longLabelTools) {
+    const button = page.getByTestId(`drawing-tool-${tool}`);
+
+    await expect(button).toHaveText(label);
+    await expect(button).toHaveAttribute("title", label);
   }
 
   const overlay = page.getByTestId("chart-overlay");

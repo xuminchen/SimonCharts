@@ -43,11 +43,7 @@ export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToo
     group.append(label);
 
     for (const item of tools) {
-      const button = createButton(
-        getCompactToolLabel(item.label),
-        `drawing-tool-${item.type}`,
-        () => options.setTool(item.type)
-      );
+      const button = createButton(item.label, `drawing-tool-${item.type}`, () => options.setTool(item.type));
 
       button.title = item.label;
       toolButtons.set(item.type, button);
@@ -104,18 +100,4 @@ function groupToolsByCategory(
   }
 
   return [...groups.entries()];
-}
-
-function getCompactToolLabel(label: string): string {
-  if (label.length <= 14) {
-    return label;
-  }
-
-  return label
-    .split(/[\s/-]+/)
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 4)
-    .toUpperCase();
 }

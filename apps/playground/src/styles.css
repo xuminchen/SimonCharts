@@ -115,8 +115,6 @@ canvas {
 .drawing-controls button {
   height: 28px;
   min-width: 28px;
-  max-width: 96px;
-  overflow: hidden;
   padding: 0 8px;
   border: 1px solid #d0d7de;
   border-radius: 4px;
@@ -124,7 +122,6 @@ canvas {
   color: #24292f;
   font: inherit;
   font-size: 12px;
-  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
 }
