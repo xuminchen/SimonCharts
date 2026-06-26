@@ -102,6 +102,7 @@ const drawingPropertyPanel = document.createElement("div");
 const drawingJsonExport = document.createElement("textarea");
 const drawingJsonImport = document.createElement("textarea");
 const drawingImportButton = document.createElement("button");
+const drawingJsonImportStatus = document.createElement("div");
 let drawingToolbar: ReturnType<typeof createDrawingToolbar>;
 let drawingEditor: DrawingEditor;
 
@@ -178,12 +179,15 @@ drawingJsonImport.placeholder = "Paste drawing JSON";
 drawingImportButton.type = "button";
 drawingImportButton.dataset.testid = "drawing-json-import-apply";
 drawingImportButton.textContent = "Import";
+drawingJsonImportStatus.className = "drawing-import-status";
+drawingJsonImportStatus.dataset.testid = "drawing-json-import-status";
 drawingWorkbench.append(
   drawingObjectManager,
   drawingPropertyPanel,
   drawingJsonExport,
   drawingJsonImport,
-  drawingImportButton
+  drawingImportButton,
+  drawingJsonImportStatus
 );
 
 for (const type of supportedSeriesTypes) {
@@ -541,6 +545,11 @@ function syncDrawingJsonExport(): void {
   };
 
   drawingJsonExport.value = JSON.stringify(payload, null, 2);
+}
+
+function setDrawingImportStatus(message: string, kind: "error" | "success" | undefined): void {
+  drawingJsonImportStatus.textContent = message;
+  drawingJsonImportStatus.dataset.status = kind ?? "";
 }
 
 function createPlaygroundDrawingEditor(drawings: DrawingObject[]): DrawingEditor {
@@ -959,13 +968,21 @@ themeModeSelect.addEventListener("change", () => {
 });
 
 drawingImportButton.addEventListener("click", () => {
-  const nextState = parseDrawingImport(drawingJsonImport.value);
+  try {
+    const nextState = parseDrawingImport(drawingJsonImport.value);
 
-  drawingEditor = createPlaygroundDrawingEditor(nextState.drawings);
-  drawingEditor.selectDrawings(nextState.selectedDrawingIds);
-  drawingToolbar.setActiveTool("select");
-  syncDrawingStatus();
-  renderStatic();
+    drawingEditor = createPlaygroundDrawingEditor(nextState.drawings);
+    drawingEditor.selectDrawings(nextState.selectedDrawingIds);
+    drawingToolbar.setActiveTool("select");
+    syncDrawingStatus();
+    setDrawingImportStatus(
+      `Imported ${nextState.drawings.length} ${nextState.drawings.length === 1 ? "drawing" : "drawings"}`,
+      "success"
+    );
+    renderStatic();
+  } catch {
+    setDrawingImportStatus("Invalid drawing JSON", "error");
+  }
 });
 
 function render(): void {

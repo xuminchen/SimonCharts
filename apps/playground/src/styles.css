@@ -86,21 +86,40 @@ canvas {
   top: 60px;
   left: 12px;
   z-index: 3;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 6px;
   max-width: calc(100vw - 360px);
-  max-height: 80px;
-  overflow: auto;
   padding: 6px;
   background: #ffffff;
   border: 1px solid #d0d7de;
   border-radius: 6px;
 }
 
+.drawing-tool-palette,
+.drawing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawing-tool-palette {
+  min-width: 0;
+  max-height: 72px;
+  overflow: auto;
+}
+
+.drawing-actions {
+  justify-content: flex-end;
+}
+
 .drawing-tool-group {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .drawing-tool-group-label {
@@ -259,6 +278,20 @@ canvas {
   background: #f6f8fa;
 }
 
+.drawing-import-status {
+  min-height: 16px;
+  color: #57606a;
+  line-height: 16px;
+}
+
+.drawing-import-status[data-status="error"] {
+  color: #cf222e;
+}
+
+.drawing-import-status[data-status="success"] {
+  color: #116329;
+}
+
 @media (max-width: 1100px) {
   .diagnostics-item {
     display: none;
@@ -272,7 +305,7 @@ canvas {
     flex-wrap: wrap;
   }
 
-  .status-item {
+  .top-controls .status-item {
     display: none;
   }
 
@@ -281,6 +314,11 @@ canvas {
     right: 12px;
     flex-wrap: wrap;
     max-width: calc(100vw - 24px);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .drawing-actions {
+    justify-content: flex-start;
   }
 
   .drawing-workbench {

@@ -21,17 +21,21 @@ export interface DrawingToolbarOptions extends DrawingToolbarActions {
 
 export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToolbar {
   const element = document.createElement("div");
+  const toolPalette = document.createElement("div");
+  const actionControls = document.createElement("div");
   const countElement = document.createElement("span");
   const toolButtons = new Map<DrawingEditorTool, HTMLButtonElement>();
 
   element.className = "drawing-controls";
+  toolPalette.className = "drawing-tool-palette";
+  actionControls.className = "drawing-actions";
   countElement.className = "status-item";
   countElement.dataset.testid = "drawing-count";
 
   const selectButton = createButton("Select", "drawing-tool-select", () => options.setTool("select"));
   selectButton.title = "Select";
   toolButtons.set("select", selectButton);
-  element.append(selectButton);
+  toolPalette.append(selectButton);
 
   for (const [category, tools] of groupToolsByCategory(options.tools)) {
     const group = document.createElement("div");
@@ -50,10 +54,10 @@ export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToo
       group.append(button);
     }
 
-    element.append(group);
+    toolPalette.append(group);
   }
 
-  element.append(
+  actionControls.append(
     createButton("Delete", "delete-drawing", options.deleteSelected),
     createButton("Lock", "lock-drawing", options.lockSelected),
     createButton("Hide", "hide-drawing", options.hideSelected),
@@ -61,6 +65,7 @@ export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToo
     createButton("Redo", "redo", options.redo),
     countElement
   );
+  element.append(toolPalette, actionControls);
 
   return {
     element,
