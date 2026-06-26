@@ -44,6 +44,33 @@ describe("drawing figure coverage", () => {
     }
   );
 
+  it.each([
+    ["fibTrendBasedExtension", 3],
+    ["fibTimeZone", 2],
+    ["fibFan", 2],
+    ["fibArc", 2],
+    ["fibChannel", 3],
+    ["fibWedge", 3],
+    ["gannFan", 2],
+    ["gannBox", 2],
+    ["gannSquare", 2],
+    ["pitchfork", 3],
+    ["schiffPitchfork", 3],
+    ["modifiedSchiffPitchfork", 3],
+    ["insidePitchfork", 3],
+    ["elliottImpulseWave", 5],
+    ["elliottCorrectionWave", 3],
+    ["xabcdPattern", 5],
+    ["cypherPattern", 5],
+    ["headAndShouldersPattern", 5],
+    ["forecastPath", 3]
+  ] satisfies Array<[DrawingType, number]>)(
+    "creates advanced figures for %s",
+    (type, anchorCount) => {
+      expect(createFiguresForDrawing(drawing(type, anchorCount))).not.toHaveLength(0);
+    }
+  );
+
   it("maps horizontal segments to a horizontal line through the first anchor", () => {
     expect(createFiguresForDrawing(drawing("horizontalSegment", 2))[0]).toMatchObject({
       type: "line",
@@ -122,5 +149,59 @@ describe("drawing figure coverage", () => {
         { x: 180, y: 50 }
       ]
     });
+  });
+
+  it("maps Fibonacci fans to multiple line figures", () => {
+    const figures = createFiguresForDrawing(drawing("fibFan", 2));
+    const lines = figures.filter((figure) => figure.type === "line");
+
+    expect(lines.length).toBeGreaterThan(1);
+  });
+
+  it("maps Gann boxes to a rect and diagonal lines", () => {
+    expect(createFiguresForDrawing(drawing("gannBox", 2))).toMatchObject([
+      { type: "rect" },
+      {
+        type: "line",
+        points: [
+          { x: 20, y: 30 },
+          { x: 120, y: 90 }
+        ]
+      },
+      {
+        type: "line",
+        points: [
+          { x: 20, y: 90 },
+          { x: 120, y: 30 }
+        ]
+      }
+    ]);
+  });
+
+  it("maps pitchforks to median and parallel lines", () => {
+    const figures = createFiguresForDrawing(drawing("pitchfork", 3));
+
+    expect(figures).toHaveLength(3);
+    expect(figures.every((figure) => figure.type === "line")).toBe(true);
+  });
+
+  it("maps Elliott impulse waves to a polyline and point labels", () => {
+    const figures = createFiguresForDrawing(drawing("elliottImpulseWave", 5));
+
+    expect(figures[0]).toMatchObject({ type: "polyline" });
+    expect(figures.slice(1).every((figure) => figure.type === "label")).toBe(true);
+  });
+
+  it("maps forecast paths to a polyline and final arrow", () => {
+    expect(createFiguresForDrawing(drawing("forecastPath", 3))).toMatchObject([
+      { type: "polyline" },
+      {
+        type: "arrow",
+        points: [
+          { x: 120, y: 90 },
+          { x: 180, y: 50 }
+        ]
+      }
+    ]);
   });
 });

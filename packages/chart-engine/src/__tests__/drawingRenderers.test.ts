@@ -140,7 +140,26 @@ const defaultRenderedDrawingTypes = [
   "simpleTag",
   "triangle",
   "arc",
-  "curve"
+  "curve",
+  "fibTrendBasedExtension",
+  "fibTimeZone",
+  "fibFan",
+  "fibArc",
+  "fibChannel",
+  "fibWedge",
+  "gannFan",
+  "gannBox",
+  "gannSquare",
+  "pitchfork",
+  "schiffPitchfork",
+  "modifiedSchiffPitchfork",
+  "insidePitchfork",
+  "elliottImpulseWave",
+  "elliottCorrectionWave",
+  "xabcdPattern",
+  "cypherPattern",
+  "headAndShouldersPattern",
+  "forecastPath"
 ] satisfies DrawingType[];
 
 describe("drawing renderers", () => {
@@ -153,7 +172,9 @@ describe("drawing renderers", () => {
       anchors: [
         { x: 10, y: 20 },
         { x: 80, y: 60 },
-        { x: 120, y: 40 }
+        { x: 120, y: 40 },
+        { x: 140, y: 70 },
+        { x: 160, y: 30 }
       ],
       text: "Label",
       visible: true,
