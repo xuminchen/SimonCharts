@@ -21,6 +21,7 @@ export type DrawingEditorCommand =
   | { type: "duplicateSelected"; offset: { dx: number; dy: number } }
   | { type: "updateSelectedStyle"; style: DrawingStyle }
   | { type: "updateSelectedText"; text: string }
+  | { type: "cancelCreation" }
   | { type: "deleteSelected" }
   | { type: "lockSelected" }
   | { type: "hideSelected" };

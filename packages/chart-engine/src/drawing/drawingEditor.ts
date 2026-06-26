@@ -1,6 +1,7 @@
 import { createCommandHistory } from "../commands/history";
 import type { DrawingEditorEvent, DrawingEditorTool } from "./drawingCommands";
 import type { DrawingClipboard, DrawingObjectManagerItem } from "./drawingEditState";
+import { mergeDrawingStyle } from "./drawingStyle";
 import { builtInDrawingToolDefinitions } from "./drawingToolDefinitions";
 import { createDrawingToolRegistry, type DrawingToolRegistry } from "./drawingToolRegistry";
 import type { DrawingAnchor, DrawingObject, DrawingStyle } from "./drawingTypes";
@@ -149,7 +150,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     updateSelectedStyle(style) {
       mutateSelected("updateDrawingStyle", (drawing) => ({
         ...drawing,
-        style: { ...drawing.style, ...style }
+        style: mergeDrawingStyle(drawing.style, style)
       }));
     },
     updateSelectedText(text) {
