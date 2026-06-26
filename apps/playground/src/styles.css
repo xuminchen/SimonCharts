@@ -333,7 +333,8 @@ canvas {
   }
 
   .drawing-controls {
-    top: 104px;
+    top: auto;
+    bottom: 12px;
     right: 12px;
     flex-wrap: wrap;
     max-width: calc(100vw - 24px);
@@ -345,10 +346,6 @@ canvas {
   }
 
   .drawing-workbench {
-    top: 184px;
-    left: 12px;
-    right: 12px;
-    width: auto;
-    max-height: calc(100vh - 196px);
+    display: none;
   }
 }
