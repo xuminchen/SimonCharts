@@ -1,5 +1,9 @@
 # Drawing Tool Coverage
 
+The source of truth for built-in tool metadata is `builtInDrawingToolDefinitions`. Each entry is a `DrawingToolDefinition` registered through `createDrawingToolRegistry()` and consumed by `createDrawingEditor()`.
+
+Current editor coverage covers creation, selection, drag, anchor editing where anchors are editable, style editing, text editing for annotation tools, hide, lock, delete, undo, and redo. Rendering coverage is verified through `createFiguresForDrawing()` for every built-in `DrawingType`.
+
 ## Built-In Tool List
 
 | Category | Drawing Type | Anchors | Drawing Mode | Editor Coverage |

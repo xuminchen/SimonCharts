@@ -1,6 +1,6 @@
 # Testing Strategy
 
-The v0.1 test strategy has three layers.
+The engine test strategy has three layers.
 
 Unit tests cover engine contracts and behavior:
 
@@ -68,3 +68,25 @@ Boundary verification confirms engine TypeScript files do not import app or host
 ```bash
 npm run guard:engine-boundary
 ```
+
+## v0.3 Visual Drawing Verification
+
+Focused unit coverage for the drawing platform includes:
+
+- `figurePrimitives.test.ts` for figure renderer registration, bounds, hit-test, and render calls
+- `drawingToolRegistry.test.ts` for `builtInDrawingToolDefinitions` and `createDrawingToolRegistry()`
+- `drawingSchema.test.ts` for `currentDrawingSchemaVersion`, migration, serialization, and deserialization
+- `drawingCoverage.test.ts` for every built-in `DrawingType` routing through `createFiguresForDrawing()`
+- `drawingEditorComplete.test.ts` for selection, object manager state, z-order, style, text, copy, paste, duplicate, lock, hide, undo, and redo
+- `drawingHotkeys.test.ts` for `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`, and magnet tie order
+- `coreIndicators.test.ts` for `coreIndicatorDefinitions` and `calculateCoreIndicator()`
+
+Playground acceptance for the v0.3 workbenches is split across:
+
+```bash
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-editor.spec.ts
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-coverage.spec.ts
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/indicator-workbench.spec.ts
+```
+
+The drawing workbench verifies grouped tool controls, object manager state, property edits, import/export, and representative built-in tools. The indicator workbench verifies the selector exposes every `coreIndicatorDefinitions` entry and routes visual outputs to the expected panel ids.
