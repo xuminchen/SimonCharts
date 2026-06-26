@@ -818,13 +818,15 @@ function createCurrentInteractionEngine(): InteractionEngine {
     throw new Error("Chart layout is not ready");
   }
 
+  const mainPanelLayout = getMainPanelLayout();
+
   return createInteractionEngine({
     series: fixtureDailyCandleSeries,
     viewport,
-    width: layout.plotArea.width,
-    plotLeft: layout.plotArea.x,
-    plotTop: layout.plotArea.y,
-    plotHeight: layout.plotArea.height,
+    width: mainPanelLayout.plotArea.width,
+    plotLeft: mainPanelLayout.plotArea.x,
+    plotTop: mainPanelLayout.plotArea.y,
+    plotHeight: mainPanelLayout.plotArea.height,
     onEvent: handleInteractionEvent
   });
 }
@@ -841,6 +843,15 @@ function clearTransientInteraction(inputType: "leave" | "blur"): void {
   cancelPointerInteraction();
   lastKeyboardCommandText = "none";
   interactionSession.handleInput({ type: inputType });
+  syncInteractionDiagnostics();
+}
+
+function clearIndicatorInteractionState(): void {
+  drawingDragStart = undefined;
+  crosshair = undefined;
+  interactionEngine = undefined;
+  lastKeyboardCommandText = "none";
+  interactionSession.handleInput({ type: "leave" });
   syncInteractionDiagnostics();
 }
 
@@ -1020,6 +1031,7 @@ indicatorSelector.addEventListener("change", () => {
   if (!indicatorId) {
     activeIndicatorDefinition = undefined;
     activeVisualOutputs = playgroundVisualOutputs;
+    clearIndicatorInteractionState();
     render();
     return;
   }
@@ -1028,6 +1040,7 @@ indicatorSelector.addEventListener("change", () => {
     (definition) => definition.id === indicatorId
   );
   activeVisualOutputs = calculateCoreIndicator(indicatorId, fixtureDailyCandleSeries).outputs;
+  clearIndicatorInteractionState();
   render();
 });
 
