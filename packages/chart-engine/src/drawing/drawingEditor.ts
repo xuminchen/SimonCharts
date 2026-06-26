@@ -54,7 +54,6 @@ export interface DrawingEditor {
 interface EditorSnapshot {
   drawings: DrawingObject[];
   selectedDrawingIds: string[];
-  clipboard: DrawingClipboard;
 }
 
 export function createDrawingEditor(options: DrawingEditorOptions): DrawingEditor {
@@ -99,7 +98,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       pendingAnchors = [];
       commitSnapshot(
         "createDrawing",
-        { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id], clipboard },
+        { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id] },
         () => {
           emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
           emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
@@ -189,7 +188,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
       commitSnapshot(
         "moveDrawing",
-        { drawings: nextDrawings, selectedDrawingIds, clipboard },
+        { drawings: nextDrawings, selectedDrawingIds },
         () => {
           for (const drawing of updatedDrawings) {
             emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
@@ -215,8 +214,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         "dragAnchor",
         {
           drawings: drawings.map((existing) => (existing.id === updated.id ? updated : existing)),
-          selectedDrawingIds,
-          clipboard
+          selectedDrawingIds
         },
         () => emit({ type: "drawingUpdated", drawing: cloneDrawing(updated) })
       );
@@ -237,8 +235,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         "deleteDrawing",
         {
           drawings: drawings.filter((drawing) => !selectedIds.has(drawing.id) || drawing.locked),
-          selectedDrawingIds: nextSelectedDrawingIds,
-          clipboard
+          selectedDrawingIds: nextSelectedDrawingIds
         },
         () => {
           for (const drawingId of deletedIds) {
@@ -336,7 +333,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
     commitSnapshot(
       "reorderDrawing",
-      { drawings: nextDrawings, selectedDrawingIds, clipboard },
+      { drawings: nextDrawings, selectedDrawingIds },
       () => {
         emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
       }
@@ -373,8 +370,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       label,
       {
         drawings: nextDrawings,
-        selectedDrawingIds: pastedDrawings.map((drawing) => drawing.id),
-        clipboard
+        selectedDrawingIds: pastedDrawings.map((drawing) => drawing.id)
       },
       () => {
         for (const drawing of pastedDrawings) {
@@ -409,7 +405,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
     commitSnapshot(
       label,
-      { drawings: nextDrawings, selectedDrawingIds, clipboard },
+      { drawings: nextDrawings, selectedDrawingIds },
       () => {
         for (const drawing of updatedDrawings) {
           emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
@@ -441,15 +437,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   function createSnapshot(): EditorSnapshot {
     return {
       drawings: cloneDrawings(drawings),
-      selectedDrawingIds: [...selectedDrawingIds],
-      clipboard: cloneClipboard(clipboard)
+      selectedDrawingIds: [...selectedDrawingIds]
     };
   }
 
   function restoreSnapshot(snapshot: EditorSnapshot): void {
     drawings = cloneDrawings(snapshot.drawings);
     selectedDrawingIds = [...snapshot.selectedDrawingIds];
-    clipboard = cloneClipboard(snapshot.clipboard);
   }
 }
 
@@ -491,14 +485,7 @@ function cloneDrawings(drawings: DrawingObject[]): DrawingObject[] {
 function cloneSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
   return {
     drawings: cloneDrawings(snapshot.drawings),
-    selectedDrawingIds: [...snapshot.selectedDrawingIds],
-    clipboard: cloneClipboard(snapshot.clipboard)
-  };
-}
-
-function cloneClipboard(clipboard: DrawingClipboard): DrawingClipboard {
-  return {
-    drawings: cloneDrawings(clipboard.drawings)
+    selectedDrawingIds: [...snapshot.selectedDrawingIds]
   };
 }
 

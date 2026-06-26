@@ -123,6 +123,86 @@ describe("complete drawing editor", () => {
     ]);
   });
 
+  it("preserves copied drawings across undo and paste history", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "a", type: "text", anchors: [{ x: 0, y: 0 }], text: "A" },
+        { id: "b", type: "text", anchors: [{ x: 10, y: 20 }], text: "B" }
+      ]
+    });
+
+    editor.selectDrawing("a");
+    editor.updateSelectedText("A1");
+    editor.selectDrawing("b");
+    editor.copySelected();
+    editor.undo();
+    editor.pasteCopied({ dx: 1, dy: 1 });
+
+    const state = editor.getState();
+    const pastedId = state.selectedDrawingIds[0];
+    const pasted = findDrawing(state.drawings, pastedId);
+
+    expect(findDrawing(state.drawings, "a").text).toBe("A");
+    expect(findDrawing(state.drawings, "b").text).toBe("B");
+    expect(pastedId).not.toBe("b");
+    expect(pasted).toMatchObject({
+      type: "text",
+      text: "B",
+      anchors: [{ x: 11, y: 21 }]
+    });
+  });
+
+  it("copies and duplicates locked drawings without mutating the original", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        {
+          id: "locked",
+          type: "text",
+          locked: true,
+          anchors: [{ x: 0, y: 0 }],
+          text: "Locked"
+        }
+      ]
+    });
+
+    editor.selectDrawing("locked");
+    editor.copySelected();
+    editor.pasteCopied({ dx: 2, dy: 3 });
+
+    const pastedState = editor.getState();
+    const pastedId = pastedState.selectedDrawingIds[0];
+
+    expect(pastedId).not.toBe("locked");
+    expect(findDrawing(pastedState.drawings, "locked")).toMatchObject({
+      locked: true,
+      anchors: [{ x: 0, y: 0 }],
+      text: "Locked"
+    });
+    expect(findDrawing(pastedState.drawings, pastedId)).toMatchObject({
+      locked: true,
+      anchors: [{ x: 2, y: 3 }],
+      text: "Locked"
+    });
+
+    editor.selectDrawing("locked");
+    editor.duplicateSelected({ dx: 4, dy: 5 });
+
+    const duplicatedState = editor.getState();
+    const duplicatedId = duplicatedState.selectedDrawingIds[0];
+
+    expect(duplicatedId).not.toBe("locked");
+    expect(findDrawing(duplicatedState.drawings, "locked")).toMatchObject({
+      locked: true,
+      anchors: [{ x: 0, y: 0 }],
+      text: "Locked"
+    });
+    expect(findDrawing(duplicatedState.drawings, duplicatedId)).toMatchObject({
+      locked: true,
+      anchors: [{ x: 4, y: 5 }],
+      text: "Locked"
+    });
+  });
+
   it("updates selected style and text through undoable commands", () => {
     const editor = createDrawingEditor({
       drawings: [
