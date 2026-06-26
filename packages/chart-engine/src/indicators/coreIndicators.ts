@@ -130,6 +130,10 @@ function histogramOutput(
 }
 
 function pointsFromValues(pointTimes: number[], values: Array<number | null>): IndicatorPoint[] {
+  if (values.length !== pointTimes.length) {
+    throw new Error(`Indicator value count (${values.length}) must match candle time count (${pointTimes.length})`);
+  }
+
   return pointTimes.map((time, index) => ({ time, value: values[index] ?? null }));
 }
 
