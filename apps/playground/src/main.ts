@@ -20,10 +20,13 @@ import {
   createVisualLayer,
   createVisualRendererRegistry,
   defaultChartTheme,
+  builtInDrawingToolDefinitions,
+  deserializeDrawingObject,
   renderOverlay,
   fixtureDailyCandleSeries,
   renderStaticChart,
   resizeCanvas,
+  serializeDrawingObject,
   supportedSeriesTypes
 } from "@simoncharts/chart-engine";
 import type {
@@ -37,6 +40,7 @@ import type {
   PanelArea,
   PanelDefinition,
   RenderInvalidation,
+  DrawingEditor,
   DrawingEditorTool,
   DrawingObject,
   SeriesType,
@@ -92,7 +96,14 @@ const lastInvalidationReason = document.createElement("span");
 const canvas = document.createElement("canvas");
 const overlayCanvas = document.createElement("canvas");
 const resetButton = document.createElement("button");
+const drawingWorkbench = document.createElement("div");
+const drawingObjectManager = document.createElement("div");
+const drawingPropertyPanel = document.createElement("div");
+const drawingJsonExport = document.createElement("textarea");
+const drawingJsonImport = document.createElement("textarea");
+const drawingImportButton = document.createElement("button");
 let drawingToolbar: ReturnType<typeof createDrawingToolbar>;
+let drawingEditor: DrawingEditor;
 
 chartSurface.className = "chart-surface";
 topControls.className = "top-controls";
@@ -151,6 +162,29 @@ resetButton.type = "button";
 resetButton.className = "reset-view";
 resetButton.dataset.testid = "reset-view";
 resetButton.textContent = "Reset";
+drawingWorkbench.className = "drawing-workbench";
+drawingObjectManager.className = "drawing-workbench-section";
+drawingObjectManager.dataset.testid = "drawing-object-manager";
+drawingPropertyPanel.className = "drawing-workbench-section";
+drawingPropertyPanel.dataset.testid = "drawing-property-panel";
+drawingJsonExport.className = "drawing-json";
+drawingJsonExport.dataset.testid = "drawing-json-export";
+drawingJsonExport.readOnly = true;
+drawingJsonExport.spellcheck = false;
+drawingJsonImport.className = "drawing-json";
+drawingJsonImport.dataset.testid = "drawing-json-import";
+drawingJsonImport.spellcheck = false;
+drawingJsonImport.placeholder = "Paste drawing JSON";
+drawingImportButton.type = "button";
+drawingImportButton.dataset.testid = "drawing-json-import-apply";
+drawingImportButton.textContent = "Import";
+drawingWorkbench.append(
+  drawingObjectManager,
+  drawingPropertyPanel,
+  drawingJsonExport,
+  drawingJsonImport,
+  drawingImportButton
+);
 
 for (const type of supportedSeriesTypes) {
   const option = document.createElement("option");
@@ -185,17 +219,13 @@ const playgroundPanelDefinitions: PanelDefinition[] = [
   { id: "main", kind: "main", label: "Main", heightRatio: 3 },
   { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
 ];
-const drawingEditor = createDrawingEditor({
-  drawings: [],
-  onEvent(event) {
-    window.__SIMON_CHART_EVENTS__?.push(event);
-    syncDrawingStatus();
-  }
-});
+drawingEditor = createPlaygroundDrawingEditor([]);
 drawingToolbar = createDrawingToolbar({
+  tools: builtInDrawingToolDefinitions,
   setTool(tool) {
     drawingEditor.setTool(tool);
     drawingToolbar.setActiveTool(tool);
+    renderStatic();
   },
   deleteSelected() {
     drawingEditor.deleteSelected();
@@ -219,7 +249,14 @@ drawingToolbar = createDrawingToolbar({
   }
 });
 drawingToolbar.setActiveTool("select");
-chartSurface.replaceChildren(canvas, overlayCanvas, topControls, drawingToolbar.element, resetButton);
+chartSurface.replaceChildren(
+  canvas,
+  overlayCanvas,
+  topControls,
+  drawingToolbar.element,
+  drawingWorkbench,
+  resetButton
+);
 app.replaceChildren(chartSurface);
 
 const visualRendererRegistry = createVisualRendererRegistry();
@@ -391,6 +428,186 @@ function syncDrawingStatus(): void {
   const count = drawingEditor.getState().drawings.filter((drawing) => drawing.visible !== false).length;
 
   drawingToolbar.countElement.textContent = `${count} ${count === 1 ? "drawing" : "drawings"}`;
+  syncDrawingWorkbench();
+}
+
+function syncDrawingWorkbench(): void {
+  syncDrawingObjectManager();
+  syncDrawingPropertyPanel();
+  syncDrawingJsonExport();
+}
+
+function syncDrawingObjectManager(): void {
+  const items = drawingEditor.getObjectManagerItems();
+
+  drawingObjectManager.replaceChildren(createWorkbenchTitle("Objects"));
+
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+
+    empty.className = "drawing-empty";
+    empty.textContent = "No drawings";
+    drawingObjectManager.append(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const button = document.createElement("button");
+    const flags = [
+      item.selected ? "selected" : "",
+      item.locked ? "locked" : "unlocked",
+      item.visible ? "visible" : "hidden"
+    ].filter(Boolean);
+
+    button.type = "button";
+    button.className = "drawing-object-row";
+    button.dataset.drawingId = item.id;
+    button.dataset.selected = String(item.selected);
+    button.textContent = `${item.type} ${item.id} z${item.zIndex} ${flags.join(" ")}`;
+    button.addEventListener("click", () => {
+      drawingEditor.selectDrawing(item.id);
+      renderStatic();
+    });
+    drawingObjectManager.append(button);
+  }
+}
+
+function syncDrawingPropertyPanel(): void {
+  const state = drawingEditor.getState();
+  const selected = state.drawings.filter((drawing) => state.selectedDrawingIds.includes(drawing.id));
+
+  drawingPropertyPanel.replaceChildren(createWorkbenchTitle("Properties"));
+
+  const selectedIds = document.createElement("div");
+
+  selectedIds.className = "drawing-property-summary";
+  selectedIds.textContent =
+    selected.length === 0 ? "Selection: none" : `Selection: ${selected.map((drawing) => drawing.id).join(", ")}`;
+  drawingPropertyPanel.append(selectedIds);
+
+  if (selected.length === 0) {
+    return;
+  }
+
+  const colorInput = document.createElement("input");
+  const widthInput = document.createElement("input");
+  const textInput = document.createElement("input");
+
+  colorInput.type = "color";
+  colorInput.dataset.testid = "drawing-style-color";
+  colorInput.value = normalizeHexColor(selected[0].style?.color) ?? "#2563eb";
+  colorInput.addEventListener("input", () => {
+    drawingEditor.updateSelectedStyle({ color: colorInput.value });
+    renderStatic();
+  });
+
+  widthInput.type = "number";
+  widthInput.min = "1";
+  widthInput.max = "8";
+  widthInput.step = "1";
+  widthInput.dataset.testid = "drawing-style-width";
+  widthInput.value = String(selected[0].style?.lineWidth ?? 2);
+  widthInput.addEventListener("change", () => {
+    const lineWidth = Number(widthInput.value);
+
+    if (Number.isFinite(lineWidth) && lineWidth > 0) {
+      drawingEditor.updateSelectedStyle({ lineWidth });
+      renderStatic();
+    }
+  });
+
+  textInput.type = "text";
+  textInput.dataset.testid = "drawing-text";
+  textInput.value = selected[0].text ?? "";
+  textInput.placeholder = "Text";
+  textInput.addEventListener("change", () => {
+    drawingEditor.updateSelectedText(textInput.value);
+    renderStatic();
+  });
+
+  drawingPropertyPanel.append(
+    createLabeledControl("Color", colorInput),
+    createLabeledControl("Width", widthInput),
+    createLabeledControl("Text", textInput)
+  );
+}
+
+function syncDrawingJsonExport(): void {
+  const state = drawingEditor.getState();
+  const payload = {
+    schemaVersion: 1,
+    drawings: state.drawings.map(serializeDrawingObject),
+    selectedDrawingIds: state.selectedDrawingIds
+  };
+
+  drawingJsonExport.value = JSON.stringify(payload, null, 2);
+}
+
+function createPlaygroundDrawingEditor(drawings: DrawingObject[]): DrawingEditor {
+  return createDrawingEditor({
+    drawings,
+    onEvent(event) {
+      window.__SIMON_CHART_EVENTS__?.push(event);
+      syncDrawingStatus();
+    }
+  });
+}
+
+function createWorkbenchTitle(label: string): HTMLDivElement {
+  const title = document.createElement("div");
+
+  title.className = "drawing-workbench-title";
+  title.textContent = label;
+
+  return title;
+}
+
+function createLabeledControl(labelText: string, control: HTMLElement): HTMLLabelElement {
+  const label = document.createElement("label");
+  const text = document.createElement("span");
+
+  label.className = "drawing-property-control";
+  text.textContent = labelText;
+  label.append(text, control);
+
+  return label;
+}
+
+function normalizeHexColor(value: string | undefined): string | undefined {
+  return value && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
+}
+
+function parseDrawingImport(value: string): { drawings: DrawingObject[]; selectedDrawingIds: string[] } {
+  const parsed = JSON.parse(value) as unknown;
+  const payload = Array.isArray(parsed)
+    ? { drawings: parsed, selectedDrawingIds: [] }
+    : parsed;
+
+  if (!isDrawingImportPayload(payload)) {
+    throw new Error("Drawing import must be an array or an object with drawings");
+  }
+
+  return {
+    drawings: payload.drawings.map(deserializeDrawingObject),
+    selectedDrawingIds: (payload.selectedDrawingIds ?? []).filter(
+      (id): id is string => typeof id === "string"
+    )
+  };
+}
+
+function isDrawingImportPayload(
+  value: unknown
+): value is { drawings: unknown[]; selectedDrawingIds?: string[] } {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const payload = value as { drawings?: unknown; selectedDrawingIds?: unknown };
+
+  return (
+    Array.isArray(payload.drawings) &&
+    (payload.selectedDrawingIds === undefined || Array.isArray(payload.selectedDrawingIds))
+  );
 }
 
 function syncEngineStatus(): void {
@@ -739,6 +956,16 @@ themeModeSelect.addEventListener("change", () => {
   });
   syncEngineStatus();
   render();
+});
+
+drawingImportButton.addEventListener("click", () => {
+  const nextState = parseDrawingImport(drawingJsonImport.value);
+
+  drawingEditor = createPlaygroundDrawingEditor(nextState.drawings);
+  drawingEditor.selectDrawings(nextState.selectedDrawingIds);
+  drawingToolbar.setActiveTool("select");
+  syncDrawingStatus();
+  renderStatic();
 });
 
 function render(): void {

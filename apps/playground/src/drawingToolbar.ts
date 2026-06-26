@@ -1,4 +1,4 @@
-import type { DrawingEditorTool } from "@simoncharts/chart-engine";
+import type { DrawingEditorTool, DrawingToolDefinition } from "@simoncharts/chart-engine";
 
 export interface DrawingToolbar {
   element: HTMLDivElement;
@@ -15,7 +15,11 @@ export interface DrawingToolbarActions {
   redo(): void;
 }
 
-export function createDrawingToolbar(actions: DrawingToolbarActions): DrawingToolbar {
+export interface DrawingToolbarOptions extends DrawingToolbarActions {
+  tools: DrawingToolDefinition[];
+}
+
+export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToolbar {
   const element = document.createElement("div");
   const countElement = document.createElement("span");
   const toolButtons = new Map<DrawingEditorTool, HTMLButtonElement>();
@@ -24,28 +28,41 @@ export function createDrawingToolbar(actions: DrawingToolbarActions): DrawingToo
   countElement.className = "status-item";
   countElement.dataset.testid = "drawing-count";
 
-  const tools: Array<{ tool: DrawingEditorTool; label: string; testId: string }> = [
-    { tool: "select", label: "Select", testId: "drawing-tool-select" },
-    { tool: "trendLine", label: "Line", testId: "drawing-tool-trendLine" },
-    { tool: "horizontalLine", label: "H", testId: "drawing-tool-horizontalLine" },
-    { tool: "verticalLine", label: "V", testId: "drawing-tool-verticalLine" },
-    { tool: "rectangle", label: "Rect", testId: "drawing-tool-rectangle" },
-    { tool: "text", label: "Text", testId: "drawing-tool-text" }
-  ];
+  const selectButton = createButton("Select", "drawing-tool-select", () => options.setTool("select"));
+  selectButton.title = "Select";
+  toolButtons.set("select", selectButton);
+  element.append(selectButton);
 
-  for (const item of tools) {
-    const button = createButton(item.label, item.testId, () => actions.setTool(item.tool));
+  for (const [category, tools] of groupToolsByCategory(options.tools)) {
+    const group = document.createElement("div");
+    const label = document.createElement("span");
 
-    toolButtons.set(item.tool, button);
-    element.append(button);
+    group.className = "drawing-tool-group";
+    label.className = "drawing-tool-group-label";
+    label.textContent = category;
+    group.append(label);
+
+    for (const item of tools) {
+      const button = createButton(
+        getCompactToolLabel(item.label),
+        `drawing-tool-${item.type}`,
+        () => options.setTool(item.type)
+      );
+
+      button.title = item.label;
+      toolButtons.set(item.type, button);
+      group.append(button);
+    }
+
+    element.append(group);
   }
 
   element.append(
-    createButton("Delete", "delete-drawing", actions.deleteSelected),
-    createButton("Lock", "lock-drawing", actions.lockSelected),
-    createButton("Hide", "hide-drawing", actions.hideSelected),
-    createButton("Undo", "undo", actions.undo),
-    createButton("Redo", "redo", actions.redo),
+    createButton("Delete", "delete-drawing", options.deleteSelected),
+    createButton("Lock", "lock-drawing", options.lockSelected),
+    createButton("Hide", "hide-drawing", options.hideSelected),
+    createButton("Undo", "undo", options.undo),
+    createButton("Redo", "redo", options.redo),
     countElement
   );
 
@@ -69,4 +86,36 @@ function createButton(label: string, testId: string, onClick: () => void): HTMLB
   button.addEventListener("click", onClick);
 
   return button;
+}
+
+function groupToolsByCategory(
+  tools: DrawingToolDefinition[]
+): Array<[DrawingToolDefinition["category"], DrawingToolDefinition[]]> {
+  const groups = new Map<DrawingToolDefinition["category"], DrawingToolDefinition[]>();
+
+  for (const tool of tools) {
+    const group = groups.get(tool.category);
+
+    if (group) {
+      group.push(tool);
+    } else {
+      groups.set(tool.category, [tool]);
+    }
+  }
+
+  return [...groups.entries()];
+}
+
+function getCompactToolLabel(label: string): string {
+  if (label.length <= 14) {
+    return label;
+  }
+
+  return label
+    .split(/[\s/-]+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 4)
+    .toUpperCase();
 }

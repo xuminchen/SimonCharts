@@ -87,21 +87,45 @@ canvas {
   left: 12px;
   z-index: 3;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  max-width: calc(100vw - 360px);
+  max-height: 80px;
+  overflow: auto;
   padding: 6px;
   background: #ffffff;
   border: 1px solid #d0d7de;
   border-radius: 6px;
 }
 
+.drawing-tool-group {
+  display: contents;
+}
+
+.drawing-tool-group-label {
+  align-self: center;
+  color: #57606a;
+  font-size: 11px;
+  line-height: 20px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .drawing-controls button {
   height: 28px;
+  min-width: 28px;
+  max-width: 96px;
+  overflow: hidden;
+  padding: 0 8px;
   border: 1px solid #d0d7de;
   border-radius: 4px;
   background: #ffffff;
   color: #24292f;
   font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -142,6 +166,102 @@ canvas {
   background: #f6f8fa;
 }
 
+.drawing-workbench {
+  position: absolute;
+  top: 60px;
+  right: 12px;
+  z-index: 3;
+  box-sizing: border-box;
+  display: grid;
+  gap: 8px;
+  width: 320px;
+  max-height: calc(100vh - 112px);
+  overflow: auto;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #24292f;
+  font-size: 12px;
+}
+
+.drawing-workbench-section {
+  display: grid;
+  gap: 4px;
+}
+
+.drawing-workbench-title {
+  color: #57606a;
+  font-size: 11px;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.drawing-empty,
+.drawing-property-summary {
+  color: #57606a;
+  line-height: 18px;
+}
+
+.drawing-object-row {
+  height: 26px;
+  overflow: hidden;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #24292f;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.drawing-object-row[data-selected="true"] {
+  background: #f6f8fa;
+  border-color: #8c959f;
+}
+
+.drawing-property-control {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.drawing-property-control input,
+.drawing-json,
+.drawing-workbench button {
+  box-sizing: border-box;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #24292f;
+  font: inherit;
+}
+
+.drawing-property-control input {
+  min-width: 0;
+  height: 26px;
+}
+
+.drawing-json {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.drawing-workbench button {
+  height: 28px;
+  cursor: pointer;
+}
+
+.drawing-workbench button:hover {
+  background: #f6f8fa;
+}
+
 @media (max-width: 1100px) {
   .diagnostics-item {
     display: none;
@@ -163,5 +283,14 @@ canvas {
     top: 104px;
     right: 12px;
     flex-wrap: wrap;
+    max-width: calc(100vw - 24px);
+  }
+
+  .drawing-workbench {
+    top: 184px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100vh - 196px);
   }
 }
