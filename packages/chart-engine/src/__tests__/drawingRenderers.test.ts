@@ -38,6 +38,10 @@ class FakeCanvasContext {
     this.record("lineTo", x, y);
   }
 
+  closePath(): void {
+    this.record("closePath");
+  }
+
   rect(x: number, y: number, width: number, height: number): void {
     this.record("rect", x, y, width, height);
   }
@@ -97,7 +101,7 @@ class FakeCanvasContext {
   }
 }
 
-const rendererBackedDrawingTypes = [
+const defaultRenderedDrawingTypes = [
   "trendLine",
   "ray",
   "extendedLine",
@@ -120,11 +124,27 @@ const rendererBackedDrawingTypes = [
   "arrow",
   "longPosition",
   "shortPosition",
-  "datePriceRange"
+  "datePriceRange",
+  "segment",
+  "straightLine",
+  "rayLine",
+  "horizontalRayLine",
+  "horizontalSegment",
+  "horizontalStraightLine",
+  "verticalRayLine",
+  "verticalSegment",
+  "verticalStraightLine",
+  "priceLine",
+  "priceChannelLine",
+  "simpleAnnotation",
+  "simpleTag",
+  "triangle",
+  "arc",
+  "curve"
 ] satisfies DrawingType[];
 
 describe("drawing renderers", () => {
-  it.each(rendererBackedDrawingTypes)("renders %s from neutral JSON", (type) => {
+  it.each(defaultRenderedDrawingTypes)("renders %s from neutral JSON", (type) => {
     const registry = createDefaultDrawingRendererRegistry();
     const layer = createDrawingLayer(registry);
     const drawing: DrawingObject = {
@@ -190,10 +210,10 @@ describe("drawing renderers", () => {
     );
   });
 
-  it("registers all renderer-backed drawing types in the default registry", () => {
+  it("registers all default-rendered drawing types in the default registry", () => {
     const registry = createDefaultDrawingRendererRegistry();
 
-    expect(registry.list().map((renderer) => renderer.type)).toEqual(rendererBackedDrawingTypes);
+    expect(registry.list().map((renderer) => renderer.type)).toEqual(defaultRenderedDrawingTypes);
   });
 });
 

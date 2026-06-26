@@ -1,5 +1,6 @@
 import { createDrawingRendererRegistry } from "../../../drawing/drawingRegistry";
 import type { DrawingRendererRegistry } from "../../../drawing/drawingRegistry";
+import type { DrawingType } from "../../../drawing/drawingTypes";
 import { createChannelDrawingRenderers } from "./channelDrawingRenderer";
 import { createFibonacciDrawingRenderers } from "./fibonacciDrawingRenderer";
 import { createLineDrawingRenderers } from "./lineDrawingRenderer";
@@ -8,6 +9,7 @@ import { createPositionDrawingRenderers } from "./positionDrawingRenderer";
 import { createRangeDrawingRenderers } from "./rangeDrawingRenderer";
 import { createShapeDrawingRenderers } from "./shapeDrawingRenderer";
 import { createTextDrawingRenderers } from "./textDrawingRenderer";
+import { createFigureDrawingRenderer } from "./drawingRendererHelpers";
 
 export function createDefaultDrawingRendererRegistry(): DrawingRendererRegistry {
   const registry = createDrawingRendererRegistry();
@@ -19,7 +21,8 @@ export function createDefaultDrawingRendererRegistry(): DrawingRendererRegistry 
     ...createShapeDrawingRenderers(),
     ...createPathDrawingRenderers(),
     ...createPositionDrawingRenderers(),
-    ...createRangeDrawingRenderers()
+    ...createRangeDrawingRenderers(),
+    ...figureDrawingTypes.map(createFigureDrawingRenderer)
   ];
 
   for (const renderer of renderers) {
@@ -28,3 +31,22 @@ export function createDefaultDrawingRendererRegistry(): DrawingRendererRegistry 
 
   return registry;
 }
+
+const figureDrawingTypes: DrawingType[] = [
+  "segment",
+  "straightLine",
+  "rayLine",
+  "horizontalRayLine",
+  "horizontalSegment",
+  "horizontalStraightLine",
+  "verticalRayLine",
+  "verticalSegment",
+  "verticalStraightLine",
+  "priceLine",
+  "priceChannelLine",
+  "simpleAnnotation",
+  "simpleTag",
+  "triangle",
+  "arc",
+  "curve"
+];

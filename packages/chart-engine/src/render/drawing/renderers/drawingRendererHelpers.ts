@@ -1,10 +1,16 @@
 import { getDrawingBounds } from "../../../drawing/drawingGeometry";
+import { createFiguresForDrawing } from "../../../drawing/drawingFigures";
 import { hitTestDrawingAnchor, type DrawingPoint } from "../../../drawing/drawingHitTest";
 import type { DrawingObject, DrawingType } from "../../../drawing/drawingTypes";
 import type { DrawingRenderer } from "../../../drawing/drawingRegistry";
+import { createBuiltInFigureRenderers } from "../../../figures/builtInFigures";
+import { hitTestFigure } from "../../../figures/figureGeometry";
 
 const defaultStroke = "#2563eb";
 const defaultFill = "rgba(37, 99, 235, 0.12)";
+const figureRenderers = new Map(
+  createBuiltInFigureRenderers().map((renderer) => [renderer.type, renderer])
+);
 
 export interface AnchorPoint {
   x: number;
@@ -48,6 +54,38 @@ export function createDrawingRenderer(
       const distance = distanceToBounds(point, bounds);
 
       return distance <= 6 ? { drawingId: drawing.id, distance } : undefined;
+    }
+  };
+}
+
+export function createFigureDrawingRenderer(type: DrawingType): DrawingRenderer {
+  return {
+    type,
+    render({ context, drawing }) {
+      for (const figure of createFiguresForDrawing(drawing)) {
+        figureRenderers.get(figure.type)?.render({ context, figure });
+      }
+    },
+    hitTest(drawing, point) {
+      const anchorHit = hitTestDrawingAnchor(drawing, point, 6);
+
+      if (anchorHit) {
+        return { drawingId: drawing.id, distance: anchorHit.distance };
+      }
+
+      let closestDistance = Number.POSITIVE_INFINITY;
+
+      for (const figure of createFiguresForDrawing(drawing)) {
+        const hit = hitTestFigure(figure, point, 6);
+
+        if (hit && hit.distance < closestDistance) {
+          closestDistance = hit.distance;
+        }
+      }
+
+      return Number.isFinite(closestDistance)
+        ? { drawingId: drawing.id, distance: closestDistance }
+        : undefined;
     }
   };
 }

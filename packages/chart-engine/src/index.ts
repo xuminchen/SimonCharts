@@ -6,6 +6,7 @@ export * from "./figures/figureGeometry";
 export * from "./figures/figureRegistry";
 export * from "./figures/figureTypes";
 export * from "./drawing/drawingGeometry";
+export * from "./drawing/drawingFigures";
 export * from "./drawing/drawingHitTest";
 export * from "./drawing/drawingCommands";
 export * from "./drawing/drawingEditor";
