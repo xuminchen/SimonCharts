@@ -61,6 +61,17 @@ describe("drawing model", () => {
     expect(() => parseDrawingObject(null)).toThrow("Drawing object must be an object");
   });
 
+  it("rejects serialized drawing payloads at the runtime parser boundary", () => {
+    expect(() =>
+      parseDrawingObject({
+        schemaVersion: 2,
+        id: "bad",
+        type: "trendLine",
+        anchors: []
+      })
+    ).toThrow("Serialized drawing payload must be deserialized with deserializeDrawingObject");
+  });
+
   it("rejects drawing objects without a string id", () => {
     expect(() =>
       parseDrawingObject({

@@ -46,6 +46,12 @@ export function parseDrawingObject(value: unknown): DrawingObject {
     throw new Error("Drawing object must be an object");
   }
 
+  if (hasOwn(value, "schemaVersion")) {
+    throw new Error(
+      "Serialized drawing payload must be deserialized with deserializeDrawingObject"
+    );
+  }
+
   if (typeof value.id !== "string") {
     throw new Error("Drawing object id must be a string");
   }
@@ -96,6 +102,10 @@ export function parseDrawingObject(value: unknown): DrawingObject {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function cloneDrawingObject(drawing: DrawingObject): DrawingObject {
