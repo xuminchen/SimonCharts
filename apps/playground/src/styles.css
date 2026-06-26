@@ -40,6 +40,25 @@ canvas {
   touch-action: none;
 }
 
+.panel-title-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.panel-title {
+  position: absolute;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  color: #57606a;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 .top-controls {
   position: absolute;
   top: 12px;
@@ -69,6 +88,10 @@ canvas {
   border: 1px solid #d0d7de;
   border-radius: 4px;
   background: #ffffff;
+}
+
+.top-controls select {
+  max-width: 96px;
 }
 
 .top-controls button {

@@ -1,5 +1,6 @@
 import {
   assertCandleSeries,
+  calculateCoreIndicator,
   calculateDefaultMovingAverages,
   createInteractionEngine,
   createChartEngine,
@@ -19,6 +20,7 @@ import {
   createStaticLayers,
   createVisualLayer,
   createVisualRendererRegistry,
+  coreIndicatorDefinitions,
   defaultChartTheme,
   builtInDrawingToolDefinitions,
   deserializeDrawingObject,
@@ -40,6 +42,9 @@ import type {
   PanelArea,
   PanelDefinition,
   RenderInvalidation,
+  IndicatorVisualOutput,
+  CoreIndicatorDefinition,
+  CoreIndicatorId,
   DrawingEditor,
   DrawingEditorTool,
   DrawingObject,
@@ -76,6 +81,8 @@ const chartSurface = document.createElement("div");
 const topControls = document.createElement("div");
 const seriesTypeLabel = document.createElement("label");
 const seriesTypeSelect = document.createElement("select");
+const indicatorLabel = document.createElement("label");
+const indicatorSelector = document.createElement("select");
 const activeSeriesType = document.createElement("span");
 const panelCount = document.createElement("span");
 const visualOutputCount = document.createElement("span");
@@ -95,6 +102,7 @@ const overlayRenderCount = document.createElement("span");
 const lastInvalidationReason = document.createElement("span");
 const canvas = document.createElement("canvas");
 const overlayCanvas = document.createElement("canvas");
+const panelTitleLayer = document.createElement("div");
 const resetButton = document.createElement("button");
 const drawingWorkbench = document.createElement("div");
 const drawingObjectManager = document.createElement("div");
@@ -110,6 +118,8 @@ chartSurface.className = "chart-surface";
 topControls.className = "top-controls";
 seriesTypeLabel.textContent = "Type";
 seriesTypeSelect.dataset.testid = "series-type";
+indicatorLabel.textContent = "Indicator";
+indicatorSelector.dataset.testid = "indicator-selector";
 activeSeriesType.dataset.testid = "active-series-type";
 activeSeriesType.hidden = true;
 activeSeriesType.textContent = chartEngine.getState().seriesType;
@@ -159,6 +169,7 @@ canvas.dataset.testid = "chart-canvas";
 canvas.setAttribute("aria-label", "SimonCharts static chart");
 overlayCanvas.dataset.testid = "chart-overlay";
 overlayCanvas.setAttribute("aria-label", "SimonCharts interaction overlay");
+panelTitleLayer.className = "panel-title-layer";
 resetButton.type = "button";
 resetButton.className = "reset-view";
 resetButton.dataset.testid = "reset-view";
@@ -198,10 +209,26 @@ for (const type of supportedSeriesTypes) {
   seriesTypeSelect.append(option);
 }
 
+const fixtureIndicatorOption = document.createElement("option");
+fixtureIndicatorOption.value = "";
+fixtureIndicatorOption.textContent = "Fixture";
+fixtureIndicatorOption.selected = true;
+indicatorSelector.append(fixtureIndicatorOption);
+
+for (const definition of coreIndicatorDefinitions) {
+  const option = document.createElement("option");
+
+  option.value = definition.id;
+  option.textContent = definition.id;
+  indicatorSelector.append(option);
+}
+
 seriesTypeLabel.append(seriesTypeSelect);
+indicatorLabel.append(indicatorSelector);
 themeModeLabel.append(themeModeSelect);
 topControls.append(
   seriesTypeLabel,
+  indicatorLabel,
   activeSeriesType,
   toggleGridButton,
   gridState,
@@ -219,7 +246,7 @@ topControls.append(
   overlayRenderCount,
   lastInvalidationReason
 );
-const playgroundPanelDefinitions: PanelDefinition[] = [
+const fixturePanelDefinitions: PanelDefinition[] = [
   { id: "main", kind: "main", label: "Main", heightRatio: 3 },
   { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
 ];
@@ -256,6 +283,7 @@ drawingToolbar.setActiveTool("select");
 chartSurface.replaceChildren(
   canvas,
   overlayCanvas,
+  panelTitleLayer,
   topControls,
   drawingToolbar.element,
   drawingWorkbench,
@@ -301,6 +329,8 @@ let viewportCoversNextCrosshairClear = false;
 let skipCurrentCrosshairRenderInvalidation = false;
 let staticCanvasRenderCount = 0;
 let overlayCanvasRenderCount = 0;
+let activeIndicatorDefinition: CoreIndicatorDefinition | undefined;
+let activeVisualOutputs: IndicatorVisualOutput[] = playgroundVisualOutputs;
 
 const interactionSession = createInteractionSession({
   onEvent(event) {
@@ -338,10 +368,11 @@ function syncLayout(): void {
     height: layout.height,
     rightAxisWidth: layout.rightAxisWidth,
     bottomAxisHeight: layout.bottomAxisHeight,
-    panels: playgroundPanelDefinitions
+    panels: getPlaygroundPanelDefinitions()
   });
   panelCount.textContent = `${panels.length} panels`;
-  visualOutputCount.textContent = `${playgroundVisualOutputs.length} visuals`;
+  visualOutputCount.textContent = `${activeVisualOutputs.length} visuals`;
+  syncPanelTitles();
   syncDrawingStatus();
 
   if (!viewport) {
@@ -421,7 +452,7 @@ function createRenderContext(
       crosshair,
       seriesType: chartEngine.getState().seriesType,
       panels,
-      visualOutputs: playgroundVisualOutputs,
+      visualOutputs: activeVisualOutputs,
       drawings: drawingEditor.getState().drawings,
       selectedDrawingIds: drawingEditor.getState().selectedDrawingIds
     }
@@ -560,6 +591,43 @@ function createPlaygroundDrawingEditor(drawings: DrawingObject[]): DrawingEditor
       syncDrawingStatus();
     }
   });
+}
+
+function getPlaygroundPanelDefinitions(): PanelDefinition[] {
+  if (!activeIndicatorDefinition) {
+    return fixturePanelDefinitions;
+  }
+
+  if (activeIndicatorDefinition.panelId === "main") {
+    return [{ id: "main", kind: "main", label: "Main", heightRatio: 1 }];
+  }
+
+  return [
+    { id: "main", kind: "main", label: "Main", heightRatio: 3 },
+    {
+      id: activeIndicatorDefinition.panelId,
+      kind: "sub",
+      label: activeIndicatorDefinition.id,
+      heightRatio: 1
+    }
+  ];
+}
+
+function syncPanelTitles(): void {
+  panelTitleLayer.replaceChildren();
+
+  for (const panel of panels) {
+    const title = document.createElement("div");
+    const yOffset =
+      panel.plotArea.y === 0 ? Math.min(144, Math.max(8, panel.plotArea.height - 28)) : 8;
+
+    title.className = "panel-title";
+    title.dataset.testid = `panel-title-${panel.id}`;
+    title.textContent = panel.label;
+    title.style.left = `${panel.plotArea.x + 12}px`;
+    title.style.top = `${panel.plotArea.y + yOffset}px`;
+    panelTitleLayer.append(title);
+  }
 }
 
 function createWorkbenchTitle(label: string): HTMLDivElement {
@@ -943,6 +1011,23 @@ seriesTypeSelect.addEventListener("change", () => {
   chartEngine.setSeriesType(seriesTypeSelect.value as SeriesType);
   playgroundState.seriesType = chartEngine.getState().seriesType;
   activeSeriesType.textContent = chartEngine.getState().seriesType;
+  render();
+});
+
+indicatorSelector.addEventListener("change", () => {
+  const indicatorId = indicatorSelector.value as CoreIndicatorId | "";
+
+  if (!indicatorId) {
+    activeIndicatorDefinition = undefined;
+    activeVisualOutputs = playgroundVisualOutputs;
+    render();
+    return;
+  }
+
+  activeIndicatorDefinition = coreIndicatorDefinitions.find(
+    (definition) => definition.id === indicatorId
+  );
+  activeVisualOutputs = calculateCoreIndicator(indicatorId, fixtureDailyCandleSeries).outputs;
   render();
 });
 
