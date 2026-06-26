@@ -151,11 +151,84 @@ describe("drawing figure coverage", () => {
     });
   });
 
-  it("maps Fibonacci fans to multiple line figures", () => {
+  it("maps Fibonacci fans to fixed level lines and labels", () => {
     const figures = createFiguresForDrawing(drawing("fibFan", 2));
     const lines = figures.filter((figure) => figure.type === "line");
+    const labels = figures.filter((figure) => figure.type === "label");
 
-    expect(lines.length).toBeGreaterThan(1);
+    expect(lines).toHaveLength(7);
+    expect(labels.map((label) => label.text)).toEqual(["0", "0.236", "0.382", "0.5", "0.618", "0.786", "1"]);
+    expect(figures.find((figure) => figure.id === "fibFan-1:level-0")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 20, y: 30 },
+        { x: 120, y: 30 }
+      ]
+    });
+    expect(figures.find((figure) => figure.id === "fibFan-1:level-0.618")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 20, y: 30 },
+        { x: 120, y: 67.08 }
+      ]
+    });
+    expect(figures.find((figure) => figure.id === "fibFan-1:label-1")).toMatchObject({
+      type: "label",
+      points: [{ x: 120, y: 90 }],
+      text: "1"
+    });
+  });
+
+  it("maps trend-based Fibonacci extensions from the third anchor with fixed labels", () => {
+    const figures = createFiguresForDrawing(drawing("fibTrendBasedExtension", 3));
+
+    expect(figures).toHaveLength(14);
+    expect(figures.find((figure) => figure.id === "fibTrendBasedExtension-1:level-0")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 180, y: 50 },
+        { x: 280, y: 50 }
+      ]
+    });
+    expect(figures.find((figure) => figure.id === "fibTrendBasedExtension-1:level-1")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 180, y: 110 },
+        { x: 280, y: 110 }
+      ]
+    });
+    expect(figures.find((figure) => figure.id === "fibTrendBasedExtension-1:label-0.5")).toMatchObject({
+      type: "label",
+      points: [{ x: 280, y: 80 }],
+      text: "0.5"
+    });
+  });
+
+  it("maps Gann fans to fixed ratio coordinates", () => {
+    const figures = createFiguresForDrawing(drawing("gannFan", 2));
+
+    expect(figures).toHaveLength(9);
+    expect(figures.find((figure) => figure.id === "gannFan-1:fan-0.125")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 20, y: 30 },
+        { x: 120, y: 37.5 }
+      ]
+    });
+    expect(figures.find((figure) => figure.id === "gannFan-1:fan-1")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 20, y: 30 },
+        { x: 120, y: 90 }
+      ]
+    });
+    expect(figures.find((figure) => figure.id === "gannFan-1:fan-8")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 20, y: 30 },
+        { x: 120, y: 510 }
+      ]
+    });
   });
 
   it("maps Gann boxes to a rect and diagonal lines", () => {
@@ -178,18 +251,77 @@ describe("drawing figure coverage", () => {
     ]);
   });
 
-  it("maps pitchforks to median and parallel lines", () => {
+  it("maps Gann squares to square-normalized box geometry", () => {
+    expect(createFiguresForDrawing(drawing("gannSquare", 2))).toMatchObject([
+      {
+        type: "rect",
+        points: [
+          { x: 20, y: 30 },
+          { x: 120, y: 130 }
+        ]
+      },
+      {
+        type: "line",
+        points: [
+          { x: 20, y: 30 },
+          { x: 120, y: 130 }
+        ]
+      },
+      {
+        type: "line",
+        points: [
+          { x: 20, y: 130 },
+          { x: 120, y: 30 }
+        ]
+      }
+    ]);
+  });
+
+  it("maps pitchforks to median and parallel vectors", () => {
     const figures = createFiguresForDrawing(drawing("pitchfork", 3));
 
-    expect(figures).toHaveLength(3);
-    expect(figures.every((figure) => figure.type === "line")).toBe(true);
+    expect(figures).toMatchObject([
+      {
+        id: "pitchfork-1:median",
+        type: "line",
+        points: [
+          { x: 20, y: 30 },
+          { x: 150, y: 70 }
+        ]
+      },
+      {
+        id: "pitchfork-1:upper-parallel",
+        type: "line",
+        points: [
+          { x: 120, y: 90 },
+          { x: 250, y: 130 }
+        ]
+      },
+      {
+        id: "pitchfork-1:lower-parallel",
+        type: "line",
+        points: [
+          { x: 180, y: 50 },
+          { x: 310, y: 90 }
+        ]
+      }
+    ]);
   });
 
   it("maps Elliott impulse waves to a polyline and point labels", () => {
     const figures = createFiguresForDrawing(drawing("elliottImpulseWave", 5));
 
-    expect(figures[0]).toMatchObject({ type: "polyline" });
-    expect(figures.slice(1).every((figure) => figure.type === "label")).toBe(true);
+    expect(figures[0]).toMatchObject({
+      type: "polyline",
+      points: baseAnchors
+    });
+    expect(figures.slice(1)).toMatchObject([
+      { type: "label", points: [{ x: 20, y: 30 }], text: "1" },
+      { type: "label", points: [{ x: 120, y: 90 }], text: "2" },
+      { type: "label", points: [{ x: 180, y: 50 }], text: "3" },
+      { type: "label", points: [{ x: 220, y: 120 }], text: "4" },
+      { type: "label", points: [{ x: 280, y: 80 }], text: "5" }
+    ]);
   });
 
   it("maps forecast paths to a polyline and final arrow", () => {
