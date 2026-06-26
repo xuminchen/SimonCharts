@@ -5,6 +5,7 @@ import type { DrawingObject, DrawingType } from "../../../drawing/drawingTypes";
 import type { DrawingRenderer } from "../../../drawing/drawingRegistry";
 import { createBuiltInFigureRenderers } from "../../../figures/builtInFigures";
 import { hitTestFigure } from "../../../figures/figureGeometry";
+import type { FigureObject } from "../../../figures/figureTypes";
 
 const defaultStroke = "#2563eb";
 const defaultFill = "rgba(37, 99, 235, 0.12)";
@@ -63,7 +64,10 @@ export function createFigureDrawingRenderer(type: DrawingType): DrawingRenderer 
     type,
     render({ context, drawing }) {
       for (const figure of createFiguresForDrawing(drawing)) {
-        figureRenderers.get(figure.type)?.render({ context, figure });
+        figureRenderers.get(figure.type)?.render({
+          context,
+          figure: withDefaultDrawingFigureStyle(drawing, figure)
+        });
       }
     },
     hitTest(drawing, point) {
@@ -86,6 +90,28 @@ export function createFigureDrawingRenderer(type: DrawingType): DrawingRenderer 
       return Number.isFinite(closestDistance)
         ? { drawingId: drawing.id, distance: closestDistance }
         : undefined;
+    }
+  };
+}
+
+function withDefaultDrawingFigureStyle(
+  drawing: DrawingObject,
+  figure: FigureObject
+): FigureObject {
+  return {
+    ...figure,
+    style: {
+      color: figure.style?.color ?? drawing.style?.color ?? defaultStroke,
+      fill: figure.style?.fill ?? drawing.style?.fill ?? defaultFill,
+      lineWidth: figure.style?.lineWidth ?? drawing.style?.lineWidth ?? 2,
+      lineDash: figure.style?.lineDash ?? drawing.style?.lineDash ?? [],
+      textColor:
+        figure.style?.textColor ??
+        drawing.style?.textColor ??
+        figure.style?.color ??
+        drawing.style?.color ??
+        defaultStroke,
+      fontSize: figure.style?.fontSize ?? drawing.style?.fontSize
     }
   };
 }

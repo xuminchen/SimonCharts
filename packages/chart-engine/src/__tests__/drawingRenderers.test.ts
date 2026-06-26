@@ -210,6 +210,27 @@ describe("drawing renderers", () => {
     );
   });
 
+  it("uses drawing default stroke for unstyled figure-backed drawings", () => {
+    const registry = createDefaultDrawingRendererRegistry();
+    const layer = createDrawingLayer(registry);
+    const context = createLayerContext([
+      {
+        id: "unstyled-segment",
+        type: "segment",
+        anchors: [
+          { x: 10, y: 20 },
+          { x: 80, y: 60 }
+        ]
+      }
+    ]);
+
+    layer.render(context);
+
+    expect(callsNamed(context.context as unknown as FakeCanvasContext, "stroke")[0]?.args[0]).toBe(
+      "#2563eb"
+    );
+  });
+
   it("registers all default-rendered drawing types in the default registry", () => {
     const registry = createDefaultDrawingRendererRegistry();
 
