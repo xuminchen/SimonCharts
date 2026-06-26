@@ -1,8 +1,9 @@
 import { createCommandHistory } from "../commands/history";
 import type { DrawingEditorEvent, DrawingEditorTool } from "./drawingCommands";
+import type { DrawingClipboard, DrawingObjectManagerItem } from "./drawingEditState";
 import { builtInDrawingToolDefinitions } from "./drawingToolDefinitions";
 import { createDrawingToolRegistry, type DrawingToolRegistry } from "./drawingToolRegistry";
-import type { DrawingAnchor, DrawingObject } from "./drawingTypes";
+import type { DrawingAnchor, DrawingObject, DrawingStyle } from "./drawingTypes";
 
 export interface DrawingEditorPoint {
   x: number;
@@ -31,6 +32,15 @@ export interface DrawingEditor {
   pointerUp(point: DrawingEditorPoint): void;
   cancel(): void;
   selectDrawing(id: string): void;
+  selectDrawings(ids: string[]): void;
+  bringSelectedForward(): void;
+  sendSelectedBackward(): void;
+  copySelected(): void;
+  pasteCopied(offset: { dx: number; dy: number }): void;
+  duplicateSelected(offset: { dx: number; dy: number }): void;
+  updateSelectedStyle(style: DrawingStyle): void;
+  updateSelectedText(text: string): void;
+  getObjectManagerItems(): DrawingObjectManagerItem[];
   dragSelected(delta: { dx: number; dy: number }): void;
   dragAnchor(id: string, anchorIndex: number, point: DrawingEditorPoint): void;
   deleteSelected(): void;
@@ -44,6 +54,7 @@ export interface DrawingEditor {
 interface EditorSnapshot {
   drawings: DrawingObject[];
   selectedDrawingIds: string[];
+  clipboard: DrawingClipboard;
 }
 
 export function createDrawingEditor(options: DrawingEditorOptions): DrawingEditor {
@@ -52,6 +63,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   let activeTool: DrawingEditorTool = "select";
   let pendingAnchors: DrawingAnchor[] = [];
   let nextDrawingNumber = 1;
+  let clipboard: DrawingClipboard = { drawings: [] };
   const toolRegistry = options.toolRegistry ?? createBuiltInDrawingToolRegistry();
   const history = createCommandHistory<EditorSnapshot>(createSnapshot());
 
@@ -87,7 +99,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       pendingAnchors = [];
       commitSnapshot(
         "createDrawing",
-        { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id] },
+        { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id], clipboard },
         () => {
           emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
           emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
@@ -105,6 +117,56 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     selectDrawing(id) {
       selectedDrawingIds = drawings.some((drawing) => drawing.id === id) ? [id] : [];
       emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+    },
+    selectDrawings(ids) {
+      selectedDrawingIds = getExistingUniqueIds(ids);
+      emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+    },
+    bringSelectedForward() {
+      reorderSelected("forward");
+    },
+    sendSelectedBackward() {
+      reorderSelected("backward");
+    },
+    copySelected() {
+      clipboard = {
+        drawings: selectedDrawingIds
+          .map((id) => drawings.find((drawing) => drawing.id === id))
+          .filter(isDrawingObject)
+          .map(cloneDrawing)
+      };
+    },
+    pasteCopied(offset) {
+      pasteDrawings(clipboard.drawings, offset, "pasteDrawing");
+    },
+    duplicateSelected(offset) {
+      const selectedDrawings = selectedDrawingIds
+        .map((id) => drawings.find((drawing) => drawing.id === id))
+        .filter((drawing): drawing is DrawingObject => Boolean(drawing));
+
+      clipboard = { drawings: selectedDrawings.map(cloneDrawing) };
+      pasteDrawings(clipboard.drawings, offset, "duplicateDrawing");
+    },
+    updateSelectedStyle(style) {
+      mutateSelected("updateDrawingStyle", (drawing) => ({
+        ...drawing,
+        style: { ...drawing.style, ...style }
+      }));
+    },
+    updateSelectedText(text) {
+      mutateSelected("updateDrawingText", (drawing) => ({ ...drawing, text }));
+    },
+    getObjectManagerItems() {
+      const selectedIds = new Set(selectedDrawingIds);
+
+      return drawings.map((drawing, index) => ({
+        id: drawing.id,
+        type: drawing.type,
+        visible: drawing.visible !== false,
+        locked: drawing.locked === true,
+        selected: selectedIds.has(drawing.id),
+        zIndex: index
+      }));
     },
     dragSelected(delta) {
       const selectedIds = new Set(selectedDrawingIds);
@@ -127,7 +189,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
       commitSnapshot(
         "moveDrawing",
-        { drawings: nextDrawings, selectedDrawingIds },
+        { drawings: nextDrawings, selectedDrawingIds, clipboard },
         () => {
           for (const drawing of updatedDrawings) {
             emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
@@ -153,7 +215,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         "dragAnchor",
         {
           drawings: drawings.map((existing) => (existing.id === updated.id ? updated : existing)),
-          selectedDrawingIds
+          selectedDrawingIds,
+          clipboard
         },
         () => emit({ type: "drawingUpdated", drawing: cloneDrawing(updated) })
       );
@@ -174,7 +237,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         "deleteDrawing",
         {
           drawings: drawings.filter((drawing) => !selectedIds.has(drawing.id) || drawing.locked),
-          selectedDrawingIds: nextSelectedDrawingIds
+          selectedDrawingIds: nextSelectedDrawingIds,
+          clipboard
         },
         () => {
           for (const drawingId of deletedIds) {
@@ -185,10 +249,10 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       );
     },
     lockSelected() {
-      mutateSelected((drawing) => ({ ...drawing, locked: true }));
+      mutateSelected("lockDrawing", (drawing) => ({ ...drawing, locked: true }));
     },
     hideSelected() {
-      mutateSelected((drawing) => ({ ...drawing, visible: false }));
+      mutateSelected("hideDrawing", (drawing) => ({ ...drawing, visible: false }));
     },
     undo() {
       restoreSnapshot(history.undo());
@@ -210,7 +274,121 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     }
   };
 
-  function mutateSelected(update: (drawing: DrawingObject) => DrawingObject): void {
+  function getExistingUniqueIds(ids: string[]): string[] {
+    const existingIds = new Set(drawings.map((drawing) => drawing.id));
+    const seenIds = new Set<string>();
+    const nextSelectedDrawingIds: string[] = [];
+
+    for (const id of ids) {
+      if (!existingIds.has(id) || seenIds.has(id)) {
+        continue;
+      }
+
+      seenIds.add(id);
+      nextSelectedDrawingIds.push(id);
+    }
+
+    return nextSelectedDrawingIds;
+  }
+
+  function reorderSelected(direction: "forward" | "backward"): void {
+    const selectedIds = new Set(selectedDrawingIds);
+    const nextDrawings = [...drawings];
+    let changed = false;
+
+    if (direction === "forward") {
+      for (let index = nextDrawings.length - 2; index >= 0; index -= 1) {
+        const drawing = nextDrawings[index];
+        const nextDrawing = nextDrawings[index + 1];
+
+        if (
+          selectedIds.has(drawing.id) &&
+          !drawing.locked &&
+          !selectedIds.has(nextDrawing.id) &&
+          !nextDrawing.locked
+        ) {
+          nextDrawings[index] = nextDrawing;
+          nextDrawings[index + 1] = drawing;
+          changed = true;
+        }
+      }
+    } else {
+      for (let index = 1; index < nextDrawings.length; index += 1) {
+        const drawing = nextDrawings[index];
+        const previousDrawing = nextDrawings[index - 1];
+
+        if (
+          selectedIds.has(drawing.id) &&
+          !drawing.locked &&
+          !selectedIds.has(previousDrawing.id) &&
+          !previousDrawing.locked
+        ) {
+          nextDrawings[index] = previousDrawing;
+          nextDrawings[index - 1] = drawing;
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    commitSnapshot(
+      "reorderDrawing",
+      { drawings: nextDrawings, selectedDrawingIds, clipboard },
+      () => {
+        emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+      }
+    );
+  }
+
+  function pasteDrawings(
+    sourceDrawings: DrawingObject[],
+    offset: { dx: number; dy: number },
+    label: string
+  ): void {
+    if (sourceDrawings.length === 0) {
+      return;
+    }
+
+    const nextDrawings = [...drawings];
+    const pastedDrawings: DrawingObject[] = [];
+
+    for (const sourceDrawing of sourceDrawings) {
+      const id = createDrawingId(nextDrawings, nextDrawingNumber);
+      nextDrawingNumber += 1;
+
+      const pastedDrawing = moveDrawing(
+        { ...cloneDrawing(sourceDrawing), id },
+        offset.dx,
+        offset.dy
+      );
+
+      nextDrawings.push(pastedDrawing);
+      pastedDrawings.push(pastedDrawing);
+    }
+
+    commitSnapshot(
+      label,
+      {
+        drawings: nextDrawings,
+        selectedDrawingIds: pastedDrawings.map((drawing) => drawing.id),
+        clipboard
+      },
+      () => {
+        for (const drawing of pastedDrawings) {
+          emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
+        }
+        emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+      }
+    );
+  }
+
+  function mutateSelected(
+    label: string,
+    update: (drawing: DrawingObject) => DrawingObject
+  ): void {
     const selectedIds = new Set(selectedDrawingIds);
     const updatedDrawings: DrawingObject[] = [];
 
@@ -230,8 +408,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     }
 
     commitSnapshot(
-      "updateDrawing",
-      { drawings: nextDrawings, selectedDrawingIds },
+      label,
+      { drawings: nextDrawings, selectedDrawingIds, clipboard },
       () => {
         for (const drawing of updatedDrawings) {
           emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
@@ -263,13 +441,15 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   function createSnapshot(): EditorSnapshot {
     return {
       drawings: cloneDrawings(drawings),
-      selectedDrawingIds: [...selectedDrawingIds]
+      selectedDrawingIds: [...selectedDrawingIds],
+      clipboard: cloneClipboard(clipboard)
     };
   }
 
   function restoreSnapshot(snapshot: EditorSnapshot): void {
     drawings = cloneDrawings(snapshot.drawings);
     selectedDrawingIds = [...snapshot.selectedDrawingIds];
+    clipboard = cloneClipboard(snapshot.clipboard);
   }
 }
 
@@ -311,12 +491,23 @@ function cloneDrawings(drawings: DrawingObject[]): DrawingObject[] {
 function cloneSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
   return {
     drawings: cloneDrawings(snapshot.drawings),
-    selectedDrawingIds: [...snapshot.selectedDrawingIds]
+    selectedDrawingIds: [...snapshot.selectedDrawingIds],
+    clipboard: cloneClipboard(snapshot.clipboard)
+  };
+}
+
+function cloneClipboard(clipboard: DrawingClipboard): DrawingClipboard {
+  return {
+    drawings: cloneDrawings(clipboard.drawings)
   };
 }
 
 function cloneDrawing(drawing: DrawingObject): DrawingObject {
   return JSON.parse(JSON.stringify(drawing)) as DrawingObject;
+}
+
+function isDrawingObject(drawing: DrawingObject | undefined): drawing is DrawingObject {
+  return drawing !== undefined;
 }
 
 function createBuiltInDrawingToolRegistry(): DrawingToolRegistry {

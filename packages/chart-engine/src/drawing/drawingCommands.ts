@@ -1,4 +1,4 @@
-import type { DrawingObject, DrawingType } from "./drawingTypes";
+import type { DrawingObject, DrawingStyle, DrawingType } from "./drawingTypes";
 
 export type DrawingEditorTool = DrawingType | "select";
 
@@ -13,6 +13,14 @@ export type DrawingEditorEvent =
 export type DrawingEditorCommand =
   | { type: "setTool"; tool: DrawingEditorTool }
   | { type: "selectDrawing"; drawingId: string }
+  | { type: "selectDrawings"; drawingIds: string[] }
+  | { type: "bringSelectedForward" }
+  | { type: "sendSelectedBackward" }
+  | { type: "copySelected" }
+  | { type: "pasteCopied"; offset: { dx: number; dy: number } }
+  | { type: "duplicateSelected"; offset: { dx: number; dy: number } }
+  | { type: "updateSelectedStyle"; style: DrawingStyle }
+  | { type: "updateSelectedText"; text: string }
   | { type: "deleteSelected" }
   | { type: "lockSelected" }
   | { type: "hideSelected" };

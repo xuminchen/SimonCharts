@@ -9,6 +9,7 @@ export * from "./drawing/drawingGeometry";
 export * from "./drawing/drawingFigures";
 export * from "./drawing/drawingHitTest";
 export * from "./drawing/drawingCommands";
+export * from "./drawing/drawingEditState";
 export * from "./drawing/drawingEditor";
 export * from "./drawing/drawingMagnet";
 export * from "./drawing/drawingRegistry";
