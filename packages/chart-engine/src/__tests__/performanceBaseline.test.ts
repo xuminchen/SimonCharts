@@ -4,6 +4,7 @@ import {
   computeVisiblePriceRange,
   coreIndicatorIds,
   createFiguresForDrawing,
+  createRenderScheduler,
   createSourceSeriesRenderModel,
   defaultChartTheme,
   drawingTypes,
@@ -80,11 +81,29 @@ describe("performance baseline", () => {
       renderStaticChart(createRenderContext(series, viewport));
     });
 
+    const schedulerMs = measure(() => {
+      const scheduler = createRenderScheduler({
+        requestFrame(callback) {
+          callback();
+          return 1;
+        },
+        renderPass() {}
+      });
+
+      for (let index = 0; index < 1_000; index += 1) {
+        scheduler.invalidate({
+          layers: ["series", "crosshair"],
+          reason: `perf-${index}`
+        });
+      }
+    });
+
     expect(renderModelMs).toBeLessThan(250);
     expect(autoscaleMs).toBeLessThan(100);
     expect(indicatorsMs).toBeLessThan(2_500);
     expect(drawingFiguresMs).toBeLessThan(250);
     expect(staticRendererMs).toBeLessThan(1_000);
+    expect(schedulerMs).toBeLessThan(250);
   });
 });
 

@@ -18,6 +18,22 @@ export interface RenderInvalidation {
   timestamp?: number;
 }
 
+export interface RenderPassDiagnostic {
+  pass: RenderPass;
+  duration: number;
+  layers: RenderLayerId[];
+}
+
+export interface RenderFrameDiagnostic {
+  frameId: number;
+  timestamp: number;
+  duration: number;
+  layers: RenderLayerId[];
+  reasons: string[];
+  layoutRequired: boolean;
+  passes: RenderPassDiagnostic[];
+}
+
 export interface RenderMetrics {
   totalRenderCount: number;
   renderCountByPass: Record<RenderPass, number>;
@@ -25,6 +41,7 @@ export interface RenderMetrics {
   dirtyLayerCount: number;
   lastInvalidationReasons: string[];
   slowFrameCount: number;
+  lastFrame?: RenderFrameDiagnostic;
 }
 
 export interface RenderSchedulerState {

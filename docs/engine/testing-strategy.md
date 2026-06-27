@@ -40,6 +40,21 @@ npm pack --dry-run -w @simoncharts/chart-engine
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ```
 
+## v0.6 Rendering Hardening Verification
+
+Focused rendering hardening coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/renderScheduler.test.ts packages/chart-engine/src/__tests__/staticRenderer.test.ts packages/chart-engine/src/__tests__/overlayLayers.test.ts packages/chart-engine/src/__tests__/performanceBaseline.test.ts
+npm run typecheck
+```
+
+`RenderScheduler` verification covers frame diagnostics, pass diagnostics, diagnostic clone isolation, deterministic layer/pass ordering, same-frame coalescing, follow-up invalidations, slow frame counts, and destroy cleanup.
+
+Static and overlay renderer verification covers deterministic layer order, explicit static clear/background options, default overlay clearing, and overlay clear opt-out for hosts that manage overlay surfaces directly.
+
+Performance coverage includes deterministic scheduler overhead in addition to render model creation, autoscale, indicators, drawing figure conversion, and static canvas rendering.
+
 ## v0.4 Integration Readiness Verification
 
 Package SDK output is verified with:

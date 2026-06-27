@@ -203,6 +203,44 @@ describe("static renderer", () => {
     expect(receivedStates).toEqual([state, state, state, state, state]);
   });
 
+  it("does not clear the static surface unless requested", () => {
+    const renderContext = createRenderContext();
+    const layers: ChartLayer[] = [
+      {
+        id: "probe",
+        render({ context }) {
+          context.fillRect(1, 2, 3, 4);
+        }
+      }
+    ];
+
+    renderStaticChart(renderContext, layers);
+
+    expect((renderContext.context as unknown as FakeCanvasContext).calls).toEqual([
+      { name: "fillRect", args: [1, 2, 3, 4] }
+    ]);
+  });
+
+  it("clears and paints the chart background when requested", () => {
+    const renderContext = createRenderContext();
+    const layers: ChartLayer[] = [
+      {
+        id: "probe",
+        render({ context }) {
+          context.fillRect(1, 2, 3, 4);
+        }
+      }
+    ];
+
+    renderStaticChart(renderContext, layers, { clear: true, paintBackground: true });
+
+    expect((renderContext.context as unknown as FakeCanvasContext).calls).toEqual([
+      { name: "clearRect", args: [0, 0, 140, 100] },
+      { name: "fillRect", args: [0, 0, 140, 100] },
+      { name: "fillRect", args: [1, 2, 3, 4] }
+    ]);
+  });
+
   it("draws one candlestick body and one wick per visible candle", () => {
     const renderContext = createRenderContext();
 

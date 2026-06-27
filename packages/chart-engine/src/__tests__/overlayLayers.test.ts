@@ -227,6 +227,24 @@ describe("overlay layers", () => {
     ]);
   });
 
+  it("can render overlay layers without clearing when the host owns clearing", () => {
+    const renderContext = createRenderContext();
+    const layers: ChartLayer[] = [
+      {
+        id: "probe",
+        render({ context }) {
+          context.fillRect(1, 2, 3, 4);
+        }
+      }
+    ];
+
+    renderOverlay(renderContext, layers, { clear: false });
+
+    expect((renderContext.context as unknown as FakeCanvasContext).calls).toEqual([
+      { name: "fillRect", args: [1, 2, 3, 4, ""] }
+    ]);
+  });
+
   it("draws vertical and horizontal guide lines when crosshair is visible", () => {
     const renderContext = createRenderContext(createState({ crosshair: createCrosshair() }));
 

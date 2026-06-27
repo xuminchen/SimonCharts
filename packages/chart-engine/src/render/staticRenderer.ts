@@ -10,6 +10,11 @@ import type { ChartLayer, LayerRenderContext } from "./renderTypes";
 
 const defaultSeriesRegistry = createDefaultSeriesRendererRegistry();
 
+export interface RenderCanvasClearOptions {
+  clear?: boolean;
+  paintBackground?: boolean;
+}
+
 export function createStaticLayers(): ChartLayer[] {
   return [
     createGridLayer(),
@@ -26,8 +31,11 @@ export function createOverlayLayers(): ChartLayer[] {
 
 export function renderStaticChart(
   context: LayerRenderContext,
-  layers: ChartLayer[] = createStaticLayers()
+  layers: ChartLayer[] = createStaticLayers(),
+  options: RenderCanvasClearOptions = { clear: false }
 ): void {
+  clearCanvas(context, options);
+
   for (const layer of layers) {
     layer.render(context);
   }
@@ -35,11 +43,25 @@ export function renderStaticChart(
 
 export function renderOverlay(
   context: LayerRenderContext,
-  layers: ChartLayer[] = createOverlayLayers()
+  layers: ChartLayer[] = createOverlayLayers(),
+  options: RenderCanvasClearOptions = { clear: true }
 ): void {
-  context.context.clearRect(0, 0, context.state.layout.width, context.state.layout.height);
+  clearCanvas(context, options);
 
   for (const layer of layers) {
     layer.render(context);
+  }
+}
+
+function clearCanvas(context: LayerRenderContext, options: RenderCanvasClearOptions): void {
+  if (options.clear !== true && options.paintBackground !== true) {
+    return;
+  }
+
+  context.context.clearRect(0, 0, context.state.layout.width, context.state.layout.height);
+
+  if (options.paintBackground === true) {
+    context.context.fillStyle = context.state.theme.colors.background;
+    context.context.fillRect(0, 0, context.state.layout.width, context.state.layout.height);
   }
 }

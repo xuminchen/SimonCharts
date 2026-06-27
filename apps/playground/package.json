@@ -9,6 +9,6 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@simoncharts/chart-engine": "0.4.0"
+    "@simoncharts/chart-engine": "0.6.0"
   }
 }

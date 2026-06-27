@@ -2,10 +2,12 @@ import {
   defaultRenderPassOrder,
   renderLayerPasses,
   type CreateRenderSchedulerOptions,
+  type RenderFrameDiagnostic,
   type RenderInvalidation,
   type RenderLayerId,
   type RenderMetrics,
   type RenderPass,
+  type RenderPassDiagnostic,
   type RenderScheduler,
   type RenderSchedulerState
 } from "./renderSchedulerTypes";
@@ -40,6 +42,7 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
   let frameId: number | undefined;
   let destroyed = false;
   let isFlushing = false;
+  let nextFrameSequence = 1;
   let metrics = cloneMetrics(defaultMetrics);
 
   function schedule(): void {
@@ -80,13 +83,15 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
       const reasonSnapshot = [...reasons];
       const layoutRequiredSnapshot = layoutRequired;
       const timestamp = now();
+      const frameStartedAt = timestamp;
       const passes = getPassesForLayers(layers);
+      const passDiagnostics: RenderPassDiagnostic[] = [];
+      const frameIdSnapshot = nextFrameSequence;
+      nextFrameSequence += 1;
 
       dirtyLayers.clear();
       reasons.length = 0;
       layoutRequired = false;
-
-      const startedAt = now();
 
       for (const pass of passes) {
         const invalidation = createRenderInvalidation(
@@ -95,7 +100,13 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
           layoutRequiredSnapshot,
           timestamp
         );
+        const passStartedAt = now();
         options.renderPass(pass, invalidation);
+        passDiagnostics.push({
+          pass,
+          duration: Math.max(0, now() - passStartedAt),
+          layers: [...layers]
+        });
         metrics = {
           ...metrics,
           totalRenderCount: metrics.totalRenderCount + 1,
@@ -109,13 +120,22 @@ export function createRenderScheduler(options: CreateRenderSchedulerOptions): Re
         }
       }
 
-      const duration = Math.max(0, now() - startedAt);
+      const duration = Math.max(0, now() - frameStartedAt);
       metrics = {
         ...metrics,
         lastRenderDuration: duration,
         dirtyLayerCount: layers.length,
         lastInvalidationReasons: reasonSnapshot,
-        slowFrameCount: duration > slowFrameThresholdMs ? metrics.slowFrameCount + 1 : metrics.slowFrameCount
+        slowFrameCount: duration > slowFrameThresholdMs ? metrics.slowFrameCount + 1 : metrics.slowFrameCount,
+        lastFrame: {
+          frameId: frameIdSnapshot,
+          timestamp,
+          duration,
+          layers: [...layers],
+          reasons: [...reasonSnapshot],
+          layoutRequired: layoutRequiredSnapshot,
+          passes: passDiagnostics
+        }
       };
     } finally {
       isFlushing = false;
@@ -195,6 +215,29 @@ function cloneMetrics(metrics: RenderMetrics): RenderMetrics {
     lastRenderDuration: metrics.lastRenderDuration,
     dirtyLayerCount: metrics.dirtyLayerCount,
     lastInvalidationReasons: [...metrics.lastInvalidationReasons],
-    slowFrameCount: metrics.slowFrameCount
+    slowFrameCount: metrics.slowFrameCount,
+    lastFrame: cloneFrameDiagnostic(metrics.lastFrame)
+  };
+}
+
+function cloneFrameDiagnostic(
+  diagnostic: RenderFrameDiagnostic | undefined
+): RenderFrameDiagnostic | undefined {
+  if (!diagnostic) {
+    return undefined;
+  }
+
+  return {
+    frameId: diagnostic.frameId,
+    timestamp: diagnostic.timestamp,
+    duration: diagnostic.duration,
+    layers: [...diagnostic.layers],
+    reasons: [...diagnostic.reasons],
+    layoutRequired: diagnostic.layoutRequired,
+    passes: diagnostic.passes.map((passDiagnostic) => ({
+      pass: passDiagnostic.pass,
+      duration: passDiagnostic.duration,
+      layers: [...passDiagnostic.layers]
+    }))
   };
 }

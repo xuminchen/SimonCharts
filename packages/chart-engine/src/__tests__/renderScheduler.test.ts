@@ -31,6 +31,18 @@ describe("render scheduler", () => {
       "pointerMoved",
       "viewportChanged"
     ]);
+    expect(scheduler.getState().metrics.lastFrame).toMatchObject({
+      frameId: 1,
+      timestamp: 10,
+      duration: 0,
+      layers: ["axis", "series", "crosshair"],
+      reasons: ["pointerMoved", "viewportChanged"],
+      layoutRequired: true,
+      passes: [
+        { pass: "static", duration: 0, layers: ["axis", "series", "crosshair"] },
+        { pass: "overlay", duration: 0, layers: ["axis", "series", "crosshair"] }
+      ]
+    });
   });
 
   it("ignores invalidations with no layers", () => {
@@ -86,6 +98,38 @@ describe("render scheduler", () => {
     expect(calls).toEqual(["static:series", "overlay:tooltip"]);
     expect(scheduler.getState().pending).toBe(false);
     expect(scheduler.getState().dirtyLayers).toEqual([]);
+    expect(scheduler.getState().metrics.lastFrame).toMatchObject({
+      frameId: 2,
+      layers: ["tooltip"],
+      reasons: ["renderPassInvalidated"],
+      passes: [{ pass: "overlay", layers: ["tooltip"] }]
+    });
+  });
+
+  it("isolates render diagnostics from caller mutation", () => {
+    let frameCallback: (() => void) | undefined;
+    const scheduler = createRenderScheduler({
+      requestFrame(callback) {
+        frameCallback = callback;
+        return 1;
+      },
+      now: () => 20,
+      renderPass() {}
+    });
+
+    scheduler.invalidate({ layers: ["series"], reason: "initial" });
+    frameCallback?.();
+
+    const state = scheduler.getState();
+    state.metrics.lastFrame?.layers.push("tooltip");
+    state.metrics.lastFrame?.reasons.push("mutated");
+    state.metrics.lastFrame?.passes[0]?.layers.push("tooltip");
+
+    expect(scheduler.getState().metrics.lastFrame).toMatchObject({
+      layers: ["series"],
+      reasons: ["initial"],
+      passes: [{ pass: "static", layers: ["series"] }]
+    });
   });
 
   it("does not keep a stale pending frame when requestFrame runs synchronously", () => {
