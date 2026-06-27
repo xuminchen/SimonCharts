@@ -64,7 +64,23 @@ export const drawingTypes = [
   "forecastPath"
 ] as const;
 
-export type DrawingType = (typeof drawingTypes)[number];
+export type BuiltInDrawingType = (typeof drawingTypes)[number];
+export type CustomDrawingType = string & { readonly __customDrawingType?: never };
+export type DrawingType = BuiltInDrawingType | CustomDrawingType;
+
+const customDrawingTypePattern = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*([.-][a-z0-9]+)*$/;
+
+export function isBuiltInDrawingType(type: string): type is BuiltInDrawingType {
+  return drawingTypes.includes(type as BuiltInDrawingType);
+}
+
+export function isCustomDrawingType(type: string): type is CustomDrawingType {
+  return customDrawingTypePattern.test(type);
+}
+
+export function isDrawingType(type: string): type is DrawingType {
+  return isBuiltInDrawingType(type) || isCustomDrawingType(type);
+}
 
 export interface DrawingAnchor {
   time?: number;

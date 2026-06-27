@@ -1,7 +1,11 @@
 import {
   calculateCoreIndicator,
+  applyChartExtension,
   createChartEngine,
+  createChartExtension,
+  createDrawingRendererRegistry,
   createDrawingEditor,
+  createDrawingToolRegistry,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -63,6 +67,52 @@ if (drawingEditor.getState().drawings.length !== 2) {
 if (!drawingEditor.getCapabilities().canUndo) {
   throw new Error("Package consumer failed to expose drawing editor undo capability");
 }
+
+const drawingRenderers = createDrawingRendererRegistry();
+const drawingTools = createDrawingToolRegistry();
+const extension = createChartExtension(
+  { id: "consumer.extension", label: "Consumer Extension", version: "1.0.0" },
+  {
+    drawingRenderers: [
+      {
+        type: "consumer.measurement-box",
+        render() {},
+        hitTest(customDrawing) {
+          return { drawingId: customDrawing.id, distance: 0 };
+        }
+      }
+    ],
+    drawingTools: [
+      {
+        type: "consumer.measurement-box",
+        label: "Measurement Box",
+        category: "measurement",
+        totalStep: 3,
+        anchorCount: 2,
+        drawingMode: "step",
+        defaultStyle: { color: "#2563eb", lineWidth: 2 },
+        hotkeyId: "drawing.consumer.measurement-box"
+      }
+    ]
+  }
+);
+const installResult = applyChartExtension(extension, { drawingRenderers, drawingTools });
+
+if (installResult.installed.drawingRenderers !== 1 || installResult.installed.drawingTools !== 1) {
+  throw new Error("Package consumer failed to install chart extension contributions");
+}
+
+if (drawingTools.require("consumer.measurement-box").label !== "Measurement Box") {
+  throw new Error("Package consumer failed to read installed custom drawing tool");
+}
+
+deserializeDrawingObject(
+  serializeDrawingObject({
+    id: "custom-consumer-drawing",
+    type: "consumer.measurement-box",
+    anchors: [{ x: 1, y: 2 }]
+  })
+);
 
 engine.destroy();
 console.log("Package consumer smoke test passed.");

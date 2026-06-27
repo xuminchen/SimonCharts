@@ -1,6 +1,10 @@
 import {
+  applyChartExtension,
   createChartEngine,
+  createChartExtension,
+  createDrawingRendererRegistry,
   createDrawingEditor,
+  createDrawingToolRegistry,
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
@@ -12,8 +16,12 @@ import type {
   ChartEngine,
   ChartLayout,
   ChartLayoutSnapshot,
+  ChartExtension,
+  ChartExtensionInstallResult,
+  CustomDrawingType,
   DrawingEditor,
   DrawingEditorCapabilities,
+  DrawingObject,
   IndicatorVisualOutput,
   LayerRenderContext,
   RenderFrameDiagnostic,
@@ -26,6 +34,7 @@ import type {
 const series: CandleSeries = fixtureDailyCandleSeries;
 const engine: ChartEngine = createChartEngine({ series, seriesType: "candles" });
 const drawingEditor: DrawingEditor = createDrawingEditor({ drawings: [] });
+const customDrawingType: CustomDrawingType = "consumer.measurement-box";
 
 drawingEditor.executeCommand({ type: "setTool", tool: "trendLine" });
 drawingEditor.executeCommand({ type: "cancelCreation" });
@@ -79,6 +88,43 @@ const renderer: VisualRenderer = {
 const visualRegistry: VisualRendererRegistry = createVisualRendererRegistry();
 visualRegistry.register(renderer);
 
+const extension: ChartExtension = createChartExtension(
+  { id: "consumer.extension", label: "Consumer Extension", version: "1.0.0" },
+  {
+    drawingRenderers: [
+      {
+        type: customDrawingType,
+        render() {},
+        hitTest(drawing) {
+          return { drawingId: drawing.id, distance: 0 };
+        }
+      }
+    ],
+    drawingTools: [
+      {
+        type: customDrawingType,
+        label: "Measurement Box",
+        category: "measurement",
+        totalStep: 3,
+        anchorCount: 2,
+        drawingMode: "step",
+        defaultStyle: { color: "#2563eb", lineWidth: 2 },
+        hotkeyId: "drawing.consumer.measurement-box"
+      }
+    ]
+  }
+);
+const extensionInstallResult: ChartExtensionInstallResult = applyChartExtension(extension, {
+  drawingRenderers: createDrawingRendererRegistry(),
+  drawingTools: createDrawingToolRegistry()
+});
+
+const customDrawing: DrawingObject = {
+  id: "consumer-custom-drawing",
+  type: customDrawingType,
+  anchors: [{ x: 1, y: 2 }]
+};
+
 const layout: ChartLayout = {
   width: 800,
   height: 480,
@@ -102,7 +148,7 @@ const layerContext = {
 
 const snapshot: ChartLayoutSnapshot = {
   viewport: engine.getState().viewport,
-  drawings: drawingEditor.getState().drawings,
+  drawings: [...drawingEditor.getState().drawings, customDrawing],
   indicatorIds: [visualOutput.id]
 };
 
@@ -112,4 +158,4 @@ void capabilities;
 void frame;
 void invalidations;
 void layerContext;
-
+void extensionInstallResult;

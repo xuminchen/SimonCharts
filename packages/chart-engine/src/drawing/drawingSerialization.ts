@@ -1,4 +1,4 @@
-import { drawingTypes, type DrawingObject } from "./drawingTypes";
+import { isDrawingType, type DrawingObject } from "./drawingTypes";
 import { migrateSerializedDrawing } from "./drawingMigrations";
 import { toSerializedDrawingV1, type SerializedDrawingObject } from "./drawingSchema";
 
@@ -58,7 +58,7 @@ export function parseDrawingObject(value: unknown): DrawingObject {
 
   if (
     typeof value.type !== "string" ||
-    !drawingTypes.includes(value.type as DrawingObject["type"])
+    !isDrawingType(value.type)
   ) {
     throw new Error(`Unsupported drawing type: ${String(value.type)}`);
   }

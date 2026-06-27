@@ -61,6 +61,21 @@ npm run check:package-types
 
 `check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see.
 
+## v0.9 Platform Extensibility Verification
+
+Focused extension coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/chartExtension.test.ts packages/chart-engine/src/__tests__/drawingModel.test.ts packages/chart-engine/src/__tests__/drawingSchema.test.ts
+npm run guard:public-api
+npm run check:package-consumer
+npm run check:package-types
+```
+
+Unit coverage verifies extension manifests, install results, duplicate extension ids, contribution installation, cloned manifests, namespaced custom drawing types, and rejection of unscoped drawing type names.
+
+SDK coverage verifies extension APIs and custom drawing types can be consumed from `@simoncharts/chart-engine`.
+
 ## v0.6 Rendering Hardening Verification
 
 Focused rendering hardening coverage:

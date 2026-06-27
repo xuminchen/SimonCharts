@@ -3,6 +3,9 @@ import {
   createDrawingRendererRegistry,
   deserializeDrawingObject,
   drawingTypes,
+  isBuiltInDrawingType,
+  isCustomDrawingType,
+  isDrawingType,
   getDrawingBounds,
   hitTestDrawingAnchor,
   parseDrawingObject,
@@ -20,6 +23,8 @@ describe("drawing model", () => {
     expect(drawingTypes).toContain("elliottImpulseWave");
     expect(drawingTypes).toContain("forecastPath");
     expect(drawingTypes).toHaveLength(63);
+    expect(isBuiltInDrawingType("trendLine")).toBe(true);
+    expect(isDrawingType("trendLine")).toBe(true);
   });
 
   it("round-trips a neutral drawing object", () => {
@@ -90,6 +95,20 @@ describe("drawing model", () => {
         anchors: []
       })
     ).toThrow("Unsupported drawing type: hostReview");
+  });
+
+  it("round-trips namespaced custom drawing types", () => {
+    const drawing: DrawingObject = {
+      id: "custom",
+      type: "acme.measurement-box",
+      anchors: [{ x: 1, y: 2 }],
+      metadata: { extensionId: "acme.tools" }
+    };
+
+    expect(isCustomDrawingType(drawing.type)).toBe(true);
+    expect(isDrawingType(drawing.type)).toBe(true);
+    expect(deserializeDrawingObject(serializeDrawingObject(drawing))).toEqual(drawing);
+    expect(parseDrawingObject(drawing)).toEqual(drawing);
   });
 
   it("rejects drawing objects without an anchors array", () => {

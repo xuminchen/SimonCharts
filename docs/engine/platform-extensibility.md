@@ -1,0 +1,69 @@
+# Platform Extensibility
+
+SimonCharts v0.9 adds a neutral extension kernel for installing Engine contributions into existing registries.
+
+Extensions are described with `ChartExtensionManifest`:
+
+```ts
+const extension = createChartExtension(
+  {
+    id: "acme.tools",
+    label: "ACME Tools",
+    version: "1.0.0",
+    capabilities: ["drawingTools"]
+  },
+  {
+    drawingTools: [measurementBoxTool],
+    drawingRenderers: [measurementBoxRenderer]
+  }
+);
+```
+
+Install contributions into host-owned registries:
+
+```ts
+const result = applyChartExtension(extension, {
+  drawingTools,
+  drawingRenderers,
+  visualRenderers,
+  seriesRenderers,
+  figureRenderers
+});
+```
+
+`ChartExtensionInstallResult` reports installed contribution counts. `createChartExtensionRegistry()` stores extension manifests and rejects duplicate extension ids.
+
+## Contribution Types
+
+Supported v0.9 contributions:
+
+- `seriesRenderers`
+- `visualRenderers`
+- `drawingRenderers`
+- `drawingTools`
+- `figureRenderers`
+
+These are the same neutral renderer and registry contracts used by the built-in Engine. Hosts still own when and where extension code is loaded.
+
+## Custom Drawing Types
+
+Custom drawing types must be namespaced lowercase strings:
+
+```ts
+const type = "acme.measurement-box";
+```
+
+Unscoped names such as `hostReview` are rejected by `parseDrawingObject()` and drawing deserialization. This keeps host business vocabulary out of the Engine while allowing third-party drawing tools to round-trip through neutral drawing serialization and editor state.
+
+Use:
+
+- `isBuiltInDrawingType(type)`
+- `isCustomDrawingType(type)`
+- `isDrawingType(type)`
+
+`drawingTypes` remains the source of truth for built-in drawing coverage only.
+
+## Non-Goals
+
+v0.9 does not load remote plugins, execute sandboxed code, provide a marketplace, persist extensions, or grant extensions access to host APIs. Extension loading and trust policy remain host responsibilities.
+

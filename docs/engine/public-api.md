@@ -11,6 +11,8 @@ import {
   createInteractionSession,
   createRenderScheduler,
   createDrawingEditor,
+  createChartExtension,
+  applyChartExtension,
   serializeChartLayoutSnapshot,
   deserializeChartLayoutSnapshot,
   createVisualRendererRegistry,
@@ -81,6 +83,7 @@ Drawing platform exports include:
 - drawing commands: `mergeDrawingStyle()`, `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`
 - magnet helpers: `createOhlcMagnetTargets()`, `createDrawingAnchorMagnetTargets()`, `createVisualPointMagnetTargets()`, `findNearestMagnetTarget()`, `snapPointToMagnetTargets()`
 - indicators: `coreIndicatorIds`, `coreIndicatorDefinitions`, `calculateCoreIndicator()`
+- extensions: `createChartExtension()`, `createChartExtensionRegistry()`, `applyChartExtension()`, `isBuiltInDrawingType()`, `isCustomDrawingType()`, `isDrawingType()`
 
 These APIs use neutral drawing objects, figure primitives, visual outputs, command payloads, and serialized drawing payloads. They do not give the engine ownership of host APIs, stores, schemas, routes, TradingReviewSystem, review, strategy, watchlist, AI, or other product business models.
 
@@ -105,6 +108,23 @@ v0.8 keeps the package root as the only stable entrypoint and adds verification 
 - runtime package smoke: `npm run check:package-consumer`
 
 New public APIs should be added through `packages/chart-engine/src/index.ts`, documented here, and accepted by updating the relevant guard evidence intentionally.
+
+## v0.9 Platform Extensibility
+
+v0.9 adds a neutral extension kernel:
+
+- `ChartExtensionManifest`
+- `ChartExtension`
+- `ChartExtensionContributions`
+- `ChartExtensionInstallContext`
+- `ChartExtensionInstallResult`
+- `createChartExtension()`
+- `createChartExtensionRegistry()`
+- `applyChartExtension()`
+
+Extension contributions install into existing Engine registries for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers.
+
+Custom drawing types are allowed only when namespaced, for example `acme.measurement-box`. `drawingTypes` remains the built-in drawing list. Use `isBuiltInDrawingType()`, `isCustomDrawingType()`, and `isDrawingType()` for validation.
 
 ## v0.2 Interaction And Rendering
 

@@ -24,6 +24,7 @@ export * from "./drawing/drawingTypes";
 export * from "./engine/chartEngine";
 export * from "./engine/chartState";
 export * from "./engine/events";
+export * from "./extensions/chartExtension";
 export * from "./indicators/coreIndicators";
 export * from "./indicators/indicatorDefinitions";
 export * from "./indicators/movingAverage";
