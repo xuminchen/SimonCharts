@@ -13,6 +13,7 @@ export * from "./drawing/drawingEditState";
 export * from "./drawing/drawingEditor";
 export * from "./drawing/drawingHotkeys";
 export * from "./drawing/drawingMagnet";
+export * from "./drawing/drawingPropertySchema";
 export * from "./drawing/drawingRegistry";
 export * from "./drawing/drawingMigrations";
 export * from "./drawing/drawingSchema";

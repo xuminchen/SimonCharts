@@ -82,6 +82,7 @@ Drawing platform exports include:
 - figures: `FigureObject`, `FigureType`, `FigureStyle`, `createBuiltInFigureRenderers()`, `createFigureRendererRegistry()`, `getFigureBounds()`, `hitTestFigure()`
 - drawing tools: `drawingTypes`, `DrawingType`, `DrawingToolDefinition`, `builtInDrawingToolDefinitions`, `createDrawingToolRegistry()`
 - editor state: `createDrawingEditor()`, `DrawingEditor`, `DrawingEditorCommand`, `DrawingObjectManagerItem`
+- property schema: `getDrawingPropertySchema()`, `getDrawingPropertyDefinitionsForDrawing()`, `DrawingPropertySchema`, `DrawingPropertyDefinition`, `isTextDrawingType()`, `isFillDrawingType()`
 - drawing conversion and render: `createFiguresForDrawing()`, `createDefaultDrawingRendererRegistry()`, `createDrawingLayer()`
 - drawing persistence: `currentDrawingSchemaVersion`, `SerializedDrawingObject`, `serializeDrawingObject()`, `deserializeDrawingObject()`, `migrateSerializedDrawing()`
 - drawing commands: `mergeDrawingStyle()`, `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`
@@ -132,6 +133,19 @@ v0.9 adds a neutral extension kernel:
 - `applyChartExtension()`
 
 Extension contributions install into existing Engine registries for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers. Use `createChartExtensionLifecycle(context)` for local install state, duplicate contribution detection, installed extension snapshots, and uninstall restoration. Use `applyChartExtension()` for direct one-way installs.
+
+## v1.0 Drawing Property Schema
+
+v1.0 adds Engine-owned drawing property metadata so complete drawing editor property panels can be generated from package-root APIs:
+
+- `getDrawingPropertySchema(type)`
+- `getDrawingPropertyDefinitionsForDrawing(drawing)`
+- `DrawingPropertySchema`
+- `DrawingPropertyDefinition`
+- `isTextDrawingType(type)`
+- `isFillDrawingType(type)`
+
+The schema is command-oriented and host-independent. Style properties point to `updateSelectedStyle`, text content points to `updateSelectedText`, and state properties point to visibility and locking commands. Hosts still own DOM controls, layout, persistence, collaboration, and product workflows.
 
 Custom drawing types are allowed only when namespaced, for example `acme.measurement-box`. `drawingTypes` remains the built-in drawing list. Use `isBuiltInDrawingType()`, `isCustomDrawingType()`, and `isDrawingType()` for validation.
 

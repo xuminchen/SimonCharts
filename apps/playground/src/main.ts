@@ -24,6 +24,7 @@ import {
   defaultChartTheme,
   builtInDrawingToolDefinitions,
   deserializeDrawingObject,
+  getDrawingPropertyDefinitionsForDrawing,
   renderOverlay,
   fixtureDailyCandleSeries,
   renderStaticChart,
@@ -49,6 +50,7 @@ import type {
   DrawingEditorCommand,
   DrawingEditorTool,
   DrawingObject,
+  DrawingPropertyDefinition,
   SeriesType,
   ThemeMode,
   ViewportState
@@ -536,6 +538,7 @@ function syncDrawingObjectManager(): void {
 function syncDrawingPropertyPanel(): void {
   const state = drawingEditor.getState();
   const selected = state.drawings.filter((drawing) => state.selectedDrawingIds.includes(drawing.id));
+  const capabilities = drawingEditor.getCapabilities();
 
   drawingPropertyPanel.replaceChildren(createWorkbenchTitle("Properties"));
 
@@ -550,47 +553,11 @@ function syncDrawingPropertyPanel(): void {
     return;
   }
 
-  const colorInput = document.createElement("input");
-  const widthInput = document.createElement("input");
-  const textInput = document.createElement("input");
+  for (const property of getDrawingPropertyDefinitionsForDrawing(selected[0])) {
+    const control = createDrawingPropertyControl(property, selected[0], capabilities.hasEditableSelection);
 
-  colorInput.type = "color";
-  colorInput.dataset.testid = "drawing-style-color";
-  colorInput.value = normalizeHexColor(selected[0].style?.color) ?? "#2563eb";
-  colorInput.addEventListener("input", () => {
-    drawingEditor.updateSelectedStyle({ color: colorInput.value });
-    renderStatic();
-  });
-
-  widthInput.type = "number";
-  widthInput.min = "1";
-  widthInput.max = "8";
-  widthInput.step = "1";
-  widthInput.dataset.testid = "drawing-style-width";
-  widthInput.value = String(selected[0].style?.lineWidth ?? 2);
-  widthInput.addEventListener("change", () => {
-    const lineWidth = Number(widthInput.value);
-
-    if (Number.isFinite(lineWidth) && lineWidth > 0) {
-      drawingEditor.updateSelectedStyle({ lineWidth });
-      renderStatic();
-    }
-  });
-
-  textInput.type = "text";
-  textInput.dataset.testid = "drawing-text";
-  textInput.value = selected[0].text ?? "";
-  textInput.placeholder = "Text";
-  textInput.addEventListener("change", () => {
-    drawingEditor.updateSelectedText(textInput.value);
-    renderStatic();
-  });
-
-  drawingPropertyPanel.append(
-    createLabeledControl("Color", colorInput),
-    createLabeledControl("Width", widthInput),
-    createLabeledControl("Text", textInput)
-  );
+    drawingPropertyPanel.append(createLabeledControl(property.label, control));
+  }
 }
 
 function syncDrawingJsonExport(): void {
@@ -674,6 +641,168 @@ function createLabeledControl(labelText: string, control: HTMLElement): HTMLLabe
   label.append(text, control);
 
   return label;
+}
+
+function createDrawingPropertyControl(
+  property: DrawingPropertyDefinition,
+  drawing: DrawingObject,
+  canEditSelected: boolean
+): HTMLElement {
+  if (property.scope === "content") {
+    const input = document.createElement("input");
+
+    input.type = "text";
+    input.dataset.testid = "drawing-text";
+    input.value = drawing.text ?? property.defaultValue ?? "";
+    input.placeholder = property.label;
+    input.disabled = !canEditSelected;
+    input.addEventListener("change", () => {
+      drawingEditor.executeCommand({ type: property.commandType, text: input.value });
+      renderStatic();
+    });
+
+    return input;
+  }
+
+  if (property.scope === "state") {
+    const input = document.createElement("input");
+
+    input.type = "checkbox";
+    input.dataset.testid = `drawing-state-${property.stateKey}`;
+    input.checked = property.stateKey === "visible" ? drawing.visible !== false : drawing.locked === true;
+    input.disabled = !canExecuteStateProperty(property, input.checked);
+    input.addEventListener("change", () => {
+      drawingEditor.executeCommand({
+        type: input.checked ? property.commandWhenTrue : property.commandWhenFalse
+      });
+      renderStatic();
+    });
+
+    return input;
+  }
+
+  if (property.valueType === "lineDash") {
+    const select = document.createElement("select");
+
+    select.dataset.testid = "drawing-style-line";
+    select.disabled = !canEditSelected;
+
+    for (const option of property.options ?? []) {
+      const element = document.createElement("option");
+
+      element.value = option.value;
+      element.textContent = option.label;
+      element.selected = option.value === lineDashToOption(drawing.style?.lineDash);
+      select.append(element);
+    }
+
+    select.addEventListener("change", () => {
+      drawingEditor.executeCommand({
+        type: property.commandType,
+        style: { [property.styleKey]: optionToLineDash(select.value) }
+      });
+      renderStatic();
+    });
+
+    return select;
+  }
+
+  const input = document.createElement("input");
+
+  input.dataset.testid = drawingStyleTestId(property.styleKey);
+  input.disabled = !canEditSelected;
+
+  if (property.valueType === "number") {
+    input.type = "number";
+    input.min = property.min === undefined ? "" : String(property.min);
+    input.max = property.max === undefined ? "" : String(property.max);
+    input.step = property.step === undefined ? "1" : String(property.step);
+    input.value = String(drawing.style?.[property.styleKey] ?? property.defaultValue ?? "");
+    input.addEventListener("change", () => {
+      const value = Number(input.value);
+
+      if (Number.isFinite(value)) {
+        drawingEditor.executeCommand({
+          type: property.commandType,
+          style: { [property.styleKey]: value }
+        });
+        renderStatic();
+      }
+    });
+
+    return input;
+  }
+
+  input.type = "color";
+  input.value = normalizeHexColor(String(drawing.style?.[property.styleKey] ?? "")) ??
+    normalizeHexColor(String(property.defaultValue ?? "")) ??
+    "#2563eb";
+  input.addEventListener("input", () => {
+    drawingEditor.executeCommand({
+      type: property.commandType,
+      style: { [property.styleKey]: input.value }
+    });
+    renderStatic();
+  });
+
+  return input;
+}
+
+function canExecuteStateProperty(property: Extract<DrawingPropertyDefinition, { scope: "state" }>, current: boolean): boolean {
+  const capabilities = drawingEditor.getCapabilities();
+  const command = current ? property.commandWhenFalse : property.commandWhenTrue;
+
+  switch (command) {
+    case "hideSelected":
+      return capabilities.canHide;
+    case "showSelected":
+      return capabilities.canShow;
+    case "lockSelected":
+      return capabilities.canLock;
+    case "unlockSelected":
+      return capabilities.canUnlock;
+  }
+}
+
+function drawingStyleTestId(styleKey: string): string {
+  switch (styleKey) {
+    case "color":
+      return "drawing-style-color";
+    case "lineWidth":
+      return "drawing-style-width";
+    case "fill":
+      return "drawing-style-fill";
+    case "textColor":
+      return "drawing-style-text-color";
+    case "fontSize":
+      return "drawing-style-font-size";
+    default:
+      return `drawing-style-${styleKey}`;
+  }
+}
+
+function lineDashToOption(lineDash: number[] | undefined): string {
+  if (!lineDash || lineDash.length === 0) {
+    return "solid";
+  }
+
+  if (lineDash[0] === 2) {
+    return "dotted";
+  }
+
+  return "dashed";
+}
+
+function optionToLineDash(value: string): number[] {
+  if (value === "dashed") {
+    return [6, 4];
+  }
+
+  if (value === "dotted") {
+    return [2, 3];
+  }
+
+  return [];
 }
 
 function normalizeHexColor(value: string | undefined): string | undefined {

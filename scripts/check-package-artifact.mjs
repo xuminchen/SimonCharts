@@ -40,6 +40,7 @@ const requiredFiles = [
   "dist/index.js",
   "dist/index.d.ts",
   "dist/extensions/chartExtension.d.ts",
+  "dist/drawing/drawingPropertySchema.d.ts",
   "dist/drawing/drawingRegistry.d.ts",
   "dist/drawing/drawingToolRegistry.d.ts",
   "dist/figures/figureRegistry.d.ts",

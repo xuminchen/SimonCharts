@@ -76,9 +76,9 @@ npm run check:package-types
 
 `guard:sdk-imports` verifies host-facing code imports `@simoncharts/chart-engine` only from the package root.
 
-`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, and drawing editor command/capability APIs.
+`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, and drawing property schema APIs.
 
-`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see.
+`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema types.
 
 ## v0.9 Platform Extensibility Verification
 

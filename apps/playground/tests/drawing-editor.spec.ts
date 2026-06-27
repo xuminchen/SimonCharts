@@ -16,6 +16,9 @@ test("creates edits deletes and restores a trend line drawing", async ({ page })
   await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
   await expect(page.getByTestId("drawing-object-manager")).toContainText("trendLine");
   await expect(page.getByTestId("drawing-property-panel")).toContainText("drawing-1");
+  await expect(page.getByTestId("drawing-style-line")).toBeVisible();
+  await expect(page.getByTestId("drawing-state-visible")).toBeVisible();
+  await expect(page.getByTestId("drawing-state-locked")).toBeVisible();
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/trendLine/);
 
   await page.getByTestId("drawing-tool-select").click();
@@ -46,11 +49,32 @@ test("property panel updates selected drawing text and export", async ({ page })
   await page.mouse.click(box.x + 180, box.y + 180);
   await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
+  await expect(page.getByTestId("drawing-style-text-color")).toBeVisible();
+  await expect(page.getByTestId("drawing-style-font-size")).toBeVisible();
 
   await page.getByTestId("drawing-text").fill("Breakout note");
   await page.getByTestId("drawing-text").blur();
 
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"text": "Breakout note"/);
+});
+
+test("property panel follows engine schema for fill and state controls", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-rectangle").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+
+  await expect(page.getByTestId("drawing-style-fill")).toBeVisible();
+  await page.getByTestId("drawing-state-locked").check();
+  await expect(page.getByTestId("drawing-object-manager")).toContainText("locked");
+  await expect(page.getByTestId("delete-drawing")).toBeDisabled();
 });
 
 test("drawing action controls follow engine capabilities", async ({ page }) => {

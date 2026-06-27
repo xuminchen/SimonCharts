@@ -7,6 +7,7 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  getDrawingPropertySchema,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -53,6 +54,11 @@ if (!macd.outputs.some((output) => output.panelId === "MACD")) {
 
 const drawingEditor = createDrawingEditor({ drawings: [drawing] });
 drawingEditor.executeCommand({ type: "selectDrawing", drawingId: "host-drawing-1" });
+const drawingPropertySchema = getDrawingPropertySchema(drawing.type);
+
+if (!drawingPropertySchema.properties.some((property) => property.id === "style.color")) {
+  throw new Error("Package consumer failed to read drawing property schema");
+}
 
 if (!drawingEditor.getCapabilities().canCopy) {
   throw new Error("Package consumer failed to expose drawing editor capabilities");

@@ -6,6 +6,7 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  getDrawingPropertySchema,
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
@@ -25,6 +26,7 @@ import type {
   DrawingEditor,
   DrawingEditorCapabilities,
   DrawingObject,
+  DrawingPropertySchema,
   IndicatorVisualOutput,
   LayerRenderContext,
   RenderFrameDiagnostic,
@@ -38,6 +40,7 @@ const series: CandleSeries = fixtureDailyCandleSeries;
 const engine: ChartEngine = createChartEngine({ series, seriesType: "candles" });
 const drawingEditor: DrawingEditor = createDrawingEditor({ drawings: [] });
 const customDrawingType: CustomDrawingType = "consumer.measurement-box";
+const drawingPropertySchema: DrawingPropertySchema = getDrawingPropertySchema("trendLine");
 
 drawingEditor.executeCommand({ type: "setTool", tool: "trendLine" });
 drawingEditor.executeCommand({ type: "cancelCreation" });
@@ -165,6 +168,7 @@ const snapshot: ChartLayoutSnapshot = {
 serializeChartLayoutSnapshot(snapshot);
 
 void capabilities;
+void drawingPropertySchema;
 void frame;
 void invalidations;
 void layerContext;

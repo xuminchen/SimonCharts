@@ -273,12 +273,13 @@ canvas {
 
 .drawing-property-control {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
 }
 
 .drawing-property-control input,
+.drawing-property-control select,
 .drawing-json,
 .drawing-workbench button {
   box-sizing: border-box;
@@ -289,7 +290,8 @@ canvas {
   font: inherit;
 }
 
-.drawing-property-control input {
+.drawing-property-control input,
+.drawing-property-control select {
   min-width: 0;
   height: 26px;
 }
