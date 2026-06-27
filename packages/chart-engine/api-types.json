@@ -27,6 +27,9 @@
   "ChartExtensionManifest",
   "ChartExtensionRegistry",
   "ChartExtensionUninstallResult",
+  "ChartExtensionValidationIssue",
+  "ChartExtensionValidationIssueCode",
+  "ChartExtensionValidationResult",
   "ChartLayer",
   "ChartLayout",
   "ChartLayoutSnapshot",
@@ -376,6 +379,7 @@
   "updateDrawingHandleDrag",
   "updateDrawingMoveDrag",
   "updateDrawingSelectionBox",
+  "validateChartExtension",
   "xToIndex",
   "yToPrice",
   "zoomViewportAtIndex"

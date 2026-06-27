@@ -31,6 +31,7 @@ import {
   updateDrawingHandleDrag,
   updateDrawingMoveDrag,
   updateDrawingSelectionBox,
+  validateChartExtension,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -271,6 +272,7 @@ const extension = createChartExtension(
 );
 const extensionRequirements = getChartExtensionCapabilityRequirements(extension);
 const extensionCompatibility = checkChartExtensionCompatibility(engineCapabilities, extension);
+const extensionValidation = validateChartExtension(extension);
 
 if (
   extensionRequirements.extensionContributionTypes?.join(",") !== "drawingRenderers,drawingTools" ||
@@ -278,6 +280,10 @@ if (
   extensionCompatibility.missing.length !== 0
 ) {
   throw new Error("Package consumer failed to check chart extension compatibility");
+}
+
+if (!extensionValidation.valid || extensionValidation.issues.length !== 0) {
+  throw new Error("Package consumer failed to validate chart extension");
 }
 
 const installResult = applyChartExtension(extension, { drawingRenderers, drawingTools });

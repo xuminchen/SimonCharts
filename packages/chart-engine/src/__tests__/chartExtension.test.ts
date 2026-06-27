@@ -12,6 +12,7 @@ import {
   createSeriesRendererRegistry,
   createVisualRendererRegistry,
   getChartExtensionCapabilityRequirements,
+  validateChartExtension,
   type ChartExtension,
   type DrawingRenderer,
   type DrawingToolDefinition,
@@ -21,6 +22,167 @@ import {
 } from "../index";
 
 describe("chart extensions", () => {
+  it("validates valid extensions without issues", () => {
+    const extension = createChartExtension(
+      { id: "acme.valid", label: "Valid", version: "1.0.0" },
+      {
+        seriesRenderers: [createSeriesRenderer()],
+        visualRenderers: [createVisualRenderer()],
+        drawingRenderers: [createDrawingRenderer("trendLine")],
+        drawingTools: [createDrawingTool("trendLine")],
+        figureRenderers: [createFigureRenderer()]
+      }
+    );
+
+    expect(validateChartExtension(extension)).toEqual({
+      valid: true,
+      issues: []
+    });
+  });
+
+  it("reports invalid manifest values without throwing", () => {
+    const extension = {
+      manifest: {
+        id: "",
+        label: " ",
+        version: 1
+      },
+      contributions: {}
+    } as unknown as ChartExtension;
+
+    expect(() => validateChartExtension(extension)).not.toThrow();
+    expect(validateChartExtension(extension)).toEqual({
+      valid: false,
+      issues: [
+        {
+          code: "manifest.id",
+          path: "manifest.id",
+          message: "Chart extension manifest id must be a non-empty string"
+        },
+        {
+          code: "manifest.label",
+          path: "manifest.label",
+          message: "Chart extension manifest label must be a non-empty string"
+        },
+        {
+          code: "manifest.version",
+          path: "manifest.version",
+          message: "Chart extension manifest version must be a non-empty string"
+        }
+      ]
+    });
+  });
+
+  it("reports duplicate contribution keys in fixed contribution order", () => {
+    const extension = createChartExtension(
+      { id: "acme.duplicates", label: "Duplicates", version: "1.0.0" },
+      {
+        figureRenderers: [createFigureRenderer(), createFigureRenderer()],
+        drawingTools: [createDrawingTool("trendLine"), createDrawingTool("trendLine")],
+        drawingRenderers: [
+          createDrawingRenderer("trendLine", "first"),
+          createDrawingRenderer("trendLine", "second")
+        ],
+        visualRenderers: [createVisualRenderer(), createVisualRenderer()],
+        seriesRenderers: [createSeriesRenderer(), createSeriesRenderer()]
+      }
+    );
+
+    expect(validateChartExtension(extension).issues).toEqual([
+      {
+        code: "contribution.duplicate",
+        path: "contributions.seriesRenderers[1].type",
+        message: "Chart extension contribution type is duplicated: seriesRenderers line"
+      },
+      {
+        code: "contribution.duplicate",
+        path: "contributions.visualRenderers[1].type",
+        message: "Chart extension contribution type is duplicated: visualRenderers line"
+      },
+      {
+        code: "contribution.duplicate",
+        path: "contributions.drawingRenderers[1].type",
+        message: "Chart extension contribution type is duplicated: drawingRenderers trendLine"
+      },
+      {
+        code: "contribution.duplicate",
+        path: "contributions.drawingTools[1].type",
+        message: "Chart extension contribution type is duplicated: drawingTools trendLine"
+      },
+      {
+        code: "contribution.duplicate",
+        path: "contributions.figureRenderers[1].type",
+        message: "Chart extension contribution type is duplicated: figureRenderers marker"
+      }
+    ]);
+  });
+
+  it("reports invalid drawing renderer and tool types", () => {
+    const extension = createChartExtension(
+      { id: "acme.invalid-drawing", label: "Invalid Drawing", version: "1.0.0" },
+      {
+        drawingRenderers: [createDrawingRenderer("invalid" as DrawingRenderer["type"])],
+        drawingTools: [createDrawingTool("also-invalid" as DrawingToolDefinition["type"])]
+      }
+    );
+
+    expect(validateChartExtension(extension)).toEqual({
+      valid: false,
+      issues: [
+        {
+          code: "contribution.invalidDrawingType",
+          path: "contributions.drawingRenderers[0].type",
+          message: "Chart extension drawing contribution type is invalid: drawingRenderers invalid"
+        },
+        {
+          code: "contribution.invalidDrawingType",
+          path: "contributions.drawingTools[0].type",
+          message: "Chart extension drawing contribution type is invalid: drawingTools also-invalid"
+        }
+      ]
+    });
+  });
+
+  it("does not mutate extension inputs while validating", () => {
+    const seriesRenderers = [createSeriesRenderer()];
+    const visualRenderers = [createVisualRenderer()];
+    const drawingRenderers = [createDrawingRenderer("trendLine")];
+    const drawingTools = [createDrawingTool("trendLine")];
+    const figureRenderers = [createFigureRenderer()];
+    const manifest = {
+      id: "acme.validate-input",
+      label: "Validate Input",
+      version: "1.0.0",
+      capabilities: ["drawingTools"]
+    };
+    const extension: ChartExtension = {
+      manifest,
+      contributions: {
+        seriesRenderers,
+        visualRenderers,
+        drawingRenderers,
+        drawingTools,
+        figureRenderers
+      }
+    };
+
+    validateChartExtension(extension);
+
+    expect(extension.manifest).toBe(manifest);
+    expect(extension.manifest).toEqual({
+      id: "acme.validate-input",
+      label: "Validate Input",
+      version: "1.0.0",
+      capabilities: ["drawingTools"]
+    });
+    expect(extension.contributions.seriesRenderers).toBe(seriesRenderers);
+    expect(extension.contributions.visualRenderers).toBe(visualRenderers);
+    expect(extension.contributions.drawingRenderers).toBe(drawingRenderers);
+    expect(extension.contributions.drawingTools).toBe(drawingTools);
+    expect(extension.contributions.figureRenderers).toBe(figureRenderers);
+    expect(drawingTools[0]?.defaultStyle.lineDash).toEqual([4, 2]);
+  });
+
   it("installs renderer and drawing tool contributions into existing registries", () => {
     const extension = createChartExtension(
       {

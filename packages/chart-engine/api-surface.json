@@ -141,6 +141,7 @@
   "updateDrawingHandleDrag",
   "updateDrawingMoveDrag",
   "updateDrawingSelectionBox",
+  "validateChartExtension",
   "xToIndex",
   "yToPrice",
   "zoomViewportAtIndex"

@@ -16,6 +16,7 @@ import {
   createChartExtension,
   createChartExtensionLifecycle,
   checkChartExtensionCompatibility,
+  validateChartExtension,
   applyChartExtension,
   serializeChartLayoutSnapshot,
   deserializeChartLayoutSnapshot,
@@ -181,10 +182,13 @@ v0.9 adds a neutral extension kernel:
 - `applyChartExtension()`
 - `getChartExtensionCapabilityRequirements()`
 - `checkChartExtensionCompatibility()`
+- `validateChartExtension()`
 
 Extension contributions install into existing Engine registries for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers. Use `createChartExtensionLifecycle(context)` for local install state, duplicate contribution detection, installed extension snapshots, and uninstall restoration. Use `applyChartExtension()` for direct one-way installs.
 
 `getChartExtensionCapabilityRequirements(extension)` derives neutral requirements from local contribution arrays. `checkChartExtensionCompatibility(manifest, extension)` compares those requirements against `EngineCapabilityManifest` before install. These helpers are diagnostics only: they do not load, sandbox, trust, persist, install, or distribute extensions.
+
+`validateChartExtension(extension)` returns deterministic validation issues for local extension definitions. It checks manifest identity fields, duplicate contribution keys, and drawing contribution type names without installing the extension. Hosts still own security review, sandboxing, trust policy, marketplace review, persistence, permissions, and product workflows.
 
 ## v1.0 Drawing Property Schema
 

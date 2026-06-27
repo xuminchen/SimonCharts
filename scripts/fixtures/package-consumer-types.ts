@@ -30,6 +30,7 @@ import {
   updateDrawingHandleDrag,
   updateDrawingMoveDrag,
   updateDrawingSelectionBox,
+  validateChartExtension,
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
@@ -45,6 +46,9 @@ import type {
   ChartExtensionLifecycle,
   ChartExtensionInstallResult,
   ChartExtensionUninstallResult,
+  ChartExtensionValidationIssue,
+  ChartExtensionValidationIssueCode,
+  ChartExtensionValidationResult,
   CustomDrawingType,
   DrawingEditorCapability,
   DrawingEditor,
@@ -307,6 +311,13 @@ const extensionRequirements: EngineCapabilityRequirements =
   getChartExtensionCapabilityRequirements(extension);
 const extensionCompatibility: EngineCapabilityCheckResult =
   checkChartExtensionCompatibility(engineCapabilityManifest, extension);
+const extensionValidationIssueCode: ChartExtensionValidationIssueCode = "manifest.id";
+const extensionValidationIssue: ChartExtensionValidationIssue = {
+  code: extensionValidationIssueCode,
+  path: "manifest.id",
+  message: "Example issue"
+};
+const extensionValidation: ChartExtensionValidationResult = validateChartExtension(extension);
 const extensionLifecycle: ChartExtensionLifecycle = createChartExtensionLifecycle({
   drawingRenderers: createDrawingRendererRegistry(),
   drawingTools: createDrawingToolRegistry()
@@ -446,5 +457,8 @@ void layerContext;
 void extensionInstallResult;
 void extensionRequirements;
 void extensionCompatibility;
+void extensionValidationIssueCode;
+void extensionValidationIssue;
+void extensionValidation;
 void lifecycleInstallResult;
 void lifecycleUninstallResult;

@@ -1,6 +1,7 @@
 import type { DrawingRenderer, DrawingRendererRegistry } from "../drawing/drawingRegistry";
 import type { DrawingToolDefinition } from "../drawing/drawingToolDefinitions";
 import type { DrawingToolRegistry } from "../drawing/drawingToolRegistry";
+import { isDrawingType } from "../drawing/drawingTypes";
 import type { FigureRenderer } from "../figures/figureTypes";
 import type { FigureRendererRegistry } from "../figures/figureRegistry";
 import type { SeriesRenderer } from "../series/seriesTypes";
@@ -86,6 +87,24 @@ export interface ChartExtensionRegistry {
   list(): ChartExtension[];
 }
 
+export type ChartExtensionValidationIssueCode =
+  | "manifest.id"
+  | "manifest.label"
+  | "manifest.version"
+  | "contribution.duplicate"
+  | "contribution.invalidDrawingType";
+
+export interface ChartExtensionValidationIssue {
+  code: ChartExtensionValidationIssueCode;
+  path: string;
+  message: string;
+}
+
+export interface ChartExtensionValidationResult {
+  valid: boolean;
+  issues: ChartExtensionValidationIssue[];
+}
+
 const extensionContributionOrder: readonly ExtensionContributionType[] = [
   "seriesRenderers",
   "visualRenderers",
@@ -93,6 +112,38 @@ const extensionContributionOrder: readonly ExtensionContributionType[] = [
   "drawingTools",
   "figureRenderers"
 ];
+
+export function validateChartExtension(extension: ChartExtension): ChartExtensionValidationResult {
+  const issues: ChartExtensionValidationIssue[] = [];
+
+  appendManifestIssue(issues, "id", extension?.manifest?.id);
+  appendManifestIssue(issues, "label", extension?.manifest?.label);
+  appendManifestIssue(issues, "version", extension?.manifest?.version);
+
+  for (const contributionType of extensionContributionOrder) {
+    appendDuplicateContributionIssues(
+      issues,
+      contributionType,
+      getContributionArray(extension?.contributions, contributionType)
+    );
+  }
+
+  appendInvalidDrawingTypeIssues(
+    issues,
+    "drawingRenderers",
+    getContributionArray(extension?.contributions, "drawingRenderers")
+  );
+  appendInvalidDrawingTypeIssues(
+    issues,
+    "drawingTools",
+    getContributionArray(extension?.contributions, "drawingTools")
+  );
+
+  return {
+    valid: issues.length === 0,
+    issues
+  };
+}
 
 export function createChartExtension(
   manifest: ChartExtensionManifest,
@@ -455,6 +506,78 @@ function contributionKey(kind: ContributionKind, type: string): string {
   return `${kind}:${type}`;
 }
 
+function appendManifestIssue(
+  issues: ChartExtensionValidationIssue[],
+  key: "id" | "label" | "version",
+  value: unknown
+): void {
+  if (isNonEmptyString(value)) {
+    return;
+  }
+
+  issues.push({
+    code: `manifest.${key}`,
+    path: `manifest.${key}`,
+    message: `Chart extension manifest ${key} must be a non-empty string`
+  });
+}
+
+function appendDuplicateContributionIssues(
+  issues: ChartExtensionValidationIssue[],
+  contributionType: ExtensionContributionType,
+  contributions: ContributionWithType[]
+): void {
+  const firstIndexes = new Map<string, number>();
+
+  contributions.forEach((contribution, index) => {
+    if (typeof contribution.type !== "string") {
+      return;
+    }
+
+    const firstIndex = firstIndexes.get(contribution.type);
+
+    if (firstIndex === undefined) {
+      firstIndexes.set(contribution.type, index);
+      return;
+    }
+
+    issues.push({
+      code: "contribution.duplicate",
+      path: `contributions.${contributionType}[${index}].type`,
+      message: `Chart extension contribution type is duplicated: ${contributionType} ${contribution.type}`
+    });
+  });
+}
+
+function appendInvalidDrawingTypeIssues(
+  issues: ChartExtensionValidationIssue[],
+  contributionType: "drawingRenderers" | "drawingTools",
+  contributions: ContributionWithType[]
+): void {
+  contributions.forEach((contribution, index) => {
+    const type = contribution.type;
+
+    if (typeof type === "string" && isDrawingType(type)) {
+      return;
+    }
+
+    issues.push({
+      code: "contribution.invalidDrawingType",
+      path: `contributions.${contributionType}[${index}].type`,
+      message: `Chart extension drawing contribution type is invalid: ${contributionType} ${String(type)}`
+    });
+  });
+}
+
+function getContributionArray(
+  contributions: ChartExtensionContributions | undefined,
+  contributionType: ExtensionContributionType
+): ContributionWithType[] {
+  const contribution = contributions?.[contributionType];
+
+  return Array.isArray(contribution) ? contribution : [];
+}
+
 function assertManifest(manifest: ChartExtensionManifest): void {
   if (!isNonEmptyString(manifest.id)) {
     throw new Error("Chart extension id must be a non-empty string");
@@ -469,8 +592,8 @@ function assertManifest(manifest: ChartExtensionManifest): void {
   }
 }
 
-function isNonEmptyString(value: string): boolean {
-  return value.trim().length > 0;
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function cloneExtension(extension: ChartExtension): ChartExtension {

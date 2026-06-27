@@ -56,6 +56,8 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Extension compatibility helpers have focused coverage for deriving requirements from local extension contribution arrays and checking those requirements against the Engine manifest. The helpers are diagnostics/preflight only and do not load, sandbox, trust, persist, install, or distribute extensions.
 
+Extension validation diagnostics have focused coverage for manifest identity issues, duplicate contribution keys, drawing contribution type validation, deterministic issue ordering, and non-mutating behavior. Validation is structural diagnostics only, not security review, sandboxing, trust policy, marketplace review, persistence, or permissioning.
+
 `npm run check:performance` runs the Engine performance baseline as a focused release gate. It covers deterministic 10k-candle and 50k-candle scenarios for render model creation, autoscale, core indicators, static rendering, drawing figure conversion, and render scheduler invalidation throughput.
 
 `npm run guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`. It complements `npm run guard:public-api`, which verifies runtime exports.

@@ -73,6 +73,12 @@ The helpers inspect local `ChartExtension.contributions` only. They compare supp
 
 Hosts still own extension loading, trust policy, persistence, product UI, and product workflows.
 
+## Validation Diagnostics
+
+Use `validateChartExtension(extension)` when hosts or extension authoring tools need deterministic diagnostics before registration or install. Validation inspects local extension structure, including manifest identity fields, duplicate contribution keys, and drawing contribution type names.
+
+The validator returns issue objects instead of installing the extension or throwing. It is not a security review, sandbox, trust policy, marketplace review, persistence layer, or permission system.
+
 ## Contribution Types
 
 Supported v0.9 contributions:
