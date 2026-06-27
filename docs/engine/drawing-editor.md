@@ -70,6 +70,14 @@ Drawing persistence uses versioned, neutral serialization:
 
 Serialized v1 payloads preserve `id`, `type`, `anchors`, `style`, `text`, `visible`, `locked`, `zIndex`, and `metadata`. Product persistence remains outside the engine.
 
+Layout persistence can wrap drawings with chart-level state:
+
+- `currentLayoutSnapshotSchemaVersion`
+- `serializeChartLayoutSnapshot(snapshot)`
+- `deserializeChartLayoutSnapshot(value)`
+
+Layout snapshots preserve `viewport`, versioned drawing payloads, `indicatorIds`, and optional `settings`. Hosts own where and when the serialized layout is stored.
+
 ## Hotkeys And Magnet Policies
 
 `defaultDrawingHotkeyBindings` maps neutral key strings to `DrawingEditorCommand` payloads. `getDrawingCommandForHotkey(bindings, key)` returns cloned command objects for delete, copy, paste, duplicate, z-order, and cancel-creation bindings.

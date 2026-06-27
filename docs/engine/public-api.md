@@ -11,10 +11,20 @@ import {
   createInteractionSession,
   createRenderScheduler,
   createDrawingEditor,
+  serializeChartLayoutSnapshot,
+  deserializeChartLayoutSnapshot,
   createVisualRendererRegistry,
   supportedSeriesTypes
 } from "@simoncharts/chart-engine";
 ```
+
+The package root is backed by the built SDK artifacts:
+
+- runtime: `packages/chart-engine/dist/index.js`
+- declarations: `packages/chart-engine/dist/index.d.ts`
+- export map: `@simoncharts/chart-engine`
+
+`packages/chart-engine/api-surface.json` is the runtime public API snapshot. `npm run guard:public-api` fails when root exports change without an intentional snapshot update.
 
 ## Facade
 
@@ -65,6 +75,17 @@ Drawing platform exports include:
 - indicators: `coreIndicatorIds`, `coreIndicatorDefinitions`, `calculateCoreIndicator()`
 
 These APIs use neutral drawing objects, figure primitives, visual outputs, command payloads, and serialized drawing payloads. They do not give the engine ownership of host APIs, stores, schemas, routes, TradingReviewSystem, review, strategy, watchlist, AI, or other product business models.
+
+## v0.4 SDK And Layout Persistence
+
+v0.4 adds package-level integration contracts:
+
+- package output: `dist/index.js`, `dist/index.d.ts`, and root `exports`
+- API guard: `api-surface.json` and `npm run guard:public-api`
+- host smoke: `scripts/check-package-consumer.mjs`
+- layout persistence: `currentLayoutSnapshotSchemaVersion`, `serializeChartLayoutSnapshot()`, `deserializeChartLayoutSnapshot()`
+
+`ChartLayoutSnapshot` is neutral. It contains `viewport`, serialized `drawings`, `indicatorIds`, and optional `settings`. It does not contain host account, route, persistence, review, strategy, watchlist, AI, auth, or product workflow fields.
 
 ## v0.2 Interaction And Rendering
 

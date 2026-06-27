@@ -40,6 +40,7 @@ export * from "./model/visual";
 export * from "./panels/panelLayout";
 export * from "./panels/panelScales";
 export * from "./panels/panelTypes";
+export * from "./persistence/layoutSnapshot";
 export * from "./render/canvasManager";
 export * from "./render/drawing/drawingLayer";
 export * from "./render/drawing/renderers/defaultDrawingRenderers";

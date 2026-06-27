@@ -33,8 +33,42 @@ Before a release candidate, run:
 npm run test
 npm run typecheck
 npm run guard:engine-boundary
+npm run guard:public-api
+npm run check:package-consumer
 npm run build
+npm pack --dry-run -w @simoncharts/chart-engine
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
+```
+
+## v0.4 Integration Readiness Verification
+
+Package SDK output is verified with:
+
+```bash
+npm run build -w @simoncharts/chart-engine
+test -f packages/chart-engine/dist/index.js
+test -f packages/chart-engine/dist/index.d.ts
+npm pack --dry-run -w @simoncharts/chart-engine
+```
+
+Public API and package-consumer checks are:
+
+```bash
+npm run guard:public-api
+npm run check:package-consumer
+```
+
+Host and persistence contracts are covered by:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/hostIntegrationContract.test.ts
+npm run test -- packages/chart-engine/src/__tests__/persistenceContract.test.ts packages/chart-engine/src/__tests__/drawingSchema.test.ts
+```
+
+The performance baseline uses deterministic 10k-candle fixtures and conservative upper bounds for render model creation, full-range autoscale, all core indicators, drawing figure conversion, and static canvas rendering:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/performanceBaseline.test.ts
 ```
 
 ## v0.2 Interaction And Rendering Verification

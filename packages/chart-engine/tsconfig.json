@@ -4,10 +4,14 @@
     "composite": true,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "declarationDir": "../../node_modules/.cache/types/chart-engine",
+    "rootDir": "src",
+    "declarationDir": "dist",
     "tsBuildInfoFile": "../../node_modules/.cache/tsbuildinfo/chart-engine.tsbuildinfo"
   },
   "include": [
     "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/__tests__/**/*.ts"
   ]
 }

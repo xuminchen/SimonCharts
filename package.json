@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "guard:engine-boundary": "node scripts/check-engine-boundary.mjs",
+    "guard:public-api": "node scripts/check-public-api.mjs",
+    "check:package-consumer": "node scripts/check-package-consumer.mjs",
     "build": "npm run build -w @simoncharts/chart-engine && npm run build -w @simoncharts/playground",
     "dev": "npm run dev -w @simoncharts/playground",
     "test:e2e": "playwright test"
