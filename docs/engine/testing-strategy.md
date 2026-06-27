@@ -37,10 +37,17 @@ npm run guard:public-api
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types
+npm run check:release-readiness
 npm run build
 npm pack --dry-run -w @simoncharts/chart-engine
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ```
+
+## v1.0 Release Candidate Verification
+
+`npm run check:release-readiness` verifies the RC package version, package metadata, root export map, required docs, required root scripts, and workspace lockfile version alignment.
+
+The v1.0 RC gate is intentionally package-focused. It does not add TradingReviewSystem or host application checks because SimonCharts Engine is validated as an independent reusable kernel.
 
 ## v0.8 API Stabilization Verification
 

@@ -1,6 +1,21 @@
 {
   "name": "@simoncharts/chart-engine",
-  "version": "0.9.0",
+  "version": "1.0.0-rc.0",
+  "description": "Host-independent chart engine kernel for SimonCharts.",
+  "license": "UNLICENSED",
+  "keywords": [
+    "charts",
+    "canvas",
+    "technical-analysis",
+    "drawing-tools",
+    "chart-engine"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xuminchen/SimonCharts.git",
+    "directory": "packages/chart-engine"
+  },
+  "homepage": "https://github.com/xuminchen/SimonCharts#readme",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",

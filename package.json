@@ -16,6 +16,7 @@
     "guard:sdk-imports": "node scripts/check-sdk-imports.mjs",
     "check:package-consumer": "node scripts/check-package-consumer.mjs",
     "check:package-types": "node scripts/check-package-types.mjs",
+    "check:release-readiness": "node scripts/check-release-readiness.mjs",
     "build": "npm run build -w @simoncharts/chart-engine && npm run build -w @simoncharts/playground",
     "dev": "npm run dev -w @simoncharts/playground",
     "test:e2e": "playwright test"
