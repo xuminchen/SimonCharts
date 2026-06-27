@@ -9,6 +9,7 @@ The release candidate includes:
 - neutral market data, viewport, theme, settings, and chart state contracts
 - Engine-owned capability manifest for package metadata, release channel, supported series, built-in drawings, core indicators, drawing editor capabilities, interaction capabilities, visual output families, and extension contribution types
 - Engine-owned capability requirement checker for deterministic manifest compatibility diagnostics
+- Engine-owned extension compatibility preflight helpers for deriving contribution requirements and checking them against the capability manifest
 - 17 built-in chart series types through `supportedSeriesTypes`
 - static canvas rendering and layered rendering primitives
 - interaction engine, interaction session, crosshair state, and render scheduler
@@ -91,11 +92,11 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Completed on 2026-06-28:
 
-- `npm run test` passed: 42 test files, 477 tests.
+- `npm run test` passed: 42 test files, 483 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 160 files scanned.
-- `npm run guard:public-api` passed: 143 runtime exports.
-- `npm run guard:public-types` passed: 378 type symbols.
+- `npm run guard:public-api` passed: 145 runtime exports.
+- `npm run guard:public-types` passed: 380 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.
@@ -105,6 +106,21 @@ Completed on 2026-06-28:
 - `npm run check:package-artifact` passed: 121 package files.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
 - `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+
+Focused Extension Compatibility evidence on 2026-06-28:
+
+- `npm run test -- packages/chart-engine/src/__tests__/chartExtension.test.ts -- --reporter=dot` passed: 13 tests.
+- `npm run build -w @simoncharts/chart-engine` passed.
+- Pre-snapshot `npm run guard:public-api` failed as expected with added runtime exports `checkChartExtensionCompatibility` and `getChartExtensionCapabilityRequirements`.
+- Pre-snapshot `npm run guard:public-types` failed as expected with added symbols `checkChartExtensionCompatibility` and `getChartExtensionCapabilityRequirements`.
+- Runtime API snapshot was intentionally refreshed to 145 runtime exports.
+- `node scripts/check-public-types.mjs --write` refreshed the type snapshot to 380 type symbols.
+- `npm run guard:public-api` passed: 145 runtime exports.
+- `npm run guard:public-types` passed: 380 type symbols.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- Initial full `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` hit two unrelated timeouts; both failed tests passed individually, and the full e2e suite passed on rerun: 43 browser tests.
+- `git diff --check` passed.
 
 Focused Engine Capability Requirements evidence on 2026-06-28:
 

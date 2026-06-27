@@ -60,6 +60,19 @@ The lifecycle manager:
 
 Use `applyChartExtension()` for direct one-way installs when lifecycle state is not needed.
 
+## Compatibility Preflight
+
+Use `getChartExtensionCapabilityRequirements(extension)` to derive neutral Engine requirements from a local extension's contribution arrays. Use `checkChartExtensionCompatibility(manifest, extension)` to compare those requirements against `createEngineCapabilityManifest()` before attempting an install:
+
+```ts
+const manifest = createEngineCapabilityManifest();
+const result = checkChartExtensionCompatibility(manifest, extension);
+```
+
+The helpers inspect local `ChartExtension.contributions` only. They compare supported contribution type names such as `drawingTools` and `visualRenderers` against the neutral Engine manifest. They do not load, sandbox, trust, persist, install, or distribute extensions.
+
+Hosts still own extension loading, trust policy, persistence, product UI, and product workflows.
+
 ## Contribution Types
 
 Supported v0.9 contributions:

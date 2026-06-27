@@ -1,6 +1,7 @@
 import {
   calculateCoreIndicator,
   applyChartExtension,
+  checkChartExtensionCompatibility,
   checkEngineCapabilityRequirements,
   createChartEngine,
   createEngineCapabilityManifest,
@@ -17,6 +18,7 @@ import {
   finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingHoverState,
+  getChartExtensionCapabilityRequirements,
   getMagnetSnapState,
   createOhlcMagnetTargetsFromSeries,
   getDrawingPropertySchema,
@@ -267,6 +269,17 @@ const extension = createChartExtension(
     ]
   }
 );
+const extensionRequirements = getChartExtensionCapabilityRequirements(extension);
+const extensionCompatibility = checkChartExtensionCompatibility(engineCapabilities, extension);
+
+if (
+  extensionRequirements.extensionContributionTypes?.join(",") !== "drawingRenderers,drawingTools" ||
+  !extensionCompatibility.compatible ||
+  extensionCompatibility.missing.length !== 0
+) {
+  throw new Error("Package consumer failed to check chart extension compatibility");
+}
+
 const installResult = applyChartExtension(extension, { drawingRenderers, drawingTools });
 
 if (installResult.installed.drawingRenderers !== 1 || installResult.installed.drawingTools !== 1) {

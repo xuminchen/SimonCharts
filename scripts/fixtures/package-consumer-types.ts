@@ -1,5 +1,6 @@
 import {
   applyChartExtension,
+  checkChartExtensionCompatibility,
   checkEngineCapabilityRequirements,
   createChartEngine,
   createEngineCapabilityManifest,
@@ -14,6 +15,7 @@ import {
   finishDrawingHandleDrag,
   finishDrawingMoveDrag,
   finishDrawingSelectionBox,
+  getChartExtensionCapabilityRequirements,
   getDrawingEditHandles,
   getDrawingHoverState,
   getMagnetSnapState,
@@ -301,6 +303,10 @@ const extensionInstallResult: ChartExtensionInstallResult = applyChartExtension(
   drawingRenderers: createDrawingRendererRegistry(),
   drawingTools: createDrawingToolRegistry()
 });
+const extensionRequirements: EngineCapabilityRequirements =
+  getChartExtensionCapabilityRequirements(extension);
+const extensionCompatibility: EngineCapabilityCheckResult =
+  checkChartExtensionCompatibility(engineCapabilityManifest, extension);
 const extensionLifecycle: ChartExtensionLifecycle = createChartExtensionLifecycle({
   drawingRenderers: createDrawingRendererRegistry(),
   drawingTools: createDrawingToolRegistry()
@@ -438,5 +444,7 @@ void frame;
 void invalidations;
 void layerContext;
 void extensionInstallResult;
+void extensionRequirements;
+void extensionCompatibility;
 void lifecycleInstallResult;
 void lifecycleUninstallResult;

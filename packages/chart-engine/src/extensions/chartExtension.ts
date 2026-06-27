@@ -7,6 +7,13 @@ import type { SeriesRenderer } from "../series/seriesTypes";
 import type { SeriesRendererRegistry } from "../series/seriesRegistry";
 import type { VisualRenderer } from "../visuals/visualTypes";
 import type { VisualRendererRegistry } from "../visuals/visualRegistry";
+import {
+  checkEngineCapabilityRequirements,
+  type EngineCapabilityCheckResult,
+  type EngineCapabilityManifest,
+  type EngineCapabilityRequirements,
+  type ExtensionContributionType
+} from "../engine/engineCapabilityManifest";
 
 export interface ChartExtensionManifest {
   id: string;
@@ -79,6 +86,14 @@ export interface ChartExtensionRegistry {
   list(): ChartExtension[];
 }
 
+const extensionContributionOrder: readonly ExtensionContributionType[] = [
+  "seriesRenderers",
+  "visualRenderers",
+  "drawingRenderers",
+  "drawingTools",
+  "figureRenderers"
+];
+
 export function createChartExtension(
   manifest: ChartExtensionManifest,
   contributions: ChartExtensionContributions = {}
@@ -89,6 +104,32 @@ export function createChartExtension(
     manifest: cloneManifest(manifest),
     contributions: cloneContributions(contributions)
   };
+}
+
+export function getChartExtensionCapabilityRequirements(
+  extension: ChartExtension
+): EngineCapabilityRequirements {
+  const extensionContributionTypes = extensionContributionOrder.filter(
+    (type) => (extension.contributions[type]?.length ?? 0) > 0
+  );
+
+  if (extensionContributionTypes.length === 0) {
+    return {};
+  }
+
+  return {
+    extensionContributionTypes: [...extensionContributionTypes]
+  };
+}
+
+export function checkChartExtensionCompatibility(
+  manifest: EngineCapabilityManifest,
+  extension: ChartExtension
+): EngineCapabilityCheckResult {
+  return checkEngineCapabilityRequirements(
+    manifest,
+    getChartExtensionCapabilityRequirements(extension)
+  );
 }
 
 export function createChartExtensionRegistry(): ChartExtensionRegistry {

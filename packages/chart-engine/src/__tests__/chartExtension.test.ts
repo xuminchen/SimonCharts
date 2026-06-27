@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   applyChartExtension,
+  checkChartExtensionCompatibility,
   createChartExtension,
   createChartExtensionLifecycle,
   createChartExtensionRegistry,
   createDrawingRendererRegistry,
   createDrawingToolRegistry,
+  createEngineCapabilityManifest,
   createFigureRendererRegistry,
   createSeriesRendererRegistry,
   createVisualRendererRegistry,
+  getChartExtensionCapabilityRequirements,
   type ChartExtension,
   type DrawingRenderer,
   type DrawingToolDefinition,
@@ -122,6 +125,144 @@ describe("chart extensions", () => {
     expect(() =>
       createChartExtension({ id: "acme.bad", label: "Bad", version: "" })
     ).toThrow("Chart extension version must be a non-empty string");
+  });
+
+  it("derives capability requirements for all contribution groups in fixed order", () => {
+    const extension = createChartExtension(
+      { id: "acme.requirements", label: "Requirements", version: "1.0.0" },
+      {
+        figureRenderers: [createFigureRenderer()],
+        drawingTools: [createDrawingTool()],
+        drawingRenderers: [createDrawingRenderer()],
+        visualRenderers: [createVisualRenderer()],
+        seriesRenderers: [createSeriesRenderer()]
+      }
+    );
+
+    expect(getChartExtensionCapabilityRequirements(extension)).toEqual({
+      extensionContributionTypes: [
+        "seriesRenderers",
+        "visualRenderers",
+        "drawingRenderers",
+        "drawingTools",
+        "figureRenderers"
+      ]
+    });
+  });
+
+  it("returns empty capability requirements for extensions without contributions", () => {
+    expect(
+      getChartExtensionCapabilityRequirements(
+        createChartExtension({ id: "acme.empty", label: "Empty", version: "1.0.0" })
+      )
+    ).toEqual({});
+    expect(
+      getChartExtensionCapabilityRequirements(
+        createChartExtension(
+          { id: "acme.empty-arrays", label: "Empty Arrays", version: "1.0.0" },
+          {
+            seriesRenderers: [],
+            visualRenderers: [],
+            drawingRenderers: [],
+            drawingTools: [],
+            figureRenderers: []
+          }
+        )
+      )
+    ).toEqual({});
+  });
+
+  it("passes compatibility checks against the current engine manifest", () => {
+    const extension = createChartExtension(
+      { id: "acme.compatible", label: "Compatible", version: "1.0.0" },
+      {
+        seriesRenderers: [createSeriesRenderer()],
+        visualRenderers: [createVisualRenderer()],
+        drawingRenderers: [createDrawingRenderer()],
+        drawingTools: [createDrawingTool()],
+        figureRenderers: [createFigureRenderer()]
+      }
+    );
+
+    expect(checkChartExtensionCompatibility(createEngineCapabilityManifest(), extension)).toEqual({
+      compatible: true,
+      missing: []
+    });
+  });
+
+  it("reports missing extension contribution types from incompatible manifests", () => {
+    const manifest = createEngineCapabilityManifest();
+    const extension = createChartExtension(
+      { id: "acme.future", label: "Future", version: "1.0.0" },
+      { visualRenderers: [createVisualRenderer()] }
+    );
+
+    manifest.extensionContributionTypes = manifest.extensionContributionTypes.filter(
+      (type) => type !== "visualRenderers"
+    );
+
+    expect(checkChartExtensionCompatibility(manifest, extension)).toEqual({
+      compatible: false,
+      missing: [
+        {
+          key: "extensionContributionTypes",
+          values: ["visualRenderers"]
+        }
+      ]
+    });
+  });
+
+  it("returns defensive capability requirement arrays", () => {
+    const extension = createChartExtension(
+      { id: "acme.defensive", label: "Defensive", version: "1.0.0" },
+      { seriesRenderers: [createSeriesRenderer()] }
+    );
+    const requirements = getChartExtensionCapabilityRequirements(extension);
+
+    (requirements.extensionContributionTypes as string[]).push("mutated");
+
+    expect(getChartExtensionCapabilityRequirements(extension)).toEqual({
+      extensionContributionTypes: ["seriesRenderers"]
+    });
+  });
+
+  it("does not mutate extension inputs while deriving requirements or checking compatibility", () => {
+    const seriesRenderers = [createSeriesRenderer()];
+    const visualRenderers = [createVisualRenderer()];
+    const drawingRenderers = [createDrawingRenderer()];
+    const drawingTools = [createDrawingTool()];
+    const figureRenderers = [createFigureRenderer()];
+    const extension: ChartExtension = {
+      manifest: {
+        id: "acme.input",
+        label: "Input",
+        version: "1.0.0",
+        capabilities: ["renderers"]
+      },
+      contributions: {
+        seriesRenderers,
+        visualRenderers,
+        drawingRenderers,
+        drawingTools,
+        figureRenderers
+      }
+    };
+
+    getChartExtensionCapabilityRequirements(extension);
+    checkChartExtensionCompatibility(createEngineCapabilityManifest(), extension);
+
+    expect(extension.manifest).toEqual({
+      id: "acme.input",
+      label: "Input",
+      version: "1.0.0",
+      capabilities: ["renderers"]
+    });
+    expect(extension.contributions.seriesRenderers).toBe(seriesRenderers);
+    expect(extension.contributions.visualRenderers).toBe(visualRenderers);
+    expect(extension.contributions.drawingRenderers).toBe(drawingRenderers);
+    expect(extension.contributions.drawingTools).toBe(drawingTools);
+    expect(extension.contributions.figureRenderers).toBe(figureRenderers);
+    expect(drawingTools[0]?.defaultStyle.lineDash).toEqual([4, 2]);
   });
 
   it("installs and uninstalls local extension contributions through a lifecycle", () => {
