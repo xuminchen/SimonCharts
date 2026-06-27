@@ -21,11 +21,13 @@ import {
   createVisualLayer,
   createVisualRendererRegistry,
   beginDrawingHandleDrag,
+  beginDrawingSelectionBox,
   coreIndicatorDefinitions,
   defaultChartTheme,
   builtInDrawingToolDefinitions,
   deserializeDrawingObject,
   finishDrawingHandleDrag,
+  finishDrawingSelectionBox,
   getDrawingSelectionBounds,
   getDrawingPropertyDefinitionsForDrawing,
   hitTestDrawingEditHandle,
@@ -34,6 +36,7 @@ import {
   renderStaticChart,
   resizeCanvas,
   serializeDrawingObject,
+  updateDrawingSelectionBox,
   updateDrawingHandleDrag,
   supportedSeriesTypes
 } from "@simoncharts/chart-engine";
@@ -57,6 +60,7 @@ import type {
   DrawingHandleDragOperation,
   DrawingObject,
   DrawingPropertyDefinition,
+  DrawingSelectionBoxOperation,
   SeriesType,
   ThemeMode,
   ViewportState
@@ -353,6 +357,8 @@ let interactionEngine: InteractionEngine | undefined;
 let drawingDragStart: { x: number; y: number } | undefined;
 let drawingHandleDragOperation: DrawingHandleDragOperation | undefined;
 let drawingHandleDragPoint: { x: number; y: number } | undefined;
+let drawingSelectionBoxOperation: DrawingSelectionBoxOperation | undefined;
+let drawingSelectionPreviewIds: string[] | undefined;
 let drawingPreviewDrawings: DrawingObject[] | undefined;
 let lastKeyboardCommandText = "none";
 let viewportCoversNextCrosshairClear = false;
@@ -484,7 +490,7 @@ function createRenderContext(
       panels,
       visualOutputs: activeVisualOutputs,
       drawings: drawingPreviewDrawings ?? drawingEditor.getState().drawings,
-      selectedDrawingIds: drawingEditor.getState().selectedDrawingIds
+      selectedDrawingIds: drawingSelectionPreviewIds ?? drawingEditor.getState().selectedDrawingIds
     }
   };
 }
@@ -1139,6 +1145,8 @@ function cancelPointerInteraction(): void {
   drawingDragStart = undefined;
   drawingHandleDragOperation = undefined;
   drawingHandleDragPoint = undefined;
+  drawingSelectionBoxOperation = undefined;
+  drawingSelectionPreviewIds = undefined;
   drawingPreviewDrawings = undefined;
   crosshair = undefined;
   if (layout && viewport) {
@@ -1157,6 +1165,8 @@ function clearIndicatorInteractionState(): void {
   drawingDragStart = undefined;
   drawingHandleDragOperation = undefined;
   drawingHandleDragPoint = undefined;
+  drawingSelectionBoxOperation = undefined;
+  drawingSelectionPreviewIds = undefined;
   drawingPreviewDrawings = undefined;
   crosshair = undefined;
   interactionEngine = undefined;
@@ -1204,7 +1214,7 @@ overlayCanvas.addEventListener(
 overlayCanvas.addEventListener("pointerdown", (event) => {
   overlayCanvas.setPointerCapture(event.pointerId);
   const point = getCanvasPoint(event);
-  const handledDrawing = handleDrawingPointerDown(point);
+  const handledDrawing = handleDrawingPointerDown(point, { additiveSelection: event.shiftKey });
 
   interactionSession.handleInput({
     type: "pointerDown",
@@ -1440,7 +1450,10 @@ function render(): void {
   renderOverlayCanvas();
 }
 
-function handleDrawingPointerDown(point: { x: number; y: number }): boolean {
+function handleDrawingPointerDown(
+  point: { x: number; y: number },
+  options: { additiveSelection?: boolean } = {}
+): boolean {
   const editorState = drawingEditor.getState();
 
   if (editorState.activeTool !== "select") {
@@ -1473,6 +1486,18 @@ function handleDrawingPointerDown(point: { x: number; y: number }): boolean {
   const hitDrawing = hitTestDrawing(point, editorState.drawings);
 
   if (!hitDrawing) {
+    if (options.additiveSelection) {
+      drawingSelectionBoxOperation = beginDrawingSelectionBox({
+        drawings: editorState.drawings,
+        startPoint: point,
+        currentSelectedDrawingIds: editorState.selectedDrawingIds,
+        additive: true
+      });
+      drawingSelectionPreviewIds = editorState.selectedDrawingIds;
+      renderStatic();
+      return true;
+    }
+
     return false;
   }
 
@@ -1494,6 +1519,14 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
     return true;
   }
 
+  if (drawingSelectionBoxOperation) {
+    const preview = updateDrawingSelectionBox(drawingSelectionBoxOperation, point);
+
+    drawingSelectionPreviewIds = preview.selectedDrawingIds;
+    renderStatic();
+    return true;
+  }
+
   if (!drawingDragStart) {
     return false;
   }
@@ -1510,6 +1543,10 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
 function handleDrawingPointerUp(point: { x: number; y: number }): boolean {
   if (drawingHandleDragOperation) {
     return finishDrawingHandlePointerDrag(point);
+  }
+
+  if (drawingSelectionBoxOperation) {
+    return finishDrawingSelectionBoxPointerDrag(point);
   }
 
   if (!drawingDragStart) {
@@ -1538,6 +1575,21 @@ function finishDrawingHandlePointerDrag(point: { x: number; y: number }): boolea
     return true;
   }
 
+  executeDrawingCommand(command);
+
+  return true;
+}
+
+function finishDrawingSelectionBoxPointerDrag(point: { x: number; y: number }): boolean {
+  if (!drawingSelectionBoxOperation) {
+    return false;
+  }
+
+  const operation = drawingSelectionBoxOperation;
+  const command = finishDrawingSelectionBox(operation, point);
+
+  drawingSelectionBoxOperation = undefined;
+  drawingSelectionPreviewIds = undefined;
   executeDrawingCommand(command);
 
   return true;

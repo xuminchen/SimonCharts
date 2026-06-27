@@ -106,6 +106,19 @@ Unit coverage verifies handle hit-testing, handle drag operation creation, ancho
 
 Browser coverage verifies the playground can route a selected drawing anchor handle drag through the Engine operation flow and commit the resulting neutral command.
 
+## v1.0 Drawing Selection Box Verification
+
+Focused drawing selection box coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/drawingSelectionBox.test.ts packages/chart-engine/src/__tests__/drawingEditorComplete.test.ts
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-editor.spec.ts
+```
+
+Unit coverage verifies selection box bounds normalization, snapshot isolation, hidden and locked selection options, additive preview ids, and final `selectDrawingsInBounds` command generation.
+
+Browser coverage verifies the playground can route Shift+drag selection through the Engine operation flow without replacing normal no-modifier chart pan behavior.
+
 ## v0.9 Platform Extensibility Verification
 
 Focused extension coverage:

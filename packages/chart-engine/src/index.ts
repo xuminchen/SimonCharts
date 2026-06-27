@@ -19,6 +19,7 @@ export * from "./drawing/drawingPropertySchema";
 export * from "./drawing/drawingRegistry";
 export * from "./drawing/drawingMigrations";
 export * from "./drawing/drawingSchema";
+export * from "./drawing/drawingSelectionBox";
 export * from "./drawing/drawingSerialization";
 export * from "./drawing/drawingStyle";
 export * from "./drawing/drawingToolDefinitions";

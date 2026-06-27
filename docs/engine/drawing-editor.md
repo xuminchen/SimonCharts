@@ -61,6 +61,19 @@ The flow starts from Engine-owned `DrawingEditHandle` metadata. Hosts pass a poi
 
 Hosts still own native pointer events, pointer capture, CSS cursors, hover feedback, render invalidation, and persistence. The Engine owns handle geometry, operation state, preview mutation from the original snapshot, and final neutral command generation.
 
+## Selection Box Flow
+
+SimonCharts v1.0 adds a DOM-free selection box operation flow:
+
+- `beginDrawingSelectionBox(options)`
+- `updateDrawingSelectionBox(operation, point)`
+- `finishDrawingSelectionBox(operation, point)`
+- `getDrawingSelectionBoxCommand(operation, point)`
+
+The flow starts from a neutral drawing snapshot and start point. The Engine returns normalized bounds, preview selected drawing ids, and a final `selectDrawingsInBounds` command. Additive mode can include existing selected ids in the preview while still preserving the final command contract.
+
+Hosts still own modifier keys, native pointer events, pointer capture, CSS selection rectangles, and render invalidation. The Engine owns bounds normalization, hidden/locked selection options, preview id calculation, and command generation.
+
 ## Transform Kernel
 
 SimonCharts v1.0 adds Engine-owned resize and rotate math:

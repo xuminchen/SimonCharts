@@ -8,7 +8,9 @@ import {
   createDrawingEditor,
   createDrawingToolRegistry,
   beginDrawingHandleDrag,
+  beginDrawingSelectionBox,
   finishDrawingHandleDrag,
+  finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingPropertySchema,
   hitTestDrawingEditHandle,
@@ -16,6 +18,7 @@ import {
   resizeDrawing,
   rotateDrawing,
   updateDrawingHandleDrag,
+  updateDrawingSelectionBox,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -132,6 +135,21 @@ if (!handlePreview || !handleCommand) {
 }
 
 drawingEditor.executeCommand(handleCommand);
+
+const selectionBox = beginDrawingSelectionBox({
+  drawings: drawingEditor.getState().drawings,
+  startPoint: { x: -1, y: -1 },
+  currentSelectedDrawingIds: drawingEditor.getState().selectedDrawingIds,
+  additive: true
+});
+const selectionPreview = updateDrawingSelectionBox(selectionBox, { x: 200, y: 200 });
+const selectionCommand = finishDrawingSelectionBox(selectionBox, { x: 200, y: 200 });
+
+if (selectionPreview.selectedDrawingIds.length === 0 || selectionCommand.type !== "selectDrawingsInBounds") {
+  throw new Error("Package consumer failed to execute drawing selection box flow");
+}
+
+drawingEditor.executeCommand(selectionCommand);
 
 const resizedDrawing = resizeDrawing(drawing, {
   handle: "bottomRight",

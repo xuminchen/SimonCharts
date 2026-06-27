@@ -18,6 +18,7 @@ The release candidate includes:
 - Engine-owned advanced drawing parameters for Fibonacci levels, Gann ratios, position labels, and range labels
 - Engine-owned drawing interaction primitives for box selection, keyboard nudging, and edit handles
 - Engine-owned drawing handle drag flow for anchor, resize, and rotate operations
+- Engine-owned drawing selection box flow for preview ids and final selection commands
 - Engine-owned drawing transform primitives for resize and rotate commands
 - drawing serialization and layout snapshot contracts
 - extension registration and local lifecycle management for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers
@@ -81,17 +82,17 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Completed on 2026-06-27:
 
-- `npm run test` passed: 36 test files, 428 tests.
+- `npm run test` passed: 37 test files, 432 tests.
 - `npm run typecheck` passed.
-- `npm run guard:engine-boundary` passed: 150 files scanned.
-- `npm run guard:public-api` passed: 128 runtime exports.
-- `npm run guard:public-types` passed: 335 type symbols.
+- `npm run guard:engine-boundary` passed: 152 files scanned.
+- `npm run guard:public-api` passed: 132 runtime exports.
+- `npm run guard:public-types` passed: 343 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
-- `npm run check:package-artifact` passed: 117 package files.
+- `npm run check:package-artifact` passed: 118 package files.
 - `npm run check:package-types` passed.
 - `npm run check:performance` passed: 1 test file, 2 performance scenarios.
 - `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
 - `npm run build` passed for the Engine package and playground.
-- `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 117 files.
-- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 35 browser tests.
+- `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 118 files.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 36 browser tests.

@@ -7,7 +7,9 @@ import {
   createDrawingEditor,
   createDrawingToolRegistry,
   beginDrawingHandleDrag,
+  beginDrawingSelectionBox,
   finishDrawingHandleDrag,
+  finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingPropertySchema,
   hitTestDrawingEditHandle,
@@ -15,6 +17,7 @@ import {
   resizeDrawing,
   rotateDrawing,
   updateDrawingHandleDrag,
+  updateDrawingSelectionBox,
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
@@ -40,6 +43,8 @@ import type {
   DrawingObject,
   DrawingResizeOptions,
   DrawingRotateOptions,
+  DrawingSelectionBoxOperation,
+  DrawingSelectionBoxPreview,
   DrawingParameterPropertyDefinition,
   DrawingPropertySchema,
   IndicatorVisualOutput,
@@ -111,6 +116,26 @@ const handleDragPreview: DrawingHandleDragPreview | undefined = handleDragOperat
 const handleDragCommand: DrawingEditorCommand | undefined = handleDragOperation
   ? finishDrawingHandleDrag(handleDragOperation, { x: 5, y: 6 })
   : undefined;
+const selectionBoxOperation: DrawingSelectionBoxOperation = beginDrawingSelectionBox({
+  drawings: [
+    {
+      id: "selection-box",
+      type: "rectangle",
+      anchors: [{ x: 0, y: 0 }, { x: 10, y: 10 }]
+    }
+  ],
+  startPoint: { x: -1, y: -1 },
+  currentSelectedDrawingIds: [],
+  additive: false
+});
+const selectionBoxPreview: DrawingSelectionBoxPreview = updateDrawingSelectionBox(
+  selectionBoxOperation,
+  { x: 20, y: 20 }
+);
+const selectionBoxCommand: DrawingEditorCommand = finishDrawingSelectionBox(selectionBoxOperation, {
+  x: 20,
+  y: 20
+});
 const transformedDrawing: DrawingObject = rotateDrawing(
   resizeDrawing(
     {
@@ -258,6 +283,9 @@ void hitHandle;
 void handleDragOperation;
 void handleDragPreview;
 void handleDragCommand;
+void selectionBoxOperation;
+void selectionBoxPreview;
+void selectionBoxCommand;
 void transformedDrawing;
 void parameterProperty;
 void frame;
