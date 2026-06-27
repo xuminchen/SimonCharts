@@ -2,6 +2,164 @@ import { describe, expect, it } from "vitest";
 import { createDrawingEditor, type DrawingObject } from "../index";
 
 describe("complete drawing editor", () => {
+  it("reports command capabilities from selection clipboard creation and history state", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "a", type: "trendLine", anchors: [{ x: 0, y: 0 }] },
+        { id: "b", type: "rectangle", anchors: [{ x: 10, y: 10 }], locked: true },
+        { id: "c", type: "text", anchors: [{ x: 20, y: 20 }], visible: false }
+      ]
+    });
+
+    expect(editor.getCapabilities()).toMatchObject({
+      selectedDrawingCount: 0,
+      editableSelectedDrawingCount: 0,
+      clipboardDrawingCount: 0,
+      pendingAnchorCount: 0,
+      hasSelection: false,
+      hasEditableSelection: false,
+      canDelete: false,
+      canPaste: false,
+      canUndo: false,
+      canRedo: false
+    });
+
+    editor.selectDrawings(["a", "b", "c"]);
+
+    expect(editor.getCapabilities()).toMatchObject({
+      selectedDrawingCount: 3,
+      editableSelectedDrawingCount: 2,
+      hasSelection: true,
+      hasEditableSelection: true,
+      canBringSelectedForward: false,
+      canSendSelectedBackward: false,
+      canCopy: true,
+      canDuplicate: true,
+      canDelete: true,
+      canLock: true,
+      canUnlock: true,
+      canHide: true,
+      canShow: true
+    });
+
+    editor.copySelected();
+    expect(editor.getCapabilities().clipboardDrawingCount).toBe(3);
+    expect(editor.getCapabilities().canPaste).toBe(true);
+
+    editor.executeCommand({ type: "setTool", tool: "trendLine" });
+    editor.pointerDown({ x: 1, y: 2 });
+
+    expect(editor.getCapabilities()).toMatchObject({
+      pendingAnchorCount: 1,
+      canCancelCreation: true
+    });
+
+    editor.executeCommand({ type: "cancelCreation" });
+    expect(editor.getCapabilities().canCancelCreation).toBe(false);
+
+    editor.executeCommand({ type: "pasteCopied", offset: { dx: 1, dy: 1 } });
+    expect(editor.getCapabilities()).toMatchObject({
+      canUndo: true,
+      canRedo: false
+    });
+
+    editor.undo();
+    expect(editor.getCapabilities()).toMatchObject({
+      canUndo: false,
+      canRedo: true
+    });
+  });
+
+  it("executes neutral drawing editor commands", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "a", type: "trendLine", anchors: [{ x: 0, y: 0 }] },
+        { id: "b", type: "rectangle", anchors: [{ x: 10, y: 10 }] }
+      ]
+    });
+
+    editor.executeCommand({ type: "selectDrawing", drawingId: "a" });
+    editor.executeCommand({ type: "copySelected" });
+    editor.executeCommand({ type: "pasteCopied", offset: { dx: 5, dy: 6 } });
+
+    const pastedId = editor.getState().selectedDrawingIds[0];
+
+    expect(editor.getState().drawings).toHaveLength(3);
+    expect(findDrawing(editor.getState().drawings, pastedId)).toMatchObject({
+      type: "trendLine",
+      anchors: [{ x: 5, y: 6 }]
+    });
+
+    editor.executeCommand({ type: "updateSelectedStyle", style: { color: "#dc2626" } });
+    editor.executeCommand({ type: "updateSelectedText", text: "Breakout" });
+    editor.executeCommand({ type: "duplicateSelected", offset: { dx: 1, dy: 1 } });
+
+    const duplicatedId = editor.getState().selectedDrawingIds[0];
+
+    expect(findDrawing(editor.getState().drawings, duplicatedId)).toMatchObject({
+      style: { color: "#dc2626" },
+      text: "Breakout"
+    });
+
+    editor.executeCommand({ type: "bringSelectedForward" });
+    expect(editor.getState().drawings.at(-1)?.id).toBe(duplicatedId);
+
+    editor.executeCommand({ type: "sendSelectedBackward" });
+    expect(editor.getState().drawings.at(-1)?.id).not.toBe(duplicatedId);
+
+    editor.executeCommand({ type: "deleteSelected" });
+    expect(editor.getState().drawings.some((drawing) => drawing.id === duplicatedId)).toBe(false);
+  });
+
+  it("locks unlocks hides and shows selected drawings through commands", () => {
+    const editor = createDrawingEditor({
+      drawings: [{ id: "a", type: "trendLine", anchors: [{ x: 0, y: 0 }] }]
+    });
+
+    editor.executeCommand({ type: "selectDrawing", drawingId: "a" });
+    editor.executeCommand({ type: "lockSelected" });
+
+    expect(findDrawing(editor.getState().drawings, "a").locked).toBe(true);
+    expect(editor.getCapabilities()).toMatchObject({
+      canDelete: false,
+      canUnlock: true,
+      canHide: false
+    });
+
+    editor.executeCommand({ type: "unlockSelected" });
+    editor.executeCommand({ type: "hideSelected" });
+
+    expect(findDrawing(editor.getState().drawings, "a")).toMatchObject({
+      locked: false,
+      visible: false
+    });
+    expect(editor.getCapabilities()).toMatchObject({
+      canHide: false,
+      canShow: true
+    });
+
+    editor.executeCommand({ type: "showSelected" });
+    expect(findDrawing(editor.getState().drawings, "a").visible).toBe(true);
+  });
+
+  it("returns capability snapshots that cannot mutate editor state", () => {
+    const editor = createDrawingEditor({
+      drawings: [{ id: "a", type: "text", anchors: [{ x: 0, y: 0 }] }]
+    });
+
+    editor.selectDrawing("a");
+
+    const capabilities = editor.getCapabilities();
+
+    capabilities.selectedDrawingCount = 99;
+    capabilities.canDelete = false;
+
+    expect(editor.getCapabilities()).toMatchObject({
+      selectedDrawingCount: 1,
+      canDelete: true
+    });
+  });
+
   it("preserves multi-select input order while filtering missing and duplicate ids", () => {
     const editor = createDrawingEditor({
       drawings: [

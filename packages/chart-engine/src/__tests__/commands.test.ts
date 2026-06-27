@@ -9,11 +9,20 @@ describe("command history", () => {
   it("applies undo and redo for drawing commands", () => {
     const history = createCommandHistory<number>(0);
 
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(false);
+
     history.apply({ label: "increment", do: (value) => value + 1, undo: (value) => value - 1 });
 
     expect(history.current()).toBe(1);
+    expect(history.canUndo()).toBe(true);
+    expect(history.canRedo()).toBe(false);
     expect(history.undo()).toBe(0);
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
     expect(history.redo()).toBe(1);
+    expect(history.canUndo()).toBe(true);
+    expect(history.canRedo()).toBe(false);
   });
 
   it("clears redo stack after a new command", () => {
@@ -23,6 +32,7 @@ describe("command history", () => {
     history.undo();
     history.apply({ label: "two", do: (value) => value + 2, undo: (value) => value - 2 });
 
+    expect(history.canRedo()).toBe(false);
     expect(history.redo()).toBe(2);
   });
 });

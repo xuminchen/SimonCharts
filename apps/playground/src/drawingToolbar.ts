@@ -1,16 +1,28 @@
-import type { DrawingEditorTool, DrawingToolDefinition } from "@simoncharts/chart-engine";
+import type {
+  DrawingEditorCapabilities,
+  DrawingEditorTool,
+  DrawingToolDefinition
+} from "@simoncharts/chart-engine";
 
 export interface DrawingToolbar {
   element: HTMLDivElement;
   countElement: HTMLSpanElement;
   setActiveTool(tool: DrawingEditorTool): void;
+  setCapabilities(capabilities: DrawingEditorCapabilities): void;
 }
 
 export interface DrawingToolbarActions {
+  copySelected(): void;
+  pasteCopied(): void;
+  duplicateSelected(): void;
+  bringSelectedForward(): void;
+  sendSelectedBackward(): void;
   setTool(tool: DrawingEditorTool): void;
   deleteSelected(): void;
   lockSelected(): void;
+  unlockSelected(): void;
   hideSelected(): void;
+  showSelected(): void;
   undo(): void;
   redo(): void;
 }
@@ -25,6 +37,20 @@ export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToo
   const actionControls = document.createElement("div");
   const countElement = document.createElement("span");
   const toolButtons = new Map<DrawingEditorTool, HTMLButtonElement>();
+  const actionButtons = {
+    copy: createButton("Copy", "copy-drawing", options.copySelected),
+    paste: createButton("Paste", "paste-drawing", options.pasteCopied),
+    duplicate: createButton("Duplicate", "duplicate-drawing", options.duplicateSelected),
+    forward: createButton("Forward", "bring-drawing-forward", options.bringSelectedForward),
+    backward: createButton("Backward", "send-drawing-backward", options.sendSelectedBackward),
+    delete: createButton("Delete", "delete-drawing", options.deleteSelected),
+    lock: createButton("Lock", "lock-drawing", options.lockSelected),
+    unlock: createButton("Unlock", "unlock-drawing", options.unlockSelected),
+    hide: createButton("Hide", "hide-drawing", options.hideSelected),
+    show: createButton("Show", "show-drawing", options.showSelected),
+    undo: createButton("Undo", "undo", options.undo),
+    redo: createButton("Redo", "redo", options.redo)
+  };
 
   element.className = "drawing-controls";
   toolPalette.className = "drawing-tool-palette";
@@ -58,11 +84,18 @@ export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToo
   }
 
   actionControls.append(
-    createButton("Delete", "delete-drawing", options.deleteSelected),
-    createButton("Lock", "lock-drawing", options.lockSelected),
-    createButton("Hide", "hide-drawing", options.hideSelected),
-    createButton("Undo", "undo", options.undo),
-    createButton("Redo", "redo", options.redo),
+    actionButtons.copy,
+    actionButtons.paste,
+    actionButtons.duplicate,
+    actionButtons.forward,
+    actionButtons.backward,
+    actionButtons.delete,
+    actionButtons.lock,
+    actionButtons.unlock,
+    actionButtons.hide,
+    actionButtons.show,
+    actionButtons.undo,
+    actionButtons.redo,
     countElement
   );
   element.append(toolPalette, actionControls);
@@ -74,6 +107,20 @@ export function createDrawingToolbar(options: DrawingToolbarOptions): DrawingToo
       for (const [buttonTool, button] of toolButtons) {
         button.classList.toggle("is-active", buttonTool === tool);
       }
+    },
+    setCapabilities(capabilities) {
+      actionButtons.copy.disabled = !capabilities.canCopy;
+      actionButtons.paste.disabled = !capabilities.canPaste;
+      actionButtons.duplicate.disabled = !capabilities.canDuplicate;
+      actionButtons.forward.disabled = !capabilities.canBringSelectedForward;
+      actionButtons.backward.disabled = !capabilities.canSendSelectedBackward;
+      actionButtons.delete.disabled = !capabilities.canDelete;
+      actionButtons.lock.disabled = !capabilities.canLock;
+      actionButtons.unlock.disabled = !capabilities.canUnlock;
+      actionButtons.hide.disabled = !capabilities.canHide;
+      actionButtons.show.disabled = !capabilities.canShow;
+      actionButtons.undo.disabled = !capabilities.canUndo;
+      actionButtons.redo.disabled = !capabilities.canRedo;
     }
   };
 }

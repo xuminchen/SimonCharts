@@ -173,6 +173,16 @@ canvas {
   background: #f6f8fa;
 }
 
+.drawing-controls button:disabled {
+  color: #8c959f;
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.drawing-controls button:disabled:hover {
+  background: #ffffff;
+}
+
 .status-item {
   padding-left: 8px;
   border-left: 1px solid #d0d7de;

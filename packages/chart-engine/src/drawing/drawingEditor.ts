@@ -1,6 +1,10 @@
 import { createCommandHistory } from "../commands/history";
-import type { DrawingEditorEvent, DrawingEditorTool } from "./drawingCommands";
-import type { DrawingClipboard, DrawingObjectManagerItem } from "./drawingEditState";
+import type { DrawingEditorCommand, DrawingEditorEvent, DrawingEditorTool } from "./drawingCommands";
+import type {
+  DrawingClipboard,
+  DrawingEditorCapabilities,
+  DrawingObjectManagerItem
+} from "./drawingEditState";
 import { mergeDrawingStyle } from "./drawingStyle";
 import { builtInDrawingToolDefinitions } from "./drawingToolDefinitions";
 import { createDrawingToolRegistry, type DrawingToolRegistry } from "./drawingToolRegistry";
@@ -39,6 +43,7 @@ export interface DrawingEditor {
   copySelected(): void;
   pasteCopied(offset: { dx: number; dy: number }): void;
   duplicateSelected(offset: { dx: number; dy: number }): void;
+  executeCommand(command: DrawingEditorCommand): void;
   updateSelectedStyle(style: DrawingStyle): void;
   updateSelectedText(text: string): void;
   getObjectManagerItems(): DrawingObjectManagerItem[];
@@ -46,9 +51,12 @@ export interface DrawingEditor {
   dragAnchor(id: string, anchorIndex: number, point: DrawingEditorPoint): void;
   deleteSelected(): void;
   lockSelected(): void;
+  unlockSelected(): void;
   hideSelected(): void;
+  showSelected(): void;
   undo(): void;
   redo(): void;
+  getCapabilities(): DrawingEditorCapabilities;
   getState(): DrawingEditorState;
 }
 
@@ -71,7 +79,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     options.onEvent?.(event);
   };
 
-  return {
+  const api: DrawingEditor = {
     setTool(tool) {
       assertDrawingTool(tool, toolRegistry);
       activeTool = tool;
@@ -146,6 +154,9 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
       clipboard = { drawings: selectedDrawings.map(cloneDrawing) };
       pasteDrawings(clipboard.drawings, offset, "duplicateDrawing");
+    },
+    executeCommand(command) {
+      executeCommand(command);
     },
     updateSelectedStyle(style) {
       mutateSelected("updateDrawingStyle", (drawing) => ({
@@ -247,10 +258,16 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       );
     },
     lockSelected() {
-      mutateSelected("lockDrawing", (drawing) => ({ ...drawing, locked: true }));
+      setSelectedLocked(true);
+    },
+    unlockSelected() {
+      setSelectedLocked(false);
     },
     hideSelected() {
-      mutateSelected("hideDrawing", (drawing) => ({ ...drawing, visible: false }));
+      setSelectedVisible(false);
+    },
+    showSelected() {
+      setSelectedVisible(true);
     },
     undo() {
       restoreSnapshot(history.undo());
@@ -262,6 +279,9 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       pendingAnchors = [];
       emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
     },
+    getCapabilities() {
+      return createCapabilities();
+    },
     getState() {
       return {
         drawings: cloneDrawings(drawings),
@@ -271,6 +291,45 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       };
     }
   };
+
+  return api;
+
+  function executeCommand(command: DrawingEditorCommand): void {
+    switch (command.type) {
+      case "setTool":
+        return api.setTool(command.tool);
+      case "selectDrawing":
+        return api.selectDrawing(command.drawingId);
+      case "selectDrawings":
+        return api.selectDrawings(command.drawingIds);
+      case "bringSelectedForward":
+        return api.bringSelectedForward();
+      case "sendSelectedBackward":
+        return api.sendSelectedBackward();
+      case "copySelected":
+        return api.copySelected();
+      case "pasteCopied":
+        return api.pasteCopied(command.offset);
+      case "duplicateSelected":
+        return api.duplicateSelected(command.offset);
+      case "updateSelectedStyle":
+        return api.updateSelectedStyle(command.style);
+      case "updateSelectedText":
+        return api.updateSelectedText(command.text);
+      case "cancelCreation":
+        return api.cancel();
+      case "deleteSelected":
+        return api.deleteSelected();
+      case "lockSelected":
+        return api.lockSelected();
+      case "unlockSelected":
+        return api.unlockSelected();
+      case "hideSelected":
+        return api.hideSelected();
+      case "showSelected":
+        return api.showSelected();
+    }
+  }
 
   function getExistingUniqueIds(ids: string[]): string[] {
     const existingIds = new Set(drawings.map((drawing) => drawing.id));
@@ -287,6 +346,77 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     }
 
     return nextSelectedDrawingIds;
+  }
+
+  function createCapabilities(): DrawingEditorCapabilities {
+    const selectedDrawings = getSelectedDrawings();
+    const editableSelectedDrawings = selectedDrawings.filter((drawing) => !drawing.locked);
+
+    return {
+      selectedDrawingCount: selectedDrawings.length,
+      editableSelectedDrawingCount: editableSelectedDrawings.length,
+      clipboardDrawingCount: clipboard.drawings.length,
+      pendingAnchorCount: pendingAnchors.length,
+      hasSelection: selectedDrawings.length > 0,
+      hasEditableSelection: editableSelectedDrawings.length > 0,
+      canBringSelectedForward: canReorderSelected("forward"),
+      canSendSelectedBackward: canReorderSelected("backward"),
+      canCopy: selectedDrawings.length > 0,
+      canPaste: clipboard.drawings.length > 0,
+      canDuplicate: selectedDrawings.length > 0,
+      canDelete: editableSelectedDrawings.length > 0,
+      canLock: selectedDrawings.some((drawing) => !drawing.locked),
+      canUnlock: selectedDrawings.some((drawing) => drawing.locked === true),
+      canHide: editableSelectedDrawings.some((drawing) => drawing.visible !== false),
+      canShow: editableSelectedDrawings.some((drawing) => drawing.visible === false),
+      canCancelCreation: pendingAnchors.length > 0,
+      canUndo: history.canUndo(),
+      canRedo: history.canRedo()
+    };
+  }
+
+  function getSelectedDrawings(): DrawingObject[] {
+    return selectedDrawingIds
+      .map((id) => drawings.find((drawing) => drawing.id === id))
+      .filter(isDrawingObject);
+  }
+
+  function canReorderSelected(direction: "forward" | "backward"): boolean {
+    const selectedIds = new Set(selectedDrawingIds);
+
+    if (direction === "forward") {
+      for (let index = drawings.length - 2; index >= 0; index -= 1) {
+        const drawing = drawings[index];
+        const nextDrawing = drawings[index + 1];
+
+        if (
+          selectedIds.has(drawing.id) &&
+          !drawing.locked &&
+          !selectedIds.has(nextDrawing.id) &&
+          !nextDrawing.locked
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    for (let index = 1; index < drawings.length; index += 1) {
+      const drawing = drawings[index];
+      const previousDrawing = drawings[index - 1];
+
+      if (
+        selectedIds.has(drawing.id) &&
+        !drawing.locked &&
+        !selectedIds.has(previousDrawing.id) &&
+        !previousDrawing.locked
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function reorderSelected(direction: "forward" | "backward"): void {
@@ -382,6 +512,42 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     );
   }
 
+  function setSelectedLocked(locked: boolean): void {
+    const selectedIds = new Set(selectedDrawingIds);
+    const updatedDrawings: DrawingObject[] = [];
+
+    const nextDrawings = drawings.map((drawing) => {
+      if (!selectedIds.has(drawing.id) || drawing.locked === locked) {
+        return drawing;
+      }
+
+      const updated = { ...drawing, locked };
+
+      updatedDrawings.push(updated);
+      return updated;
+    });
+
+    if (updatedDrawings.length === 0) {
+      return;
+    }
+
+    commitSnapshot(
+      locked ? "lockDrawing" : "unlockDrawing",
+      { drawings: nextDrawings, selectedDrawingIds },
+      () => {
+        for (const drawing of updatedDrawings) {
+          emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
+        }
+      }
+    );
+  }
+
+  function setSelectedVisible(visible: boolean): void {
+    mutateSelected(visible ? "showDrawing" : "hideDrawing", (drawing) =>
+      drawing.visible === visible ? drawing : { ...drawing, visible }
+    );
+  }
+
   function mutateSelected(
     label: string,
     update: (drawing: DrawingObject) => DrawingObject
@@ -395,6 +561,10 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       }
 
       const updated = update(drawing);
+
+      if (updated === drawing) {
+        return drawing;
+      }
 
       updatedDrawings.push(updated);
       return updated;

@@ -9,6 +9,8 @@ export interface CommandHistory<TState> {
   undo(): TState;
   redo(): TState;
   current(): TState;
+  canUndo(): boolean;
+  canRedo(): boolean;
 }
 
 export function createCommandHistory<TState>(initialState: TState): CommandHistory<TState> {
@@ -47,6 +49,12 @@ export function createCommandHistory<TState>(initialState: TState): CommandHisto
     },
     current() {
       return state;
+    },
+    canUndo() {
+      return undoStack.length > 0;
+    },
+    canRedo() {
+      return redoStack.length > 0;
     }
   };
 }

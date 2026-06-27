@@ -55,6 +55,19 @@ Static and overlay renderer verification covers deterministic layer order, expli
 
 Performance coverage includes deterministic scheduler overhead in addition to render model creation, autoscale, indicators, drawing figure conversion, and static canvas rendering.
 
+## v0.7 Drawing Editor Productization Verification
+
+Focused drawing editor productization coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/commands.test.ts packages/chart-engine/src/__tests__/drawingEditorComplete.test.ts packages/chart-engine/src/__tests__/drawingHotkeys.test.ts
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-editor.spec.ts
+```
+
+Unit coverage verifies `CommandHistory.canUndo()`, `CommandHistory.canRedo()`, `DrawingEditor.executeCommand()`, `DrawingEditor.getCapabilities()`, clipboard state, command availability, lock/unlock, hide/show, and undo/redo capability updates.
+
+Browser coverage verifies the neutral playground drawing toolbar binds enabled and disabled states to engine capabilities and executes copy, paste, duplicate, z-order, lock, unlock, hide, show, undo, and redo actions.
+
 ## v0.4 Integration Readiness Verification
 
 Package SDK output is verified with:

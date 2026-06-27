@@ -24,4 +24,6 @@ export type DrawingEditorCommand =
   | { type: "cancelCreation" }
   | { type: "deleteSelected" }
   | { type: "lockSelected" }
-  | { type: "hideSelected" };
+  | { type: "unlockSelected" }
+  | { type: "hideSelected" }
+  | { type: "showSelected" };

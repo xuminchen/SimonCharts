@@ -43,7 +43,18 @@ editor.pointerDown({ x: 260, y: 240 });
 
 The editor owns neutral operations such as select, drag, anchor edits, style edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
 
-Style and text commands are exposed as `updateSelectedStyle(style)` and `updateSelectedText(text)`. The corresponding command payloads are `DrawingEditorCommand` entries: `updateSelectedStyle`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, and `duplicateSelected`.
+Style and text commands are exposed as `updateSelectedStyle(style)` and `updateSelectedText(text)`. The corresponding command payloads are `DrawingEditorCommand` entries: `updateSelectedStyle`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, `duplicateSelected`, `lockSelected`, `unlockSelected`, `hideSelected`, and `showSelected`.
+
+## Command Execution And Capabilities
+
+SimonCharts v0.7 adds a product-facing command contract:
+
+- `executeCommand(command)` routes neutral `DrawingEditorCommand` payloads through the same editor behavior as direct method calls.
+- `getCapabilities()` returns a `DrawingEditorCapabilities` snapshot for toolbar, menu, hotkey, and object-manager state.
+
+Capabilities include selection counts, editable selection counts, clipboard count, pending anchor count, z-order availability, copy/paste/duplicate availability, lock/unlock, hide/show, delete, cancel creation, undo, and redo. The snapshot is derived from editor state and does not expose mutable editor internals.
+
+Hosts should prefer `executeCommand()` for toolbar and hotkey actions. Direct methods remain available for focused integrations and tests.
 
 ## Figure Kernel
 
@@ -80,7 +91,7 @@ Layout snapshots preserve `viewport`, versioned drawing payloads, `indicatorIds`
 
 ## Hotkeys And Magnet Policies
 
-`defaultDrawingHotkeyBindings` maps neutral key strings to `DrawingEditorCommand` payloads. `getDrawingCommandForHotkey(bindings, key)` returns cloned command objects for delete, copy, paste, duplicate, z-order, and cancel-creation bindings.
+`defaultDrawingHotkeyBindings` maps neutral key strings to `DrawingEditorCommand` payloads. `getDrawingCommandForHotkey(bindings, key)` returns cloned command objects for delete, copy, paste, duplicate, z-order, and cancel-creation bindings. The returned command can be passed directly to `executeCommand()`.
 
 Magnet helpers are deterministic:
 

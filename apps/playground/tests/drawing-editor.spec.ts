@@ -53,6 +53,62 @@ test("property panel updates selected drawing text and export", async ({ page })
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"text": "Breakout note"/);
 });
 
+test("drawing action controls follow engine capabilities", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await expect(page.getByTestId("copy-drawing")).toBeDisabled();
+  await expect(page.getByTestId("paste-drawing")).toBeDisabled();
+  await expect(page.getByTestId("undo")).toBeDisabled();
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+
+  await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
+  await expect(page.getByTestId("copy-drawing")).toBeEnabled();
+  await expect(page.getByTestId("paste-drawing")).toBeDisabled();
+
+  await page.getByTestId("copy-drawing").click();
+  await expect(page.getByTestId("paste-drawing")).toBeEnabled();
+
+  await page.getByTestId("paste-drawing").click();
+  await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
+
+  await page.getByTestId("duplicate-drawing").click();
+  await expect(page.getByTestId("drawing-count")).toHaveText("3 drawings");
+  await expect(page.getByTestId("send-drawing-backward")).toBeEnabled();
+
+  await page.getByTestId("send-drawing-backward").click();
+  await expect(page.getByTestId("bring-drawing-forward")).toBeEnabled();
+  await page.getByTestId("bring-drawing-forward").click();
+
+  await page.getByTestId("lock-drawing").click();
+  await expect(page.getByTestId("unlock-drawing")).toBeEnabled();
+  await expect(page.getByTestId("delete-drawing")).toBeDisabled();
+  await expect(page.getByTestId("hide-drawing")).toBeDisabled();
+
+  await page.getByTestId("unlock-drawing").click();
+  await expect(page.getByTestId("hide-drawing")).toBeEnabled();
+  await page.getByTestId("hide-drawing").click();
+  await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
+  await expect(page.getByTestId("show-drawing")).toBeEnabled();
+
+  await page.getByTestId("show-drawing").click();
+  await expect(page.getByTestId("drawing-count")).toHaveText("3 drawings");
+  await expect(page.getByTestId("undo")).toBeEnabled();
+  await expect(page.getByTestId("redo")).toBeDisabled();
+
+  await page.getByTestId("undo").click();
+  await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
+  await expect(page.getByTestId("redo")).toBeEnabled();
+});
+
 test("malformed drawing import shows status and preserves current drawings", async ({ page }) => {
   const pageErrors: Error[] = [];
 

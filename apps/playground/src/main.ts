@@ -46,6 +46,7 @@ import type {
   CoreIndicatorDefinition,
   CoreIndicatorId,
   DrawingEditor,
+  DrawingEditorCommand,
   DrawingEditorTool,
   DrawingObject,
   SeriesType,
@@ -254,21 +255,38 @@ drawingEditor = createPlaygroundDrawingEditor([]);
 drawingToolbar = createDrawingToolbar({
   tools: builtInDrawingToolDefinitions,
   setTool(tool) {
-    drawingEditor.setTool(tool);
+    executeDrawingCommand({ type: "setTool", tool });
     drawingToolbar.setActiveTool(tool);
-    renderStatic();
+  },
+  copySelected() {
+    executeDrawingCommand({ type: "copySelected" });
+  },
+  pasteCopied() {
+    executeDrawingCommand({ type: "pasteCopied", offset: { dx: 12, dy: 12 } });
+  },
+  duplicateSelected() {
+    executeDrawingCommand({ type: "duplicateSelected", offset: { dx: 12, dy: 12 } });
+  },
+  bringSelectedForward() {
+    executeDrawingCommand({ type: "bringSelectedForward" });
+  },
+  sendSelectedBackward() {
+    executeDrawingCommand({ type: "sendSelectedBackward" });
   },
   deleteSelected() {
-    drawingEditor.deleteSelected();
-    renderStatic();
+    executeDrawingCommand({ type: "deleteSelected" });
   },
   lockSelected() {
-    drawingEditor.lockSelected();
-    renderStatic();
+    executeDrawingCommand({ type: "lockSelected" });
+  },
+  unlockSelected() {
+    executeDrawingCommand({ type: "unlockSelected" });
   },
   hideSelected() {
-    drawingEditor.hideSelected();
-    renderStatic();
+    executeDrawingCommand({ type: "hideSelected" });
+  },
+  showSelected() {
+    executeDrawingCommand({ type: "showSelected" });
   },
   undo() {
     drawingEditor.undo();
@@ -280,6 +298,7 @@ drawingToolbar = createDrawingToolbar({
   }
 });
 drawingToolbar.setActiveTool("select");
+drawingToolbar.setCapabilities(drawingEditor.getCapabilities());
 chartSurface.replaceChildren(
   canvas,
   overlayCanvas,
@@ -463,7 +482,14 @@ function syncDrawingStatus(): void {
   const count = drawingEditor.getState().drawings.filter((drawing) => drawing.visible !== false).length;
 
   drawingToolbar.countElement.textContent = `${count} ${count === 1 ? "drawing" : "drawings"}`;
+  drawingToolbar.setCapabilities(drawingEditor.getCapabilities());
   syncDrawingWorkbench();
+}
+
+function executeDrawingCommand(command: DrawingEditorCommand): void {
+  drawingEditor.executeCommand(command);
+  drawingToolbar.setActiveTool(drawingEditor.getState().activeTool);
+  renderStatic();
 }
 
 function syncDrawingWorkbench(): void {

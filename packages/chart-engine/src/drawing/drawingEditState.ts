@@ -20,3 +20,25 @@ export interface DrawingObjectManagerItem {
 export interface DrawingClipboard {
   drawings: DrawingObject[];
 }
+
+export interface DrawingEditorCapabilities {
+  selectedDrawingCount: number;
+  editableSelectedDrawingCount: number;
+  clipboardDrawingCount: number;
+  pendingAnchorCount: number;
+  hasSelection: boolean;
+  hasEditableSelection: boolean;
+  canBringSelectedForward: boolean;
+  canSendSelectedBackward: boolean;
+  canCopy: boolean;
+  canPaste: boolean;
+  canDuplicate: boolean;
+  canDelete: boolean;
+  canLock: boolean;
+  canUnlock: boolean;
+  canHide: boolean;
+  canShow: boolean;
+  canCancelCreation: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+}
