@@ -1,3 +1,4 @@
+import type { MagnetSessionState } from "../interaction/sessionTypes";
 import type { DrawingObject } from "./drawingTypes";
 
 export interface MagnetPoint {
@@ -27,6 +28,18 @@ export interface OhlcMagnetPoint extends MagnetPoint {
 export interface VisualMagnetPoint extends MagnetPoint {
   visualId?: string;
   pointIndex?: number;
+}
+
+export interface MagnetSnapState {
+  point: MagnetPoint;
+  target?: MagnetSnapTarget;
+  magnet: MagnetSessionState;
+}
+
+export interface MagnetSnapStateOptions {
+  point: MagnetPoint;
+  targets: readonly MagnetSnapTarget[];
+  radius: number;
 }
 
 export function snapPointToTargets(
@@ -80,6 +93,33 @@ export function snapPointToMagnetTargets(
   const target = findNearestMagnetTarget(point, targets, radius);
 
   return target ? { x: target.x, y: target.y } : point;
+}
+
+export function getMagnetSnapState(options: MagnetSnapStateOptions): MagnetSnapState {
+  const target = findNearestMagnetTarget(options.point, options.targets, options.radius);
+
+  if (!target) {
+    return {
+      point: { ...options.point },
+      magnet: { mode: "off" }
+    };
+  }
+
+  const mode = toMagnetMode(target.type);
+
+  return {
+    point: { x: target.x, y: target.y },
+    target: cloneMagnetTarget(target),
+    magnet: {
+      mode,
+      target: {
+        id: createMagnetTargetId(target),
+        mode,
+        point: { x: target.x, y: target.y },
+        distance: Math.hypot(options.point.x - target.x, options.point.y - target.y)
+      }
+    }
+  };
 }
 
 export function createOhlcMagnetTargets(points: readonly OhlcMagnetPoint[]): MagnetSnapTarget[] {
@@ -152,6 +192,38 @@ function getTargetTypePriority(type: MagnetSnapTargetType): number {
     case "visualPoint":
       return 2;
   }
+}
+
+function toMagnetMode(type: MagnetSnapTargetType): Exclude<MagnetSessionState["mode"], "off"> {
+  return type;
+}
+
+function createMagnetTargetId(target: MagnetSnapTarget): string {
+  if (target.type === "ohlc" && typeof target.dataIndex === "number" && target.field) {
+    return `ohlc:${target.dataIndex}:${target.field}`;
+  }
+
+  if (target.type === "ohlc" && target.field) {
+    return `ohlc:${target.field}:${target.x}:${target.y}`;
+  }
+
+  if (
+    target.type === "drawingAnchor" &&
+    target.drawingId !== undefined &&
+    typeof target.anchorIndex === "number"
+  ) {
+    return `drawingAnchor:${target.drawingId}:${target.anchorIndex}`;
+  }
+
+  if (
+    target.type === "visualPoint" &&
+    target.visualId !== undefined &&
+    typeof target.pointIndex === "number"
+  ) {
+    return `visualPoint:${target.visualId}:${target.pointIndex}`;
+  }
+
+  return `${target.type}:${target.x}:${target.y}`;
 }
 
 function hasFinitePoint<T extends Partial<MagnetPoint>>(point: T): point is T & MagnetPoint {

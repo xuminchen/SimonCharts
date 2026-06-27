@@ -215,5 +215,10 @@ Magnet helpers are deterministic:
 - `createVisualPointMagnetTargets(points)` creates visual output point targets.
 - `findNearestMagnetTarget(point, targets, radius)` selects nearest distance; ties resolve in this order: `ohlc`, `drawingAnchor`, `visualPoint`.
 - `snapPointToMagnetTargets(point, targets, radius)` returns the target point or the original point.
+- `getMagnetSnapState(options)` returns the snapped point, matched target, and neutral magnet session state.
+
+`getMagnetSnapState()` is DOM-free. Hosts pass a neutral pointer point, neutral magnet targets, and a radius. The Engine returns a neutral result containing the snapped point, the matched `MagnetSnapTarget` when one is in range, and a `MagnetSessionState` value that can be passed to `InteractionSession` with `{ type: "magnet", magnet }`.
+
+Hosts still own native pointer events, target collection timing, render invalidation, persistence, collaboration, and UI toggles. The Engine only owns target matching, snapped point calculation, deterministic magnet target ids, and the neutral magnet session payload.
 
 Persistence and collaboration are host responsibilities.

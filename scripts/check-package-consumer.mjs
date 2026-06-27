@@ -15,6 +15,7 @@ import {
   finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingHoverState,
+  getMagnetSnapState,
   getDrawingPropertySchema,
   hitTestDrawing,
   hitTestDrawingAll,
@@ -279,6 +280,21 @@ if (
   hoverState.cursor !== "drawing"
 ) {
   throw new Error("Package consumer failed to execute drawing hover intent API");
+}
+
+const magnetSnapState = getMagnetSnapState({
+  point: { x: 10, y: 10 },
+  targets: [{ type: "drawingAnchor", x: 11, y: 10, drawingId: "custom-hit-drawing", anchorIndex: 0 }],
+  radius: 4
+});
+
+if (
+  magnetSnapState.point.x !== 11 ||
+  magnetSnapState.point.y !== 10 ||
+  magnetSnapState.target?.type !== "drawingAnchor" ||
+  magnetSnapState.magnet.mode !== "drawingAnchor"
+) {
+  throw new Error("Package consumer failed to execute drawing magnet snap state API");
 }
 
 const lifecycleDrawingRenderers = createDrawingRendererRegistry();

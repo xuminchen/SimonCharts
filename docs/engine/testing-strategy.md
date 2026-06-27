@@ -78,7 +78,23 @@ npm run check:package-types
 
 `check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, drawing metadata commands, drawing interaction primitives, drawing transform primitives, and drawing property schema APIs.
 
-`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, drawing interaction, and drawing transform types.
+`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, drawing interaction, drawing magnet snap state, and drawing transform types.
+
+## v1.0 Drawing Magnet Snap State Verification
+
+Focused drawing magnet snap state coverage:
+
+```bash
+npm run build -w @simoncharts/chart-engine
+npm run guard:public-api
+npm run guard:public-types
+npm run check:package-consumer
+npm run check:package-types
+```
+
+SDK runtime coverage verifies package-root consumers can call `getMagnetSnapState()` with a neutral point, a drawing-anchor or OHLC target, and a radius, then read the snapped point and neutral magnet mode. Type coverage verifies `MagnetSnapState` and `MagnetSnapStateOptions` against built declarations.
+
+The snap state contract is DOM-free. Hosts pass neutral points, targets, and radius values; the Engine returns the snapped point, matched target, and neutral magnet session state. Hosts still own pointer events, target collection timing, render invalidation, persistence, collaboration, and UI toggles.
 
 ## v1.0 Drawing Hover Intent Verification
 

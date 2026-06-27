@@ -14,6 +14,7 @@ import {
   finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingHoverState,
+  getMagnetSnapState,
   getDrawingPropertySchema,
   hitTestDrawing,
   hitTestDrawingAll,
@@ -55,6 +56,8 @@ import type {
   DrawingMoveDragCommand,
   DrawingMoveDragOperation,
   DrawingMoveDragPreview,
+  MagnetSnapState,
+  MagnetSnapStateOptions,
   DrawingObject,
   DrawingPoint,
   DrawingResizeOptions,
@@ -306,6 +309,12 @@ const drawingHoverOptions: DrawingHoverStateOptions = {
 };
 const drawingHoverState: DrawingHoverState = getDrawingHoverState(drawingHoverOptions);
 const neutralCursorInput: InteractionInput = { type: "cursor", cursor: drawingHoverCursor };
+const magnetSnapStateOptions: MagnetSnapStateOptions = {
+  point: { x: 10, y: 10 },
+  targets: [{ type: "ohlc", x: 10, y: 11, field: "close", dataIndex: 1 }],
+  radius: 4
+};
+const magnetSnapState: MagnetSnapState = getMagnetSnapState(magnetSnapStateOptions);
 
 const layout: ChartLayout = {
   width: 800,
@@ -363,6 +372,8 @@ void drawingHoverCursor;
 void drawingHoverOptions;
 void drawingHoverState;
 void neutralCursorInput;
+void magnetSnapStateOptions;
+void magnetSnapState;
 void frame;
 void invalidations;
 void layerContext;

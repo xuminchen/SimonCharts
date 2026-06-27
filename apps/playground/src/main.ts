@@ -24,6 +24,7 @@ import {
   beginDrawingMoveDrag,
   beginDrawingSelectionBox,
   coreIndicatorDefinitions,
+  createDrawingAnchorMagnetTargets,
   defaultChartTheme,
   builtInDrawingToolDefinitions,
   deserializeDrawingObject,
@@ -33,6 +34,7 @@ import {
   getDrawingHoverState,
   getDrawingSelectionBounds,
   getDrawingPropertyDefinitionsForDrawing,
+  getMagnetSnapState,
   hitTestDrawing,
   hitTestDrawingEditHandle,
   renderOverlay,
@@ -67,6 +69,7 @@ import type {
   DrawingObject,
   DrawingPropertyDefinition,
   DrawingSelectionBoxOperation,
+  MagnetSnapTarget,
   SeriesType,
   ThemeMode,
   ViewportState
@@ -269,6 +272,7 @@ const fixturePanelDefinitions: PanelDefinition[] = [
   { id: "main", kind: "main", label: "Main", heightRatio: 3 },
   { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
 ];
+const drawingMagnetRadius = 10;
 drawingEditor = createPlaygroundDrawingEditor([]);
 drawingToolbar = createDrawingToolbar({
   tools: builtInDrawingToolDefinitions,
@@ -309,11 +313,13 @@ drawingToolbar = createDrawingToolbar({
   undo() {
     drawingEditor.undo();
     setDrawingHoverId(undefined);
+    clearDrawingMagnetState();
     renderStatic();
   },
   redo() {
     drawingEditor.redo();
     setDrawingHoverId(undefined);
+    clearDrawingMagnetState();
     renderStatic();
   }
 });
@@ -518,6 +524,7 @@ function executeDrawingCommand(command: DrawingEditorCommand): void {
   drawingEditor.executeCommand(command);
   drawingToolbar.setActiveTool(drawingEditor.getState().activeTool);
   setDrawingHoverId(undefined);
+  clearDrawingMagnetState();
   renderStatic();
 }
 
@@ -1198,6 +1205,7 @@ function cancelPointerInteraction(): void {
   drawingPreviewDrawings = undefined;
   setDrawingHoverId(undefined);
   crosshair = undefined;
+  clearDrawingMagnetState();
   if (layout && viewport) {
     interactionEngine = createCurrentInteractionEngine();
   }
@@ -1244,6 +1252,54 @@ function getWheelPoint(event: WheelEvent): { x: number; y: number } {
     x: event.clientX - rect.left,
     y: event.clientY - rect.top
   };
+}
+
+function getDrawingAnchorMagnetTargets(exclude?: {
+  drawingId: string;
+  anchorIndex: number;
+}): MagnetSnapTarget[] {
+  const targets = createDrawingAnchorMagnetTargets(drawingEditor.getState().drawings);
+
+  if (!exclude) {
+    return targets;
+  }
+
+  return targets.filter(
+    (target) =>
+      target.drawingId !== exclude.drawingId || target.anchorIndex !== exclude.anchorIndex
+  );
+}
+
+function getDrawingSnapPoint(
+  point: { x: number; y: number },
+  exclude?: { drawingId: string; anchorIndex: number }
+): { x: number; y: number } {
+  const snap = getMagnetSnapState({
+    point,
+    targets: getDrawingAnchorMagnetTargets(exclude),
+    radius: drawingMagnetRadius
+  });
+
+  interactionSession.handleInput({ type: "magnet", magnet: snap.magnet });
+  return snap.point;
+}
+
+function getDrawingHandleDragPoint(
+  operation: DrawingHandleDragOperation,
+  point: { x: number; y: number }
+): { x: number; y: number } {
+  if (operation.kind !== "anchor" || operation.handle.anchorIndex === undefined) {
+    return point;
+  }
+
+  return getDrawingSnapPoint(point, {
+    drawingId: operation.handle.drawingId,
+    anchorIndex: operation.handle.anchorIndex
+  });
+}
+
+function clearDrawingMagnetState(): void {
+  interactionSession.handleInput({ type: "magnet", magnet: { mode: "off" } });
 }
 
 overlayCanvas.addEventListener(
@@ -1408,8 +1464,7 @@ function handleDrawingKeyboardCommand(event: KeyboardEvent): boolean {
   event.preventDefault();
   const step = event.shiftKey ? 10 : 1;
 
-  drawingEditor.executeCommand({ type: "nudgeSelected", delta: getNudgeDelta(event.key, step) });
-  renderStatic();
+  executeDrawingCommand({ type: "nudgeSelected", delta: getNudgeDelta(event.key, step) });
   return true;
 }
 
@@ -1482,6 +1537,8 @@ themeModeSelect.addEventListener("change", () => {
 });
 
 drawingImportButton.addEventListener("click", () => {
+  clearDrawingMagnetState();
+
   try {
     const nextState = parseDrawingImport(drawingJsonImport.value);
 
@@ -1513,7 +1570,7 @@ function handleDrawingPointerDown(
   const clearedHover = setDrawingHoverId(undefined);
 
   if (editorState.activeTool !== "select") {
-    drawingEditor.pointerDown(point);
+    drawingEditor.pointerDown(getDrawingSnapPoint(point));
     renderStatic();
     return true;
   }
@@ -1583,9 +1640,10 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
   const point = getCanvasPoint(event);
 
   if (drawingHandleDragOperation) {
-    const preview = updateDrawingHandleDrag(drawingHandleDragOperation, point);
+    const dragPoint = getDrawingHandleDragPoint(drawingHandleDragOperation, point);
+    const preview = updateDrawingHandleDrag(drawingHandleDragOperation, dragPoint);
 
-    drawingHandleDragPoint = point;
+    drawingHandleDragPoint = dragPoint;
     drawingPreviewDrawings = preview?.drawings;
     setDrawingHoverId(undefined);
     renderStatic();
@@ -1638,7 +1696,7 @@ function finishDrawingHandlePointerDrag(point: { x: number; y: number }): boolea
   }
 
   const operation = drawingHandleDragOperation;
-  const finalPoint = drawingHandleDragPoint ?? point;
+  const finalPoint = getDrawingHandleDragPoint(operation, drawingHandleDragPoint ?? point);
   const command = finishDrawingHandleDrag(operation, finalPoint);
 
   drawingHandleDragOperation = undefined;
@@ -1646,6 +1704,7 @@ function finishDrawingHandlePointerDrag(point: { x: number; y: number }): boolea
   drawingPreviewDrawings = undefined;
 
   if (!command) {
+    clearDrawingMagnetState();
     renderStatic();
     return true;
   }
@@ -1668,6 +1727,7 @@ function finishDrawingMovePointerDrag(point: { x: number; y: number }): boolean 
   drawingPreviewDrawings = undefined;
 
   if (!command) {
+    clearDrawingMagnetState();
     renderStatic();
     return true;
   }

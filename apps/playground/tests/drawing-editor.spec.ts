@@ -1,4 +1,13 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+interface DrawingExportPayload {
+  drawings: Array<{ anchors: Array<{ x: number; y: number }> }>;
+}
+
+async function getDrawingExport(page: Page): Promise<DrawingExportPayload> {
+  return JSON.parse(await page.getByTestId("drawing-json-export").inputValue()) as DrawingExportPayload;
+}
 
 test("creates edits deletes and restores a trend line drawing", async ({ page }) => {
   await page.goto("/");
@@ -88,6 +97,65 @@ test("drags selected drawing anchor handles through engine operation flow", asyn
 
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"x": 140/);
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"y": 200/);
+});
+
+test("snaps new drawing anchors to existing drawing anchors", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
+
+  const firstAnchor = (await getDrawingExport(page)).drawings[0].anchors[0];
+
+  await page.mouse.click(box.x + firstAnchor.x + 6, box.y + firstAnchor.y + 2);
+  await expect(page.getByTestId("magnet-state")).toHaveText("drawingAnchor");
+  await page.mouse.click(box.x + 340, box.y + 260);
+
+  await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
+  const drawings = (await getDrawingExport(page)).drawings;
+
+  expect(drawings[1].anchors[0]).toEqual(firstAnchor);
+});
+
+test("snaps selected anchor handle drags to another drawing anchor", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + 320, box.y + 200);
+  await page.mouse.click(box.x + 440, box.y + 260);
+  await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
+
+  const targetAnchor = (await getDrawingExport(page)).drawings[1].anchors[0];
+
+  await page.getByTestId("drawing-tool-select").click();
+  await page.mouse.click(box.x + 180, box.y + 210);
+  await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
+
+  await page.mouse.move(box.x + 120, box.y + 180);
+  await page.mouse.down();
+  await page.mouse.move(box.x + targetAnchor.x + 4, box.y + targetAnchor.y + 3);
+  await expect(page.getByTestId("magnet-state")).toHaveText("drawingAnchor");
+  await page.mouse.up();
+
+  const drawings = (await getDrawingExport(page)).drawings;
+
+  expect(drawings[0].anchors[0]).toEqual(targetAnchor);
 });
 
 test("drawing hover updates cursor diagnostics and hovered render state", async ({ page }) => {
