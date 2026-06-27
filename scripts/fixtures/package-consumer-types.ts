@@ -25,7 +25,9 @@ import type {
   CustomDrawingType,
   DrawingEditor,
   DrawingEditorCapabilities,
+  DrawingEditorCommand,
   DrawingObject,
+  DrawingParameterPropertyDefinition,
   DrawingPropertySchema,
   IndicatorVisualOutput,
   LayerRenderContext,
@@ -46,6 +48,13 @@ drawingEditor.executeCommand({ type: "setTool", tool: "trendLine" });
 drawingEditor.executeCommand({ type: "cancelCreation" });
 
 const capabilities: DrawingEditorCapabilities = drawingEditor.getCapabilities();
+const metadataCommand: DrawingEditorCommand = {
+  type: "updateSelectedMetadata",
+  metadata: { fibonacciLevels: [0, 1] }
+};
+const parameterProperty = drawingPropertySchema.properties.find(
+  (property): property is DrawingParameterPropertyDefinition => property.scope === "parameters"
+);
 
 const invalidations: RenderInvalidation[] = [];
 const scheduler: RenderScheduler = createRenderScheduler({
@@ -169,6 +178,8 @@ serializeChartLayoutSnapshot(snapshot);
 
 void capabilities;
 void drawingPropertySchema;
+void metadataCommand;
+void parameterProperty;
 void frame;
 void invalidations;
 void layerContext;

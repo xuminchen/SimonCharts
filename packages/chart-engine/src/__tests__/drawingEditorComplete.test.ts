@@ -91,6 +91,7 @@ describe("complete drawing editor", () => {
     });
 
     editor.executeCommand({ type: "updateSelectedStyle", style: { color: "#dc2626" } });
+    editor.executeCommand({ type: "updateSelectedMetadata", metadata: { fibonacciLevels: [0, 1] } });
     editor.executeCommand({ type: "updateSelectedText", text: "Breakout" });
     editor.executeCommand({ type: "duplicateSelected", offset: { dx: 1, dy: 1 } });
 
@@ -98,6 +99,7 @@ describe("complete drawing editor", () => {
 
     expect(findDrawing(editor.getState().drawings, duplicatedId)).toMatchObject({
       style: { color: "#dc2626" },
+      metadata: { fibonacciLevels: [0, 1] },
       text: "Breakout"
     });
 
@@ -109,6 +111,41 @@ describe("complete drawing editor", () => {
 
     editor.executeCommand({ type: "deleteSelected" });
     expect(editor.getState().drawings.some((drawing) => drawing.id === duplicatedId)).toBe(false);
+  });
+
+  it("updates selected drawing metadata with undo redo and locked drawing protection", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "editable", type: "fibFan", anchors: [{ x: 0, y: 0 }], metadata: { source: "initial" } },
+        { id: "locked", type: "fibFan", anchors: [{ x: 10, y: 10 }], locked: true }
+      ]
+    });
+
+    editor.selectDrawings(["editable", "locked"]);
+    editor.updateSelectedMetadata({ fibonacciLevels: [0, 0.5, 1] });
+
+    expect(findDrawing(editor.getState().drawings, "editable").metadata).toEqual({
+      source: "initial",
+      fibonacciLevels: [0, 0.5, 1]
+    });
+    expect(findDrawing(editor.getState().drawings, "locked").metadata).toBeUndefined();
+
+    const state = editor.getState();
+
+    state.drawings[0].metadata = { mutated: true };
+    expect(findDrawing(editor.getState().drawings, "editable").metadata).toEqual({
+      source: "initial",
+      fibonacciLevels: [0, 0.5, 1]
+    });
+
+    editor.undo();
+    expect(findDrawing(editor.getState().drawings, "editable").metadata).toEqual({ source: "initial" });
+
+    editor.redo();
+    expect(findDrawing(editor.getState().drawings, "editable").metadata).toEqual({
+      source: "initial",
+      fibonacciLevels: [0, 0.5, 1]
+    });
   });
 
   it("locks unlocks hides and shows selected drawings through commands", () => {

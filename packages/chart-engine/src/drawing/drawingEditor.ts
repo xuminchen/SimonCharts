@@ -45,6 +45,7 @@ export interface DrawingEditor {
   duplicateSelected(offset: { dx: number; dy: number }): void;
   executeCommand(command: DrawingEditorCommand): void;
   updateSelectedStyle(style: DrawingStyle): void;
+  updateSelectedMetadata(metadata: Record<string, unknown>): void;
   updateSelectedText(text: string): void;
   getObjectManagerItems(): DrawingObjectManagerItem[];
   dragSelected(delta: { dx: number; dy: number }): void;
@@ -162,6 +163,12 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       mutateSelected("updateDrawingStyle", (drawing) => ({
         ...drawing,
         style: mergeDrawingStyle(drawing.style, style)
+      }));
+    },
+    updateSelectedMetadata(metadata) {
+      mutateSelected("updateDrawingMetadata", (drawing) => ({
+        ...drawing,
+        metadata: mergeDrawingMetadata(drawing.metadata, metadata)
       }));
     },
     updateSelectedText(text) {
@@ -314,6 +321,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return api.duplicateSelected(command.offset);
       case "updateSelectedStyle":
         return api.updateSelectedStyle(command.style);
+      case "updateSelectedMetadata":
+        return api.updateSelectedMetadata(command.metadata);
       case "updateSelectedText":
         return api.updateSelectedText(command.text);
       case "cancelCreation":
@@ -662,6 +671,16 @@ function cloneSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
 
 function cloneDrawing(drawing: DrawingObject): DrawingObject {
   return JSON.parse(JSON.stringify(drawing)) as DrawingObject;
+}
+
+function mergeDrawingMetadata(
+  current: Record<string, unknown> | undefined,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...(current ?? {}),
+    ...patch
+  };
 }
 
 function isDrawingObject(drawing: DrawingObject | undefined): drawing is DrawingObject {

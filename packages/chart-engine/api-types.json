@@ -70,6 +70,8 @@
   "DrawingMode",
   "DrawingObject",
   "DrawingObjectManagerItem",
+  "DrawingParameterPropertyDefinition",
+  "DrawingParameterPropertyKey",
   "DrawingPoint",
   "DrawingPropertyDefinition",
   "DrawingPropertyOption",

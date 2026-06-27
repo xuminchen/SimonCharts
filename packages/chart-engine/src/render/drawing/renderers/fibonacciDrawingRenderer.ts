@@ -1,5 +1,6 @@
 import type { DrawingRenderer } from "../../../drawing/drawingRegistry";
 import type { DrawingType } from "../../../drawing/drawingTypes";
+import { getDrawingFibonacciLevels } from "../../../drawing/drawingParameters";
 import { createDrawingRenderer, drawLine, getAnchorPoints } from "./drawingRendererHelpers";
 
 export function createFibonacciDrawingRenderers(): DrawingRenderer[] {
@@ -13,7 +14,7 @@ export function createFibonacciDrawingRenderers(): DrawingRenderer[] {
         return;
       }
 
-      const levels = type === "fibonacciExtension" ? extensionLevels : retracementLevels;
+      const levels = getDrawingFibonacciLevels(drawing);
       const minX = Math.min(first.x, second.x);
       const maxX = Math.max(first.x, second.x);
       const spanY = second.y - first.y;
@@ -28,5 +29,3 @@ export function createFibonacciDrawingRenderers(): DrawingRenderer[] {
 }
 
 const fibonacciDrawingTypes: DrawingType[] = ["fibonacciRetracement", "fibonacciExtension"];
-const retracementLevels = [0, 0.382, 0.5, 0.618, 1];
-const extensionLevels = [0, 0.618, 1, 1.272, 1.618];

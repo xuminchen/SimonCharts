@@ -41,9 +41,9 @@ editor.pointerDown({ x: 120, y: 180 });
 editor.pointerDown({ x: 260, y: 240 });
 ```
 
-The editor owns neutral operations such as select, drag, anchor edits, style edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
+The editor owns neutral operations such as select, drag, anchor edits, style edits, metadata edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
 
-Style and text commands are exposed as `updateSelectedStyle(style)` and `updateSelectedText(text)`. The corresponding command payloads are `DrawingEditorCommand` entries: `updateSelectedStyle`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, `duplicateSelected`, `lockSelected`, `unlockSelected`, `hideSelected`, and `showSelected`.
+Style, metadata, and text commands are exposed as `updateSelectedStyle(style)`, `updateSelectedMetadata(metadata)`, and `updateSelectedText(text)`. The corresponding command payloads are `DrawingEditorCommand` entries: `updateSelectedStyle`, `updateSelectedMetadata`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, `duplicateSelected`, `lockSelected`, `unlockSelected`, `hideSelected`, and `showSelected`.
 
 ## Property Schema
 
@@ -56,9 +56,18 @@ SimonCharts v1.0 adds an Engine-owned property schema for drawing editor panels:
 - `isTextDrawingType(type)`
 - `isFillDrawingType(type)`
 
-The schema describes neutral style, content, and state properties. Style properties map to `updateSelectedStyle`, text content maps to `updateSelectedText`, and state properties map to `showSelected`, `hideSelected`, `lockSelected`, and `unlockSelected` commands.
+The schema describes neutral style, content, parameter, and state properties. Style properties map to `updateSelectedStyle`, text content maps to `updateSelectedText`, parameter properties map to `updateSelectedMetadata`, and state properties map to `showSelected`, `hideSelected`, `lockSelected`, and `unlockSelected` commands.
 
 Hosts can use the schema to render their own controls while keeping DOM, menus, persistence, collaboration, and product workflows outside the Engine package. Built-in drawing types always include color, width, line style, visible, and locked properties. Text drawings also include text color, font size, and text content. Fill-capable drawings include fill color.
+
+Advanced drawing parameters are stored in `DrawingObject.metadata` through Engine-owned keys:
+
+- `fibonacciLevels` for Fibonacci tools
+- `gannRatios` for Gann Fan
+- `positionLabel` for long/short/profit-loss position tools
+- `rangeLabel` for range and measurement tools
+
+The editor command `updateSelectedMetadata(metadata)` shallow-merges metadata into editable selected drawings and participates in undo/redo like style and text edits. Invalid numeric lists fall back to Engine defaults during rendering.
 
 ## Command Execution And Capabilities
 

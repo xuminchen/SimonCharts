@@ -1,11 +1,12 @@
 import type { FigureObject, FigurePoint, FigureStyle } from "../figures/figureTypes";
 import type { DrawingAnchor, DrawingObject, DrawingStyle, DrawingType } from "./drawingTypes";
+import {
+  getDrawingFibonacciLevels,
+  getDrawingGannFanRatios,
+  getDrawingParameterLabel
+} from "./drawingParameters";
 
 const axisLineHalfLength = 80;
-const retracementLevels = [0, 0.382, 0.5, 0.618, 1];
-const extensionLevels = [0, 0.618, 1, 1.272, 1.618];
-const fibonacciAdvancedLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-const gannFanRatios = [1 / 8, 1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4, 8];
 
 export function createFiguresForDrawing(drawing: DrawingObject): FigureObject[] {
   const points = drawing.anchors.filter(isFinitePointAnchor).map(({ x, y }) => ({ x, y }));
@@ -61,16 +62,15 @@ export function createFiguresForDrawing(drawing: DrawingObject): FigureObject[] 
     case "priceChannelLine":
       return createChannelFigures(drawing.id, points, drawing.style);
     case "fibonacciRetracement":
-      return createFibonacciFigures(drawing.id, points, drawing.style, retracementLevels);
     case "fibonacciExtension":
-      return createFibonacciFigures(drawing.id, points, drawing.style, extensionLevels);
+      return createFibonacciFigures(drawing, points);
     case "fibTrendBasedExtension":
     case "fibTimeZone":
     case "fibFan":
     case "fibArc":
     case "fibChannel":
     case "fibWedge":
-      return createAdvancedFibonacciFigures(drawing.id, drawing.type, points, drawing.style);
+      return createAdvancedFibonacciFigures(drawing, points);
     case "text":
     case "simpleAnnotation":
     case "simpleTag":
@@ -153,15 +153,21 @@ export function createFiguresForDrawing(drawing: DrawingObject): FigureObject[] 
         ? [{ id: `${drawing.id}:arrow`, type: "arrow", points, style: drawing.style }]
         : [];
     case "longPosition":
-      return createPositionFigures(drawing.id, points, drawing.style, "rgba(22, 163, 74, 0.14)");
+      return createPositionFigures(drawing, points, "rgba(22, 163, 74, 0.14)", "Long");
     case "shortPosition":
-      return createPositionFigures(drawing.id, points, drawing.style, "rgba(220, 38, 38, 0.14)");
+      return createPositionFigures(drawing, points, "rgba(220, 38, 38, 0.14)", "Short");
+    case "profitLossRange":
+      return createPositionFigures(drawing, points, "rgba(37, 99, 235, 0.12)", "Profit/Loss");
     case "datePriceRange":
+    case "dateRange":
+    case "priceRange":
+    case "measure":
+    case "trendAngle":
       return createDatePriceRangeFigures(drawing, points);
     case "gannFan":
     case "gannBox":
     case "gannSquare":
-      return createGannFigures(drawing.id, drawing.type, points, drawing.style);
+      return createGannFigures(drawing, points);
     case "pitchfork":
     case "schiffPitchfork":
     case "modifiedSchiffPitchfork":
@@ -276,12 +282,7 @@ function createChannelFigures(
   return figures;
 }
 
-function createFibonacciFigures(
-  id: string,
-  points: FigurePoint[],
-  style: DrawingStyle | undefined,
-  levels: number[]
-): FigureObject[] {
+function createFibonacciFigures(drawing: DrawingObject, points: FigurePoint[]): FigureObject[] {
   const first = points[0];
   const second = points[1];
 
@@ -292,28 +293,24 @@ function createFibonacciFigures(
   const minX = Math.min(first.x, second.x);
   const maxX = Math.max(first.x, second.x);
   const spanY = second.y - first.y;
+  const levels = getDrawingFibonacciLevels(drawing);
 
   return levels.map((level) => {
     const y = first.y + spanY * level;
 
     return {
-      id: `${id}:level-${level}`,
+      id: `${drawing.id}:level-${level}`,
       type: "line",
       points: [
         { x: minX, y },
         { x: maxX, y }
       ],
-      style
+      style: drawing.style
     };
   });
 }
 
-function createAdvancedFibonacciFigures(
-  id: string,
-  type: DrawingType,
-  points: FigurePoint[],
-  style: DrawingStyle | undefined
-): FigureObject[] {
+function createAdvancedFibonacciFigures(drawing: DrawingObject, points: FigurePoint[]): FigureObject[] {
   const first = points[0];
   const second = points[1];
   const third = points[2];
@@ -323,55 +320,59 @@ function createAdvancedFibonacciFigures(
   }
 
   const span = { x: second.x - first.x, y: second.y - first.y };
+  const levels = getDrawingFibonacciLevels(drawing);
 
-  if (type === "fibArc") {
+  if (drawing.type === "fibArc") {
     const baseRadius = Math.hypot(span.x, span.y);
     const startAngle = Math.atan2(span.y, span.x);
 
-    return fibonacciAdvancedLevels.flatMap((level) => {
+    return levels.flatMap((level) => {
       const start = pointAtAngle(first, baseRadius * level, startAngle);
 
       return [
         {
-          id: `${id}:arc-${level}`,
+          id: `${drawing.id}:arc-${level}`,
           type: "arc" as const,
           points: [first, start, pointAtAngle(first, baseRadius * level, startAngle + Math.PI / 2)],
-          style
+          style: drawing.style
         },
-        createLabelFigure(id, level, start, style)
+        createLabelFigure(drawing.id, level, start, drawing.style)
       ];
     });
   }
 
-  if (type === "fibTimeZone") {
+  if (drawing.type === "fibTimeZone") {
     const minY = Math.min(first.y, second.y);
     const maxY = Math.max(first.y, second.y);
 
     return createLevelLineFigures(
-      id,
-      fibonacciAdvancedLevels.map((level) => {
+      drawing.id,
+      levels.map((level) => {
         const x = first.x + span.x * level;
 
         return { level, start: { x, y: minY }, end: { x, y: maxY } };
       }),
-      style
+      drawing.style
     );
   }
 
-  if (!third && (type === "fibTrendBasedExtension" || type === "fibChannel" || type === "fibWedge")) {
+  if (
+    !third &&
+    (drawing.type === "fibTrendBasedExtension" || drawing.type === "fibChannel" || drawing.type === "fibWedge")
+  ) {
     return [];
   }
 
   return createLevelLineFigures(
-    id,
-    fibonacciAdvancedLevels.map((level) => {
-      if (type === "fibTrendBasedExtension" && third) {
+    drawing.id,
+    levels.map((level) => {
+      if (drawing.type === "fibTrendBasedExtension" && third) {
         const y = third.y + span.y * level;
 
         return { level, start: { x: third.x, y }, end: { x: third.x + span.x, y } };
       }
 
-      if (type === "fibChannel" && third) {
+      if (drawing.type === "fibChannel" && third) {
         const offset = { x: (third.x - first.x) * level, y: (third.y - first.y) * level };
 
         return {
@@ -385,21 +386,16 @@ function createAdvancedFibonacciFigures(
         level,
         start: first,
         end:
-          type === "fibWedge" && third
+          drawing.type === "fibWedge" && third
             ? { x: second.x + (third.x - second.x) * level, y: second.y + (third.y - second.y) * level }
             : { x: second.x, y: first.y + span.y * level }
       };
     }),
-    style
+    drawing.style
   );
 }
 
-function createGannFigures(
-  id: string,
-  type: DrawingType,
-  points: FigurePoint[],
-  style: DrawingStyle | undefined
-): FigureObject[] {
+function createGannFigures(drawing: DrawingObject, points: FigurePoint[]): FigureObject[] {
   const first = points[0];
   const second = points[1];
 
@@ -407,28 +403,28 @@ function createGannFigures(
     return [];
   }
 
-  if (type === "gannFan") {
-    return gannFanRatios.map((ratio) => ({
-      id: `${id}:fan-${ratio}`,
+  if (drawing.type === "gannFan") {
+    return getDrawingGannFanRatios(drawing).map((ratio) => ({
+      id: `${drawing.id}:fan-${ratio}`,
       type: "line",
       points: [first, { x: second.x, y: first.y + (second.y - first.y) * ratio }],
-      style
+      style: drawing.style
     }));
   }
 
-  const end = type === "gannSquare" ? createSquareEndPoint(first, second) : second;
+  const end = drawing.type === "gannSquare" ? createSquareEndPoint(first, second) : second;
 
   return [
-    { id: `${id}:rect`, type: "rect", points: [first, end], style },
-    { id: `${id}:diagonal`, type: "line", points: [first, end], style },
+    { id: `${drawing.id}:rect`, type: "rect", points: [first, end], style: drawing.style },
+    { id: `${drawing.id}:diagonal`, type: "line", points: [first, end], style: drawing.style },
     {
-      id: `${id}:opposite-diagonal`,
+      id: `${drawing.id}:opposite-diagonal`,
       type: "line",
       points: [
         { x: first.x, y: end.y },
         { x: end.x, y: first.y }
       ],
-      style
+      style: drawing.style
     }
   ];
 }
@@ -637,18 +633,25 @@ function createRotatedRectangleFigures(
 }
 
 function createPositionFigures(
-  id: string,
+  drawing: DrawingObject,
   points: FigurePoint[],
-  style: DrawingStyle | undefined,
-  fill: string
+  fill: string,
+  fallbackLabel: string
 ): FigureObject[] {
   return points.length >= 2
     ? [
         {
-          id: `${id}:range`,
+          id: `${drawing.id}:range`,
           type: "rect",
           points: points.slice(0, 2),
-          style: withDefaultFill(style, fill)
+          style: withDefaultFill(drawing.style, fill)
+        },
+        {
+          id: `${drawing.id}:label`,
+          type: "label",
+          points: [points[0]],
+          text: getDrawingParameterLabel(drawing, "positionLabel", fallbackLabel),
+          style: drawing.style
         }
       ]
     : [];
@@ -670,7 +673,7 @@ function createDatePriceRangeFigures(drawing: DrawingObject, points: FigurePoint
       id: `${drawing.id}:label`,
       type: "label",
       points: [points[0]],
-      text: drawing.text ?? "Range",
+      text: drawing.text ?? getDrawingParameterLabel(drawing, "rangeLabel", "Range"),
       style: drawing.style
     }
   ];

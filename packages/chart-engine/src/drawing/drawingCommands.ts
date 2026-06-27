@@ -20,6 +20,7 @@ export type DrawingEditorCommand =
   | { type: "pasteCopied"; offset: { dx: number; dy: number } }
   | { type: "duplicateSelected"; offset: { dx: number; dy: number } }
   | { type: "updateSelectedStyle"; style: DrawingStyle }
+  | { type: "updateSelectedMetadata"; metadata: Record<string, unknown> }
   | { type: "updateSelectedText"; text: string }
   | { type: "cancelCreation" }
   | { type: "deleteSelected" }

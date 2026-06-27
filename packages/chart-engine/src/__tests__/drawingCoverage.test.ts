@@ -179,6 +179,27 @@ describe("drawing figure coverage", () => {
     });
   });
 
+  it("maps Fibonacci fans from metadata levels when provided", () => {
+    const figures = createFiguresForDrawing({
+      ...drawing("fibFan", 2),
+      metadata: { fibonacciLevels: [0, 0.25, 1] }
+    });
+
+    expect(figures.filter((figure) => figure.type === "line")).toHaveLength(3);
+    expect(figures.filter((figure) => figure.type === "label").map((label) => label.text)).toEqual([
+      "0",
+      "0.25",
+      "1"
+    ]);
+    expect(figures.find((figure) => figure.id === "fibFan-1:level-0.25")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 20, y: 30 },
+        { x: 120, y: 45 }
+      ]
+    });
+  });
+
   it("maps trend-based Fibonacci extensions from the third anchor with fixed labels", () => {
     const figures = createFiguresForDrawing(drawing("fibTrendBasedExtension", 3));
 
@@ -229,6 +250,46 @@ describe("drawing figure coverage", () => {
         { x: 120, y: 510 }
       ]
     });
+  });
+
+  it("maps Gann fans from metadata ratios when provided", () => {
+    const figures = createFiguresForDrawing({
+      ...drawing("gannFan", 2),
+      metadata: { gannRatios: [0.5, 2] }
+    });
+
+    expect(figures).toHaveLength(2);
+    expect(figures.find((figure) => figure.id === "gannFan-1:fan-0.5")).toMatchObject({
+      type: "line",
+      points: [
+        { x: 20, y: 30 },
+        { x: 120, y: 60 }
+      ]
+    });
+  });
+
+  it("maps position and range labels from metadata", () => {
+    expect(
+      createFiguresForDrawing({
+        ...drawing("longPosition", 2),
+        metadata: { positionLabel: "2R long" }
+      }).find((figure) => figure.type === "label")
+    ).toMatchObject({ text: "2R long" });
+
+    expect(
+      createFiguresForDrawing({
+        ...drawing("datePriceRange", 2),
+        metadata: { rangeLabel: "Earnings window" }
+      }).find((figure) => figure.type === "label")
+    ).toMatchObject({ text: "Label" });
+
+    expect(
+      createFiguresForDrawing({
+        ...drawing("datePriceRange", 2),
+        text: undefined,
+        metadata: { rangeLabel: "Earnings window" }
+      }).find((figure) => figure.type === "label")
+    ).toMatchObject({ text: "Earnings window" });
   });
 
   it("maps Gann boxes to a rect and diagonal lines", () => {

@@ -77,6 +77,28 @@ test("property panel follows engine schema for fill and state controls", async (
   await expect(page.getByTestId("delete-drawing")).toBeDisabled();
 });
 
+test("property panel edits advanced drawing parameters", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-fibFan").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+
+  await expect(page.getByTestId("drawing-parameter-fibonacciLevels")).toBeVisible();
+  await page.getByTestId("drawing-parameter-fibonacciLevels").fill("0, 0.5, 1");
+  await page.getByTestId("drawing-parameter-fibonacciLevels").blur();
+
+  await expect(page.getByTestId("drawing-json-export")).toHaveValue(
+    /"fibonacciLevels": \[\s*0,\s*0\.5,\s*1\s*\]/
+  );
+});
+
 test("drawing action controls follow engine capabilities", async ({ page }) => {
   await page.goto("/");
   const overlay = page.getByTestId("chart-overlay");

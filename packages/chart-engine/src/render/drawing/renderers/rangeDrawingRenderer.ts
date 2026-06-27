@@ -1,4 +1,5 @@
 import type { DrawingRenderer } from "../../../drawing/drawingRegistry";
+import { getDrawingParameterLabel } from "../../../drawing/drawingParameters";
 import { createDrawingRenderer, drawRectFromPoints, drawText, getAnchorPoints } from "./drawingRendererHelpers";
 
 export function createRangeDrawingRenderers(): DrawingRenderer[] {
@@ -13,7 +14,7 @@ export function createRangeDrawingRenderers(): DrawingRenderer[] {
       }
 
       drawRectFromPoints(context, first, second);
-      drawText(context, { ...drawing, text: drawing.text ?? "Range" }, first);
+      drawText(context, { ...drawing, text: drawing.text ?? getDrawingParameterLabel(drawing, "rangeLabel", "Range") }, first);
     })
   ];
 }

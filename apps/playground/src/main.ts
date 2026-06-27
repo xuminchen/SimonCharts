@@ -681,6 +681,28 @@ function createDrawingPropertyControl(
     return input;
   }
 
+  if (property.scope === "parameters") {
+    const input = document.createElement("input");
+
+    input.type = "text";
+    input.dataset.testid = `drawing-parameter-${property.metadataKey}`;
+    input.value = parameterValueToInput(drawing.metadata?.[property.metadataKey], property.defaultValue);
+    input.placeholder = property.valueType === "numberList" ? "0, 0.5, 1" : property.label;
+    input.disabled = !canEditSelected;
+    input.addEventListener("change", () => {
+      const value =
+        property.valueType === "numberList" ? parseNumberList(input.value, property.defaultValue) : input.value;
+
+      drawingEditor.executeCommand({
+        type: property.commandType,
+        metadata: { [property.metadataKey]: value }
+      });
+      renderStatic();
+    });
+
+    return input;
+  }
+
   if (property.valueType === "lineDash") {
     const select = document.createElement("select");
 
@@ -803,6 +825,35 @@ function optionToLineDash(value: string): number[] {
   }
 
   return [];
+}
+
+function parameterValueToInput(value: unknown, defaultValue: string | number[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is number => Number.isFinite(item)).join(", ");
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(defaultValue)) {
+    return defaultValue.join(", ");
+  }
+
+  return defaultValue ?? "";
+}
+
+function parseNumberList(value: string, defaultValue: string | number[] | undefined): number[] {
+  const numbers = value
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item));
+
+  if (numbers.length > 0) {
+    return numbers;
+  }
+
+  return Array.isArray(defaultValue) ? defaultValue : [];
 }
 
 function normalizeHexColor(value: string | undefined): string | undefined {

@@ -1,9 +1,22 @@
 import type { DrawingObject, DrawingStyle, DrawingType } from "./drawingTypes";
+import {
+  fibonacciParameterTypes,
+  gannFanParameterTypes,
+  getDefaultFibonacciLevels,
+  positionLabelParameterTypes,
+  rangeLabelParameterTypes,
+  defaultGannFanRatios
+} from "./drawingParameters";
 
-export type DrawingPropertyScope = "style" | "content" | "state";
-export type DrawingPropertyValueType = "boolean" | "color" | "lineDash" | "number" | "text";
+export type DrawingPropertyScope = "style" | "content" | "parameters" | "state";
+export type DrawingPropertyValueType = "boolean" | "color" | "lineDash" | "number" | "numberList" | "text";
 export type DrawingStylePropertyKey = keyof DrawingStyle;
 export type DrawingContentPropertyKey = "text";
+export type DrawingParameterPropertyKey =
+  | "fibonacciLevels"
+  | "gannRatios"
+  | "positionLabel"
+  | "rangeLabel";
 export type DrawingStatePropertyKey = "locked" | "visible";
 
 export interface DrawingPropertyOption {
@@ -15,7 +28,7 @@ export interface DrawingStylePropertyDefinition {
   id: string;
   label: string;
   scope: "style";
-  valueType: DrawingPropertyValueType;
+  valueType: "color" | "lineDash" | "number";
   styleKey: DrawingStylePropertyKey;
   commandType: "updateSelectedStyle";
   defaultValue?: string | number | number[];
@@ -35,6 +48,19 @@ export interface DrawingContentPropertyDefinition {
   defaultValue?: string;
 }
 
+export interface DrawingParameterPropertyDefinition {
+  id: string;
+  label: string;
+  scope: "parameters";
+  valueType: "numberList" | "text";
+  metadataKey: DrawingParameterPropertyKey;
+  commandType: "updateSelectedMetadata";
+  defaultValue?: number[] | string;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
 export interface DrawingStatePropertyDefinition {
   id: string;
   label: string;
@@ -49,6 +75,7 @@ export interface DrawingStatePropertyDefinition {
 export type DrawingPropertyDefinition =
   | DrawingStylePropertyDefinition
   | DrawingContentPropertyDefinition
+  | DrawingParameterPropertyDefinition
   | DrawingStatePropertyDefinition;
 
 export interface DrawingPropertySchema {
@@ -227,21 +254,91 @@ function getPropertyDefinitionsForType(type: DrawingType): DrawingPropertyDefini
     properties.push(...textStyleProperties, textProperty);
   }
 
+  properties.push(...getParameterProperties(type));
   properties.push(...stateProperties);
 
   return properties.map(clonePropertyDefinition);
 }
 
-function clonePropertyDefinition<T extends DrawingPropertyDefinition>(definition: T): T {
-  if (definition.scope !== "style") {
-    return { ...definition } as T;
+function getParameterProperties(type: DrawingType): DrawingParameterPropertyDefinition[] {
+  const properties: DrawingParameterPropertyDefinition[] = [];
+
+  if (fibonacciParameterTypes.has(type)) {
+    properties.push({
+      id: "parameters.fibonacciLevels",
+      label: "Fib Levels",
+      scope: "parameters",
+      valueType: "numberList",
+      metadataKey: "fibonacciLevels",
+      commandType: "updateSelectedMetadata",
+      defaultValue: getDefaultFibonacciLevels(type),
+      min: -10,
+      max: 10,
+      step: 0.001
+    });
   }
 
-  return {
-    ...definition,
-    defaultValue: Array.isArray(definition.defaultValue)
-      ? [...definition.defaultValue]
-      : definition.defaultValue,
-    options: definition.options?.map((option) => ({ ...option }))
-  } as T;
+  if (gannFanParameterTypes.has(type)) {
+    properties.push({
+      id: "parameters.gannRatios",
+      label: "Gann Ratios",
+      scope: "parameters",
+      valueType: "numberList",
+      metadataKey: "gannRatios",
+      commandType: "updateSelectedMetadata",
+      defaultValue: [...defaultGannFanRatios],
+      min: -20,
+      max: 20,
+      step: 0.001
+    });
+  }
+
+  if (positionLabelParameterTypes.has(type)) {
+    properties.push({
+      id: "parameters.positionLabel",
+      label: "Label",
+      scope: "parameters",
+      valueType: "text",
+      metadataKey: "positionLabel",
+      commandType: "updateSelectedMetadata",
+      defaultValue: type === "shortPosition" ? "Short" : "Long"
+    });
+  }
+
+  if (rangeLabelParameterTypes.has(type)) {
+    properties.push({
+      id: "parameters.rangeLabel",
+      label: "Label",
+      scope: "parameters",
+      valueType: "text",
+      metadataKey: "rangeLabel",
+      commandType: "updateSelectedMetadata",
+      defaultValue: "Range"
+    });
+  }
+
+  return properties;
+}
+
+function clonePropertyDefinition<T extends DrawingPropertyDefinition>(definition: T): T {
+  if (definition.scope === "style") {
+    return {
+      ...definition,
+      defaultValue: Array.isArray(definition.defaultValue)
+        ? [...definition.defaultValue]
+        : definition.defaultValue,
+      options: definition.options?.map((option) => ({ ...option }))
+    } as T;
+  }
+
+  if (definition.scope === "parameters") {
+    return {
+      ...definition,
+      defaultValue: Array.isArray(definition.defaultValue)
+        ? [...definition.defaultValue]
+        : definition.defaultValue
+    } as T;
+  }
+
+    return { ...definition } as T;
 }

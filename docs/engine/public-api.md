@@ -82,7 +82,7 @@ Drawing platform exports include:
 - figures: `FigureObject`, `FigureType`, `FigureStyle`, `createBuiltInFigureRenderers()`, `createFigureRendererRegistry()`, `getFigureBounds()`, `hitTestFigure()`
 - drawing tools: `drawingTypes`, `DrawingType`, `DrawingToolDefinition`, `builtInDrawingToolDefinitions`, `createDrawingToolRegistry()`
 - editor state: `createDrawingEditor()`, `DrawingEditor`, `DrawingEditorCommand`, `DrawingObjectManagerItem`
-- property schema: `getDrawingPropertySchema()`, `getDrawingPropertyDefinitionsForDrawing()`, `DrawingPropertySchema`, `DrawingPropertyDefinition`, `isTextDrawingType()`, `isFillDrawingType()`
+- property schema: `getDrawingPropertySchema()`, `getDrawingPropertyDefinitionsForDrawing()`, `DrawingPropertySchema`, `DrawingPropertyDefinition`, `DrawingParameterPropertyDefinition`, `isTextDrawingType()`, `isFillDrawingType()`
 - drawing conversion and render: `createFiguresForDrawing()`, `createDefaultDrawingRendererRegistry()`, `createDrawingLayer()`
 - drawing persistence: `currentDrawingSchemaVersion`, `SerializedDrawingObject`, `serializeDrawingObject()`, `deserializeDrawingObject()`, `migrateSerializedDrawing()`
 - drawing commands: `mergeDrawingStyle()`, `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`
@@ -145,7 +145,9 @@ v1.0 adds Engine-owned drawing property metadata so complete drawing editor prop
 - `isTextDrawingType(type)`
 - `isFillDrawingType(type)`
 
-The schema is command-oriented and host-independent. Style properties point to `updateSelectedStyle`, text content points to `updateSelectedText`, and state properties point to visibility and locking commands. Hosts still own DOM controls, layout, persistence, collaboration, and product workflows.
+The schema is command-oriented and host-independent. Style properties point to `updateSelectedStyle`, text content points to `updateSelectedText`, parameter properties point to `updateSelectedMetadata`, and state properties point to visibility and locking commands. Hosts still own DOM controls, layout, persistence, collaboration, and product workflows.
+
+Advanced drawing parameters use Engine-owned metadata keys such as `fibonacciLevels`, `gannRatios`, `positionLabel`, and `rangeLabel`. Rendering consumes valid Fibonacci level lists, Gann ratio lists, and label metadata, while invalid or missing metadata falls back to Engine defaults.
 
 Custom drawing types are allowed only when namespaced, for example `acme.measurement-box`. `drawingTypes` remains the built-in drawing list. Use `isBuiltInDrawingType()`, `isCustomDrawingType()`, and `isDrawingType()` for validation.
 

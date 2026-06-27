@@ -66,9 +66,14 @@ if (!drawingEditor.getCapabilities().canCopy) {
 
 drawingEditor.executeCommand({ type: "copySelected" });
 drawingEditor.executeCommand({ type: "pasteCopied", offset: { dx: 4, dy: 6 } });
+drawingEditor.executeCommand({ type: "updateSelectedMetadata", metadata: { fibonacciLevels: [0, 1] } });
 
 if (drawingEditor.getState().drawings.length !== 2) {
   throw new Error("Package consumer failed to execute drawing editor commands");
+}
+
+if (!drawingEditor.getState().drawings.some((item) => Array.isArray(item.metadata?.fibonacciLevels))) {
+  throw new Error("Package consumer failed to execute drawing metadata commands");
 }
 
 if (!drawingEditor.getCapabilities().canUndo) {

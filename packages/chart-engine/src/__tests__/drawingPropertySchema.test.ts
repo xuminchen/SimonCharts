@@ -40,6 +40,27 @@ describe("drawing property schema", () => {
     expect(propertyIds("trendLine")).not.toContain("style.fill");
   });
 
+  it("adds advanced parameter controls for fibonacci gann position and range drawings", () => {
+    expect(propertyIds("fibFan")).toContain("parameters.fibonacciLevels");
+    expect(propertyIds("fibonacciExtension")).toContain("parameters.fibonacciLevels");
+    expect(propertyIds("gannFan")).toContain("parameters.gannRatios");
+    expect(propertyIds("longPosition")).toContain("parameters.positionLabel");
+    expect(propertyIds("datePriceRange")).toContain("parameters.rangeLabel");
+    expect(propertyIds("trendLine")).not.toContain("parameters.fibonacciLevels");
+
+    const fibLevels = getDrawingPropertySchema("fibFan").properties.find(
+      (property) => property.id === "parameters.fibonacciLevels"
+    );
+
+    expect(fibLevels).toMatchObject({
+      scope: "parameters",
+      valueType: "numberList",
+      metadataKey: "fibonacciLevels",
+      commandType: "updateSelectedMetadata",
+      defaultValue: [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]
+    });
+  });
+
   it("describes state properties as neutral editor commands", () => {
     const stateProperties = getDrawingPropertySchema("trendLine").properties.filter(
       (property) => property.scope === "state"
@@ -72,15 +93,26 @@ describe("drawing property schema", () => {
   it("returns cloned property definitions", () => {
     const schema = getDrawingPropertySchema("trendLine");
     const dashProperty = schema.properties.find((property) => property.id === "style.lineDash");
+    const levelsProperty = getDrawingPropertySchema("fibFan").properties.find(
+      (property) => property.id === "parameters.fibonacciLevels"
+    );
 
     if (!dashProperty || dashProperty.scope !== "style") {
       throw new Error("Missing line dash property");
     }
 
+    if (!levelsProperty || levelsProperty.scope !== "parameters" || !Array.isArray(levelsProperty.defaultValue)) {
+      throw new Error("Missing fibonacci levels property");
+    }
+
     schema.properties.push({ ...schema.properties[0], id: "mutated" } as DrawingPropertyDefinition);
     dashProperty.options?.push({ label: "Mutated", value: "mutated" });
+    levelsProperty.defaultValue.push(99);
 
     const nextSchema = getDrawingPropertySchema("trendLine");
+    const nextLevels = getDrawingPropertySchema("fibFan").properties.find(
+      (property) => property.id === "parameters.fibonacciLevels"
+    );
 
     expect(nextSchema.properties.map((property) => property.id)).not.toContain("mutated");
     expect(
@@ -90,6 +122,7 @@ describe("drawing property schema", () => {
       { label: "Dashed", value: "dashed" },
       { label: "Dotted", value: "dotted" }
     ]);
+    expect(nextLevels?.defaultValue).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
   });
 
   it("returns schema definitions for drawing objects and custom drawing types", () => {
