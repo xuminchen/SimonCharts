@@ -132,6 +132,31 @@ test("body drag commits one undoable drawing move command", async ({ page }) => 
   await expect.poll(getAnchors).toEqual(originalAnchors);
 });
 
+test("selects topmost drawing for equal-distance overlapping body hits", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
+
+  await page.locator("[data-drawing-id='drawing-1']").click();
+  await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
+
+  await page.getByTestId("drawing-tool-select").click();
+  await page.mouse.click(box.x + 150, box.y + 193);
+
+  await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-2");
+});
+
 test("body drag preserves multi-selection and moves selected drawings together", async ({ page }) => {
   await page.goto("/");
   const overlay = page.getByTestId("chart-overlay");

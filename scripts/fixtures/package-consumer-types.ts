@@ -14,6 +14,8 @@ import {
   finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingPropertySchema,
+  hitTestDrawing,
+  hitTestDrawingAll,
   hitTestDrawingEditHandle,
   normalizeDrawingSelectionBounds,
   resizeDrawing,
@@ -43,10 +45,13 @@ import type {
   DrawingEditHandle,
   DrawingHandleDragOperation,
   DrawingHandleDragPreview,
+  DrawingHitTestMatch,
+  DrawingHitTestOptions,
   DrawingMoveDragCommand,
   DrawingMoveDragOperation,
   DrawingMoveDragPreview,
   DrawingObject,
+  DrawingPoint,
   DrawingResizeOptions,
   DrawingRotateOptions,
   DrawingSelectionBoxOperation,
@@ -265,6 +270,26 @@ const customDrawing: DrawingObject = {
   anchors: [{ x: 1, y: 2 }]
 };
 
+const drawingHitTestPoint: DrawingPoint = { x: 1, y: 2 };
+const drawingHitTestOptions: DrawingHitTestOptions = { registry: createDrawingRendererRegistry() };
+drawingHitTestOptions.registry.register({
+  type: customDrawingType,
+  render() {},
+  hitTest(drawing) {
+    return { drawingId: drawing.id, distance: 0 };
+  }
+});
+const drawingHitTestMatches: DrawingHitTestMatch[] = hitTestDrawingAll(
+  [customDrawing],
+  drawingHitTestPoint,
+  drawingHitTestOptions
+);
+const drawingHitTestMatch: DrawingHitTestMatch | undefined = hitTestDrawing(
+  [customDrawing],
+  drawingHitTestPoint,
+  drawingHitTestOptions
+);
+
 const layout: ChartLayout = {
   width: 800,
   height: 480,
@@ -314,6 +339,8 @@ void moveDragPreview;
 void moveDragCommand;
 void transformedDrawing;
 void parameterProperty;
+void drawingHitTestMatches;
+void drawingHitTestMatch;
 void frame;
 void invalidations;
 void layerContext;

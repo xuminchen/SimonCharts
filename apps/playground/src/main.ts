@@ -32,6 +32,7 @@ import {
   finishDrawingSelectionBox,
   getDrawingSelectionBounds,
   getDrawingPropertyDefinitionsForDrawing,
+  hitTestDrawing,
   hitTestDrawingEditHandle,
   renderOverlay,
   fixtureDailyCandleSeries,
@@ -1492,7 +1493,9 @@ function handleDrawingPointerDown(
     }
   }
 
-  const hitDrawing = hitTestDrawing(point, editorState.drawings);
+  const hitDrawing = hitTestDrawing(editorState.drawings, point, {
+    registry: drawingRendererRegistry
+  })?.drawing;
 
   if (!hitDrawing) {
     if (options.additiveSelection) {
@@ -1635,24 +1638,6 @@ function finishDrawingSelectionBoxPointerDrag(point: { x: number; y: number }): 
   executeDrawingCommand(command);
 
   return true;
-}
-
-function hitTestDrawing(
-  point: { x: number; y: number },
-  drawings: DrawingObject[]
-): DrawingObject | undefined {
-  const hits = drawings
-    .filter((drawing) => drawing.visible !== false)
-    .map((drawing) => ({
-      drawing,
-      hit: drawingRendererRegistry.require(drawing.type).hitTest(drawing, point)
-    }))
-    .filter((result): result is { drawing: DrawingObject; hit: { drawingId: string; distance: number } } =>
-      result.hit !== undefined
-    )
-    .sort((left, right) => left.hit.distance - right.hit.distance);
-
-  return hits[0]?.drawing;
 }
 
 window.addEventListener("resize", render);

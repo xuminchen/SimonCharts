@@ -47,6 +47,20 @@ Style, metadata, and text commands are exposed as `updateSelectedStyle(style)`, 
 
 `getSelectedEditHandles()` returns Engine-derived anchor, resize, and rotate handle metadata for selected drawings. The Engine exposes handle coordinates and ids only; hosts own DOM hit regions and cursor presentation.
 
+## Body Hit-Test
+
+SimonCharts v1.0 adds a DOM-free drawing body hit-test contract:
+
+- `hitTestDrawing(drawings, point, options)`
+- `hitTestDrawingAll(drawings, point, options)`
+- `DrawingHitTestMatch`
+- `DrawingHitTestOptions`
+- `DrawingPoint`
+
+Hosts pass neutral `DrawingObject[]`, a pointer point, and a `DrawingRendererRegistry`. The Engine asks each registered drawing renderer to hit-test its drawing, filters hidden drawings by default, can exclude locked drawings with `includeLocked: false`, and sorts matches by shortest distance with later input drawings winning equal-distance ties.
+
+Hosts still own native pointer events, pointer capture, cursor UI, hover rendering, persistence, and collaboration. The Engine owns the package-root body hit-test contract, hidden/locked filtering, distance ordering, and z-order tie behavior.
+
 ## Handle Drag Flow
 
 SimonCharts v1.0 adds a DOM-free handle drag operation flow:

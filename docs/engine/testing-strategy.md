@@ -80,6 +80,25 @@ npm run check:package-types
 
 `check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, drawing interaction, and drawing transform types.
 
+## v1.0 Drawing Hit Test Verification
+
+Focused drawing body hit-test coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/drawingHitTest.test.ts
+npm run guard:public-api
+npm run guard:public-types
+npm run check:package-consumer
+npm run check:package-types
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-editor.spec.ts
+```
+
+Unit coverage verifies `hitTestDrawing`, `hitTestDrawingAll`, hidden filtering, optional locked filtering, distance ordering, equal-distance z-order tie behavior, renderer registry routing, and missing renderer errors.
+
+SDK coverage verifies runtime consumers can call drawing body hit-test APIs from `@simoncharts/chart-engine` with a `DrawingRendererRegistry`, and type consumers can import `DrawingHitTestMatch`, `DrawingHitTestOptions`, and `DrawingPoint`.
+
+Browser coverage verifies the playground routes selected drawing body hits through the Engine-owned hit-test contract while still owning pointer events, cursor UI, hover rendering, persistence, and collaboration.
+
 ## v1.0 Drawing Transform Verification
 
 Focused drawing transform coverage:

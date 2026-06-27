@@ -17,6 +17,7 @@ The release candidate includes:
 - Engine-owned drawing property schema for host-rendered property panels
 - Engine-owned advanced drawing parameters for Fibonacci levels, Gann ratios, position labels, and range labels
 - Engine-owned drawing interaction primitives for box selection, keyboard nudging, and edit handles
+- Engine-owned drawing body hit-test for neutral drawings, renderer registries, hidden/locked filtering, and distance/z-order sorting
 - Engine-owned drawing handle drag flow for anchor, resize, and rotate operations
 - Engine-owned drawing move drag flow for selected drawing body movement previews and one final command
 - Engine-owned drawing selection box flow for preview ids and final selection commands
@@ -83,11 +84,11 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Completed on 2026-06-27:
 
-- `npm run test` passed: 38 test files, 439 tests.
+- `npm run test` passed: 39 test files, 446 tests.
 - `npm run typecheck` passed.
-- `npm run guard:engine-boundary` passed: 154 files scanned.
-- `npm run guard:public-api` passed: 136 runtime exports.
-- `npm run guard:public-types` passed: 351 type symbols.
+- `npm run guard:engine-boundary` passed: 155 files scanned.
+- `npm run guard:public-api` passed: 138 runtime exports.
+- `npm run guard:public-types` passed: 355 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-artifact` passed: 119 package files.
@@ -96,4 +97,4 @@ Completed on 2026-06-27:
 - `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
 - `npm run build` passed for the Engine package and playground.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 119 files.
-- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 38 browser tests.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 39 browser tests.

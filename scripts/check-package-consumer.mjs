@@ -15,6 +15,8 @@ import {
   finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingPropertySchema,
+  hitTestDrawing,
+  hitTestDrawingAll,
   hitTestDrawingEditHandle,
   normalizeDrawingSelectionBounds,
   resizeDrawing,
@@ -246,6 +248,21 @@ if (installResult.installed.drawingRenderers !== 1 || installResult.installed.dr
 
 if (drawingTools.require("consumer.measurement-box").label !== "Measurement Box") {
   throw new Error("Package consumer failed to read installed custom drawing tool");
+}
+
+const customHitDrawing = deserializeDrawingObject(
+  serializeDrawingObject({
+    id: "custom-hit-drawing",
+    type: "consumer.measurement-box",
+    anchors: [{ x: 1, y: 2 }],
+    metadata: { distance: 3 }
+  })
+);
+const hitMatches = hitTestDrawingAll([customHitDrawing], { x: 1, y: 2 }, { registry: drawingRenderers });
+const hitMatch = hitTestDrawing([customHitDrawing], { x: 1, y: 2 }, { registry: drawingRenderers });
+
+if (hitMatches.length !== 1 || hitMatch?.drawing.id !== "custom-hit-drawing") {
+  throw new Error("Package consumer failed to execute drawing body hit-test APIs");
 }
 
 const lifecycleDrawingRenderers = createDrawingRendererRegistry();
