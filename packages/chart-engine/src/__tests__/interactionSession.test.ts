@@ -41,6 +41,21 @@ describe("interaction session contracts", () => {
     expect(events.map((event) => event.type)).toEqual(["pointerMoved", "cursorChanged"]);
   });
 
+  it("updates cursor from neutral input without duplicate events", () => {
+    const events: InteractionSessionEvent[] = [];
+    const session = createInteractionSession({ onEvent: (event) => events.push(event) });
+
+    session.handleInput({ type: "cursor", cursor: "drawing" });
+    session.handleInput({ type: "cursor", cursor: "drawing" });
+    session.handleInput({ type: "cursor", cursor: "crosshair" });
+
+    expect(session.getState().cursor).toBe("crosshair");
+    expect(events).toEqual([
+      { type: "cursorChanged", cursor: "drawing" },
+      { type: "cursorChanged", cursor: "crosshair" }
+    ]);
+  });
+
   it("tracks drag lifecycle with deterministic no-ops", () => {
     const events: InteractionSessionEvent[] = [];
     const session = createInteractionSession({ onEvent: (event) => events.push(event) });

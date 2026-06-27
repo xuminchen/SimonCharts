@@ -61,6 +61,20 @@ Hosts pass neutral `DrawingObject[]`, a pointer point, and a `DrawingRendererReg
 
 Hosts still own native pointer events, pointer capture, cursor UI, hover rendering, persistence, and collaboration. The Engine owns the package-root body hit-test contract, hidden/locked filtering, distance ordering, and z-order tie behavior.
 
+## Hover Intent
+
+SimonCharts v1.0 adds a DOM-free drawing hover intent contract:
+
+- `getDrawingHoverState(options)`
+- `DrawingHoverState`
+- `DrawingHoverStateOptions`
+- `DrawingHoverTarget`
+- `DrawingHoverCursor`
+
+Hosts pass neutral `DrawingObject[]`, selected `DrawingEditHandle[]`, a pointer point, and a `DrawingRendererRegistry`. The Engine checks selected edit handles before drawing bodies and returns a neutral hover state containing the current target, `hoveredDrawingId`, and cursor intent (`crosshair`, `drawing`, or `resize`). An optional active target can keep drag/resize cursor intent stable without recomputing body hits.
+
+Hosts still own DOM cursor styling, native pointer events, pointer capture, hover rendering invalidation, persistence, and collaboration. The Engine only owns target resolution and cursor intent.
+
 ## Handle Drag Flow
 
 SimonCharts v1.0 adds a DOM-free handle drag operation flow:

@@ -14,6 +14,7 @@ import {
   finishDrawingMoveDrag,
   finishDrawingSelectionBox,
   getDrawingEditHandles,
+  getDrawingHoverState,
   getDrawingPropertySchema,
   hitTestDrawing,
   hitTestDrawingAll,
@@ -263,6 +264,21 @@ const hitMatch = hitTestDrawing([customHitDrawing], { x: 1, y: 2 }, { registry: 
 
 if (hitMatches.length !== 1 || hitMatch?.drawing.id !== "custom-hit-drawing") {
   throw new Error("Package consumer failed to execute drawing body hit-test APIs");
+}
+
+const hoverState = getDrawingHoverState({
+  drawings: [customHitDrawing],
+  point: { x: 1, y: 2 },
+  handles: [],
+  registry: drawingRenderers
+});
+
+if (
+  hoverState.target?.kind !== "body" ||
+  hoverState.hoveredDrawingId !== "custom-hit-drawing" ||
+  hoverState.cursor !== "drawing"
+) {
+  throw new Error("Package consumer failed to execute drawing hover intent API");
 }
 
 const lifecycleDrawingRenderers = createDrawingRendererRegistry();

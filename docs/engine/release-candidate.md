@@ -18,6 +18,7 @@ The release candidate includes:
 - Engine-owned advanced drawing parameters for Fibonacci levels, Gann ratios, position labels, and range labels
 - Engine-owned drawing interaction primitives for box selection, keyboard nudging, and edit handles
 - Engine-owned drawing body hit-test for neutral drawings, renderer registries, hidden/locked filtering, and distance/z-order sorting
+- Engine-owned drawing hover intent for neutral drawings, selected handles, pointer points, renderer registries, target ids, and cursor intent
 - Engine-owned drawing handle drag flow for anchor, resize, and rotate operations
 - Engine-owned drawing move drag flow for selected drawing body movement previews and one final command
 - Engine-owned drawing selection box flow for preview ids and final selection commands
@@ -36,6 +37,7 @@ Hosts own:
 - authentication and user accounts
 - persistence and collaboration
 - routing and product UI
+- DOM cursor styling, pointer events, and hover invalidation
 - business workflows
 - extension distribution and trust policy
 
@@ -81,6 +83,36 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 - npm audit currently reports development dependency vulnerabilities; fixing them may require dependency upgrades outside this RC hardening scope.
 
 ## Acceptance Evidence
+
+Completed on 2026-06-28:
+
+- `npm run test` passed: 40 test files, 455 tests.
+- `npm run typecheck` passed.
+- `npm run guard:engine-boundary` passed: 157 files scanned.
+- `npm run guard:public-api` passed: 139 runtime exports.
+- `npm run guard:public-types` passed: 360 type symbols.
+- `npm run guard:sdk-imports` passed.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- `npm run check:performance` passed: 1 test file, 2 performance scenarios.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
+- `npm run build` passed for the Engine package and playground.
+- `npm run check:package-artifact` passed: 120 package files.
+- `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 120 files.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 40 browser tests.
+
+Focused Drawing Hover Intent Task 3 evidence on 2026-06-28:
+
+- `npm run build -w @simoncharts/chart-engine` passed.
+- Pre-snapshot `npm run guard:public-api` failed as expected with added runtime export `getDrawingHoverState`.
+- Pre-snapshot `npm run guard:public-types` failed as expected with added hover type symbols.
+- Runtime API snapshot was intentionally refreshed to 139 runtime exports.
+- `node scripts/check-public-types.mjs --write` refreshed the type snapshot to 360 type symbols.
+- `npm run guard:public-api` passed: 139 runtime exports.
+- `npm run guard:public-types` passed: 360 type symbols.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
 
 Completed on 2026-06-27:
 

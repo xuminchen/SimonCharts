@@ -121,6 +121,11 @@ export function createInteractionSession(
         return;
       }
 
+      if (input.type === "cursor") {
+        setCursor(input.cursor);
+        return;
+      }
+
       if (input.type === "magnet") {
         state = { ...state, magnet: cloneMagnet(input.magnet) };
         emit({ type: "magnetTargetChanged", magnet: cloneMagnet(state.magnet) });

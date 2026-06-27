@@ -30,6 +30,7 @@ import {
   finishDrawingHandleDrag,
   finishDrawingMoveDrag,
   finishDrawingSelectionBox,
+  getDrawingHoverState,
   getDrawingSelectionBounds,
   getDrawingPropertyDefinitionsForDrawing,
   hitTestDrawing,
@@ -307,10 +308,12 @@ drawingToolbar = createDrawingToolbar({
   },
   undo() {
     drawingEditor.undo();
+    setDrawingHoverId(undefined);
     renderStatic();
   },
   redo() {
     drawingEditor.redo();
+    setDrawingHoverId(undefined);
     renderStatic();
   }
 });
@@ -366,6 +369,7 @@ let drawingMoveDragPoint: { x: number; y: number } | undefined;
 let drawingSelectionBoxOperation: DrawingSelectionBoxOperation | undefined;
 let drawingSelectionPreviewIds: string[] | undefined;
 let drawingPreviewDrawings: DrawingObject[] | undefined;
+let drawingHoveredDrawingId: string | undefined;
 let lastKeyboardCommandText = "none";
 let viewportCoversNextCrosshairClear = false;
 let skipCurrentCrosshairRenderInvalidation = false;
@@ -496,7 +500,8 @@ function createRenderContext(
       panels,
       visualOutputs: activeVisualOutputs,
       drawings: drawingPreviewDrawings ?? drawingEditor.getState().drawings,
-      selectedDrawingIds: drawingSelectionPreviewIds ?? drawingEditor.getState().selectedDrawingIds
+      selectedDrawingIds: drawingSelectionPreviewIds ?? drawingEditor.getState().selectedDrawingIds,
+      hoveredDrawingId: drawingHoveredDrawingId
     }
   };
 }
@@ -512,6 +517,7 @@ function syncDrawingStatus(): void {
 function executeDrawingCommand(command: DrawingEditorCommand): void {
   drawingEditor.executeCommand(command);
   drawingToolbar.setActiveTool(drawingEditor.getState().activeTool);
+  setDrawingHoverId(undefined);
   renderStatic();
 }
 
@@ -1147,6 +1153,41 @@ function createCurrentInteractionEngine(): InteractionEngine {
   });
 }
 
+function setDrawingHoverId(nextId: string | undefined): boolean {
+  if (drawingHoveredDrawingId === nextId) {
+    return false;
+  }
+
+  drawingHoveredDrawingId = nextId;
+  return true;
+}
+
+function renderDrawingHoverId(nextId: string | undefined): void {
+  if (setDrawingHoverId(nextId)) {
+    renderStatic();
+  }
+}
+
+function updateDrawingHover(point: { x: number; y: number }): void {
+  const editorState = drawingEditor.getState();
+
+  if (editorState.activeTool !== "select") {
+    renderDrawingHoverId(undefined);
+    return;
+  }
+
+  const hover = getDrawingHoverState({
+    drawings: editorState.drawings,
+    point,
+    handles: drawingEditor.getSelectedEditHandles(),
+    registry: drawingRendererRegistry,
+    handleHitTestOptions: { radius: 10 }
+  });
+
+  renderDrawingHoverId(hover.hoveredDrawingId);
+  interactionSession.handleInput({ type: "cursor", cursor: hover.cursor });
+}
+
 function cancelPointerInteraction(): void {
   drawingHandleDragOperation = undefined;
   drawingHandleDragPoint = undefined;
@@ -1155,6 +1196,7 @@ function cancelPointerInteraction(): void {
   drawingSelectionBoxOperation = undefined;
   drawingSelectionPreviewIds = undefined;
   drawingPreviewDrawings = undefined;
+  setDrawingHoverId(undefined);
   crosshair = undefined;
   if (layout && viewport) {
     interactionEngine = createCurrentInteractionEngine();
@@ -1177,6 +1219,7 @@ function clearIndicatorInteractionState(): void {
   drawingSelectionBoxOperation = undefined;
   drawingSelectionPreviewIds = undefined;
   drawingPreviewDrawings = undefined;
+  setDrawingHoverId(undefined);
   crosshair = undefined;
   interactionEngine = undefined;
   lastKeyboardCommandText = "none";
@@ -1247,6 +1290,7 @@ overlayCanvas.addEventListener("pointermove", (event) => {
   if (handleDrawingPointerMove(event)) {
     return;
   }
+  updateDrawingHover(point);
   interactionEngine?.handlePointerMove(point);
 });
 
@@ -1444,6 +1488,7 @@ drawingImportButton.addEventListener("click", () => {
     drawingEditor = createPlaygroundDrawingEditor(nextState.drawings);
     drawingEditor.selectDrawings(nextState.selectedDrawingIds);
     drawingToolbar.setActiveTool("select");
+    setDrawingHoverId(undefined);
     syncDrawingStatus();
     setDrawingImportStatus(
       `Imported ${nextState.drawings.length} ${nextState.drawings.length === 1 ? "drawing" : "drawings"}`,
@@ -1465,6 +1510,7 @@ function handleDrawingPointerDown(
   options: { additiveSelection?: boolean } = {}
 ): boolean {
   const editorState = drawingEditor.getState();
+  const clearedHover = setDrawingHoverId(undefined);
 
   if (editorState.activeTool !== "select") {
     drawingEditor.pointerDown(point);
@@ -1510,6 +1556,9 @@ function handleDrawingPointerDown(
       return true;
     }
 
+    if (clearedHover) {
+      renderStatic();
+    }
     return false;
   }
 
@@ -1538,6 +1587,7 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
 
     drawingHandleDragPoint = point;
     drawingPreviewDrawings = preview?.drawings;
+    setDrawingHoverId(undefined);
     renderStatic();
     return true;
   }
@@ -1549,6 +1599,7 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
 
     drawingMoveDragPoint = point;
     drawingPreviewDrawings = preview?.drawings;
+    setDrawingHoverId(undefined);
     renderStatic();
     return true;
   }
@@ -1557,6 +1608,7 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
     const preview = updateDrawingSelectionBox(drawingSelectionBoxOperation, point);
 
     drawingSelectionPreviewIds = preview.selectedDrawingIds;
+    setDrawingHoverId(undefined);
     renderStatic();
     return true;
   }

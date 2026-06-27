@@ -80,6 +80,24 @@ npm run check:package-types
 
 `check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, drawing interaction, and drawing transform types.
 
+## v1.0 Drawing Hover Intent Verification
+
+Focused drawing hover intent coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/drawingHover.test.ts
+npm run guard:public-api
+npm run guard:public-types
+npm run check:package-consumer
+npm run check:package-types
+```
+
+Unit coverage verifies handle-first hover targeting, body hover targeting through a `DrawingRendererRegistry`, no-hit crosshair intent, resize handle cursor intent, and active target cursor stability.
+
+SDK coverage verifies runtime consumers can call `getDrawingHoverState()` from `@simoncharts/chart-engine` with neutral drawings, empty or selected handles, a point, and a renderer registry. Type coverage verifies `DrawingHoverState`, `DrawingHoverTarget`, `DrawingHoverCursor`, `DrawingHoverStateOptions`, and the neutral `{ type: "cursor"; cursor }` interaction input.
+
+Browser or host integration remains responsible for DOM cursor styling, native pointer events, hover rendering invalidation, persistence, and collaboration.
+
 ## v1.0 Drawing Hit Test Verification
 
 Focused drawing body hit-test coverage:

@@ -13,6 +13,7 @@ import {
   finishDrawingMoveDrag,
   finishDrawingSelectionBox,
   getDrawingEditHandles,
+  getDrawingHoverState,
   getDrawingPropertySchema,
   hitTestDrawing,
   hitTestDrawingAll,
@@ -45,6 +46,10 @@ import type {
   DrawingEditHandle,
   DrawingHandleDragOperation,
   DrawingHandleDragPreview,
+  DrawingHoverCursor,
+  DrawingHoverState,
+  DrawingHoverStateOptions,
+  DrawingHoverTarget,
   DrawingHitTestMatch,
   DrawingHitTestOptions,
   DrawingMoveDragCommand,
@@ -59,6 +64,7 @@ import type {
   DrawingParameterPropertyDefinition,
   DrawingPropertySchema,
   IndicatorVisualOutput,
+  InteractionInput,
   LayerRenderContext,
   RenderFrameDiagnostic,
   RenderInvalidation,
@@ -289,6 +295,17 @@ const drawingHitTestMatch: DrawingHitTestMatch | undefined = hitTestDrawing(
   drawingHitTestPoint,
   drawingHitTestOptions
 );
+const drawingHoverTarget: DrawingHoverTarget = { kind: "body", drawingId: customDrawing.id };
+const drawingHoverCursor: DrawingHoverCursor = "drawing";
+const drawingHoverOptions: DrawingHoverStateOptions = {
+  drawings: [customDrawing],
+  point: drawingHitTestPoint,
+  handles: [],
+  registry: drawingHitTestOptions.registry,
+  activeTarget: drawingHoverTarget
+};
+const drawingHoverState: DrawingHoverState = getDrawingHoverState(drawingHoverOptions);
+const neutralCursorInput: InteractionInput = { type: "cursor", cursor: drawingHoverCursor };
 
 const layout: ChartLayout = {
   width: 800,
@@ -341,6 +358,11 @@ void transformedDrawing;
 void parameterProperty;
 void drawingHitTestMatches;
 void drawingHitTestMatch;
+void drawingHoverTarget;
+void drawingHoverCursor;
+void drawingHoverOptions;
+void drawingHoverState;
+void neutralCursorInput;
 void frame;
 void invalidations;
 void layerContext;

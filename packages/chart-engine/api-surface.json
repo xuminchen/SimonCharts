@@ -80,6 +80,7 @@
   "getDrawingCommandForHotkey",
   "getDrawingEditHandles",
   "getDrawingHandleDragCommand",
+  "getDrawingHoverState",
   "getDrawingIdsInBounds",
   "getDrawingMoveDragCommand",
   "getDrawingPropertyDefinitionsForDrawing",

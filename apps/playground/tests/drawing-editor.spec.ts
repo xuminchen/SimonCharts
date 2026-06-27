@@ -90,6 +90,33 @@ test("drags selected drawing anchor handles through engine operation flow", asyn
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"y": 200/);
 });
 
+test("drawing hover updates cursor diagnostics and hovered render state", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.getByTestId("drawing-tool-select").click();
+
+  await page.mouse.move(box.x + 180, box.y + 206);
+  await expect(page.getByTestId("cursor-state")).toHaveText("drawing");
+
+  await page.mouse.move(box.x + Math.min(box.width - 40, 520), box.y + 180);
+  await expect(page.getByTestId("cursor-state")).toHaveText("crosshair");
+
+  await page.mouse.click(box.x + 180, box.y + 206);
+  await expect(page.getByTestId("drawing-handle-count")).toHaveText("11 handles");
+
+  await page.mouse.move(box.x + 260, box.y + 210);
+  await expect(page.getByTestId("cursor-state")).toHaveText("resize");
+});
+
 test("body drag commits one undoable drawing move command", async ({ page }) => {
   await page.goto("/");
   const overlay = page.getByTestId("chart-overlay");

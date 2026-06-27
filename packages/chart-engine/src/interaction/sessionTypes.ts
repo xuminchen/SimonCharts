@@ -80,6 +80,7 @@ export type InteractionInput =
     }
   | { type: "crosshair"; crosshair: ChartCrosshairState | undefined }
   | { type: "tooltip"; tooltip: TooltipSessionState }
+  | { type: "cursor"; cursor: CursorMode }
   | { type: "magnet"; magnet: MagnetSessionState }
   | { type: "leave" }
   | { type: "blur" };
