@@ -65,6 +65,31 @@ test("property panel updates selected drawing text and export", async ({ page })
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"text": "Breakout note"/);
 });
 
+test("drags selected drawing anchor handles through engine operation flow", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.getByTestId("drawing-tool-select").click();
+  await page.mouse.click(box.x + 180, box.y + 210);
+
+  await expect(page.getByTestId("drawing-handle-count")).toHaveText("11 handles");
+  await page.mouse.move(box.x + 120, box.y + 180);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 140, box.y + 200);
+  await page.mouse.up();
+
+  await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"x": 140/);
+  await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"y": 200/);
+});
+
 test("property panel follows engine schema for fill and state controls", async ({ page }) => {
   await page.goto("/");
   const overlay = page.getByTestId("chart-overlay");

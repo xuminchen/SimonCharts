@@ -7,11 +7,15 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  beginDrawingHandleDrag,
+  finishDrawingHandleDrag,
   getDrawingEditHandles,
   getDrawingPropertySchema,
+  hitTestDrawingEditHandle,
   normalizeDrawingSelectionBounds,
   resizeDrawing,
   rotateDrawing,
+  updateDrawingHandleDrag,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -105,6 +109,29 @@ drawingEditor.executeCommand({
 if (drawingEditor.getState().selectedDrawingIds.length === 0) {
   throw new Error("Package consumer failed to select drawings in bounds");
 }
+
+const selectedHandles = drawingEditor.getSelectedEditHandles();
+const hitHandle = hitTestDrawingEditHandle(selectedHandles, selectedHandles[0], { radius: 1 });
+const handleDrag = hitHandle
+  ? beginDrawingHandleDrag({
+      handle: hitHandle,
+      drawings: drawingEditor.getState().drawings,
+      selectedDrawingIds: drawingEditor.getState().selectedDrawingIds,
+      startPoint: hitHandle
+    })
+  : undefined;
+const handlePreview = handleDrag
+  ? updateDrawingHandleDrag(handleDrag, { x: hitHandle.x + 2, y: hitHandle.y + 2 })
+  : undefined;
+const handleCommand = handleDrag
+  ? finishDrawingHandleDrag(handleDrag, { x: hitHandle.x + 2, y: hitHandle.y + 2 })
+  : undefined;
+
+if (!handlePreview || !handleCommand) {
+  throw new Error("Package consumer failed to execute drawing handle drag flow");
+}
+
+drawingEditor.executeCommand(handleCommand);
 
 const resizedDrawing = resizeDrawing(drawing, {
   handle: "bottomRight",

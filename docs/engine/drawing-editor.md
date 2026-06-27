@@ -47,6 +47,20 @@ Style, metadata, and text commands are exposed as `updateSelectedStyle(style)`, 
 
 `getSelectedEditHandles()` returns Engine-derived anchor, resize, and rotate handle metadata for selected drawings. The Engine exposes handle coordinates and ids only; hosts own DOM hit regions and cursor presentation.
 
+## Handle Drag Flow
+
+SimonCharts v1.0 adds a DOM-free handle drag operation flow:
+
+- `hitTestDrawingEditHandle(handles, point, options)`
+- `beginDrawingHandleDrag(options)`
+- `updateDrawingHandleDrag(operation, point)`
+- `finishDrawingHandleDrag(operation, point)`
+- `getDrawingHandleDragCommand(operation, point)`
+
+The flow starts from Engine-owned `DrawingEditHandle` metadata. Hosts pass a pointer point, selected drawing ids, and the current neutral drawing snapshot. The Engine returns optional preview drawings during movement and a final `DrawingEditorCommand` on finish. Anchor handles produce `dragAnchor`, resize handles produce `resizeSelected`, and rotate handles produce `rotateSelected`.
+
+Hosts still own native pointer events, pointer capture, CSS cursors, hover feedback, render invalidation, and persistence. The Engine owns handle geometry, operation state, preview mutation from the original snapshot, and final neutral command generation.
+
 ## Transform Kernel
 
 SimonCharts v1.0 adds Engine-owned resize and rotate math:
@@ -60,7 +74,7 @@ SimonCharts v1.0 adds Engine-owned resize and rotate math:
 
 `DrawingResizeOptions` uses a resize handle position, original `DrawingSelectionBounds`, target point, and optional minimum size. The Engine maps finite anchor `x` and `y` values from the original bounds to the resized bounds while preserving anchor `time`, `index`, and `price` fields. `DrawingRotateOptions` uses a supplied center and radians. Non-screen anchors remain unchanged.
 
-Hosts translate pointer drags into these neutral options, then call `resizeSelected` or `rotateSelected`. The Engine applies transforms only to editable selected drawings and keeps the operation inside undo/redo history. Hosts still own DOM events, pointer capture, visual handles, persistence, collaboration, and product workflows.
+Hosts can either translate pointer drags into these neutral options directly or use the handle drag flow above. The Engine applies transforms only to editable selected drawings and keeps the operation inside undo/redo history. Hosts still own DOM events, pointer capture, visual handles, persistence, collaboration, and product workflows.
 
 ## Property Schema
 

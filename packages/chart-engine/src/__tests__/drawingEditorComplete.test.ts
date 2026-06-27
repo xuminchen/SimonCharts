@@ -210,6 +210,43 @@ describe("complete drawing editor", () => {
     ]);
   });
 
+  it("drags anchors through neutral editor commands", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "free", type: "trendLine", anchors: [{ x: 0, y: 0 }, { x: 10, y: 10 }] },
+        { id: "locked", type: "trendLine", anchors: [{ x: 20, y: 20 }, { x: 30, y: 30 }], locked: true }
+      ]
+    });
+
+    editor.executeCommand({
+      type: "dragAnchor",
+      drawingId: "free",
+      anchorIndex: 1,
+      point: { x: 40, y: 50 }
+    });
+    editor.executeCommand({
+      type: "dragAnchor",
+      drawingId: "locked",
+      anchorIndex: 1,
+      point: { x: 60, y: 70 }
+    });
+
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { x: 0, y: 0 },
+      { x: 40, y: 50 }
+    ]);
+    expect(findDrawing(editor.getState().drawings, "locked").anchors).toEqual([
+      { x: 20, y: 20 },
+      { x: 30, y: 30 }
+    ]);
+
+    editor.undo();
+    expect(findDrawing(editor.getState().drawings, "free").anchors[1]).toEqual({ x: 10, y: 10 });
+
+    editor.redo();
+    expect(findDrawing(editor.getState().drawings, "free").anchors[1]).toEqual({ x: 40, y: 50 });
+  });
+
   it("executes neutral drawing editor commands", () => {
     const editor = createDrawingEditor({
       drawings: [

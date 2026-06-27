@@ -349,6 +349,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return api.selectDrawings(command.drawingIds);
       case "selectDrawingsInBounds":
         return api.selectDrawingsInBounds(command.bounds, { additive: command.additive });
+      case "dragAnchor":
+        return api.dragAnchor(command.drawingId, command.anchorIndex, command.point);
       case "bringSelectedForward":
         return api.bringSelectedForward();
       case "sendSelectedBackward":

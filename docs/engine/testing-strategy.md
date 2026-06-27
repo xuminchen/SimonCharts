@@ -93,6 +93,19 @@ Unit coverage verifies `resizeDrawing`, `resizeDrawings`, `rotateDrawing`, `rota
 
 Browser coverage verifies the playground can execute Engine-owned resize and rotate commands for selected drawings and reflect the transformed coordinates through neutral drawing export JSON.
 
+## v1.0 Drawing Handle Drag Verification
+
+Focused drawing handle drag coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/drawingHandleDrag.test.ts packages/chart-engine/src/__tests__/drawingEditorComplete.test.ts
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-editor.spec.ts
+```
+
+Unit coverage verifies handle hit-testing, handle drag operation creation, anchor drag previews, resize previews from the original selection snapshot, rotate previews, final command generation, locked drawing rejection, and the editor `dragAnchor` command.
+
+Browser coverage verifies the playground can route a selected drawing anchor handle drag through the Engine operation flow and commit the resulting neutral command.
+
 ## v0.9 Platform Extensibility Verification
 
 Focused extension coverage:

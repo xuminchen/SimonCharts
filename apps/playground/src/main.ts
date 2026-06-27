@@ -20,17 +20,21 @@ import {
   createStaticLayers,
   createVisualLayer,
   createVisualRendererRegistry,
+  beginDrawingHandleDrag,
   coreIndicatorDefinitions,
   defaultChartTheme,
   builtInDrawingToolDefinitions,
   deserializeDrawingObject,
+  finishDrawingHandleDrag,
   getDrawingSelectionBounds,
   getDrawingPropertyDefinitionsForDrawing,
+  hitTestDrawingEditHandle,
   renderOverlay,
   fixtureDailyCandleSeries,
   renderStaticChart,
   resizeCanvas,
   serializeDrawingObject,
+  updateDrawingHandleDrag,
   supportedSeriesTypes
 } from "@simoncharts/chart-engine";
 import type {
@@ -50,6 +54,7 @@ import type {
   DrawingEditor,
   DrawingEditorCommand,
   DrawingEditorTool,
+  DrawingHandleDragOperation,
   DrawingObject,
   DrawingPropertyDefinition,
   SeriesType,
@@ -346,6 +351,9 @@ let layout: ChartLayout | undefined;
 let panels: PanelArea[] = [];
 let interactionEngine: InteractionEngine | undefined;
 let drawingDragStart: { x: number; y: number } | undefined;
+let drawingHandleDragOperation: DrawingHandleDragOperation | undefined;
+let drawingHandleDragPoint: { x: number; y: number } | undefined;
+let drawingPreviewDrawings: DrawingObject[] | undefined;
 let lastKeyboardCommandText = "none";
 let viewportCoversNextCrosshairClear = false;
 let skipCurrentCrosshairRenderInvalidation = false;
@@ -475,7 +483,7 @@ function createRenderContext(
       seriesType: chartEngine.getState().seriesType,
       panels,
       visualOutputs: activeVisualOutputs,
-      drawings: drawingEditor.getState().drawings,
+      drawings: drawingPreviewDrawings ?? drawingEditor.getState().drawings,
       selectedDrawingIds: drawingEditor.getState().selectedDrawingIds
     }
   };
@@ -1129,6 +1137,9 @@ function createCurrentInteractionEngine(): InteractionEngine {
 
 function cancelPointerInteraction(): void {
   drawingDragStart = undefined;
+  drawingHandleDragOperation = undefined;
+  drawingHandleDragPoint = undefined;
+  drawingPreviewDrawings = undefined;
   crosshair = undefined;
   if (layout && viewport) {
     interactionEngine = createCurrentInteractionEngine();
@@ -1144,6 +1155,9 @@ function clearTransientInteraction(inputType: "leave" | "blur"): void {
 
 function clearIndicatorInteractionState(): void {
   drawingDragStart = undefined;
+  drawingHandleDragOperation = undefined;
+  drawingHandleDragPoint = undefined;
+  drawingPreviewDrawings = undefined;
   crosshair = undefined;
   interactionEngine = undefined;
   lastKeyboardCommandText = "none";
@@ -1238,7 +1252,7 @@ function finishPointerInteraction(event: PointerEvent, canceled = false): void {
     return;
   }
 
-  if (handleDrawingPointerUp()) {
+  if (handleDrawingPointerUp(point)) {
     return;
   }
 
@@ -1435,6 +1449,27 @@ function handleDrawingPointerDown(point: { x: number; y: number }): boolean {
     return true;
   }
 
+  const hitHandle = hitTestDrawingEditHandle(drawingEditor.getSelectedEditHandles(), point, {
+    radius: 10
+  });
+
+  if (hitHandle) {
+    const operation = beginDrawingHandleDrag({
+      handle: hitHandle,
+      drawings: editorState.drawings,
+      selectedDrawingIds: editorState.selectedDrawingIds,
+      startPoint: point
+    });
+
+    if (operation) {
+      drawingHandleDragOperation = operation;
+      drawingHandleDragPoint = point;
+      drawingPreviewDrawings = undefined;
+      renderStatic();
+      return true;
+    }
+  }
+
   const hitDrawing = hitTestDrawing(point, editorState.drawings);
 
   if (!hitDrawing) {
@@ -1448,11 +1483,20 @@ function handleDrawingPointerDown(point: { x: number; y: number }): boolean {
 }
 
 function handleDrawingPointerMove(event: PointerEvent): boolean {
+  const point = getCanvasPoint(event);
+
+  if (drawingHandleDragOperation) {
+    const preview = updateDrawingHandleDrag(drawingHandleDragOperation, point);
+
+    drawingHandleDragPoint = point;
+    drawingPreviewDrawings = preview?.drawings;
+    renderStatic();
+    return true;
+  }
+
   if (!drawingDragStart) {
     return false;
   }
-
-  const point = getCanvasPoint(event);
 
   drawingEditor.dragSelected({
     dx: point.x - drawingDragStart.x,
@@ -1463,12 +1507,39 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
   return true;
 }
 
-function handleDrawingPointerUp(): boolean {
+function handleDrawingPointerUp(point: { x: number; y: number }): boolean {
+  if (drawingHandleDragOperation) {
+    return finishDrawingHandlePointerDrag(point);
+  }
+
   if (!drawingDragStart) {
     return false;
   }
 
   drawingDragStart = undefined;
+  return true;
+}
+
+function finishDrawingHandlePointerDrag(point: { x: number; y: number }): boolean {
+  if (!drawingHandleDragOperation) {
+    return false;
+  }
+
+  const operation = drawingHandleDragOperation;
+  const finalPoint = drawingHandleDragPoint ?? point;
+  const command = finishDrawingHandleDrag(operation, finalPoint);
+
+  drawingHandleDragOperation = undefined;
+  drawingHandleDragPoint = undefined;
+  drawingPreviewDrawings = undefined;
+
+  if (!command) {
+    renderStatic();
+    return true;
+  }
+
+  executeDrawingCommand(command);
+
   return true;
 }
 

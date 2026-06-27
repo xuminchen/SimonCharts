@@ -6,11 +6,15 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  beginDrawingHandleDrag,
+  finishDrawingHandleDrag,
   getDrawingEditHandles,
   getDrawingPropertySchema,
+  hitTestDrawingEditHandle,
   normalizeDrawingSelectionBounds,
   resizeDrawing,
   rotateDrawing,
+  updateDrawingHandleDrag,
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
@@ -31,6 +35,8 @@ import type {
   DrawingEditorCapabilities,
   DrawingEditorCommand,
   DrawingEditHandle,
+  DrawingHandleDragOperation,
+  DrawingHandleDragPreview,
   DrawingObject,
   DrawingResizeOptions,
   DrawingRotateOptions,
@@ -80,6 +86,31 @@ const editHandles: DrawingEditHandle[] = getDrawingEditHandles({
   type: "trendLine",
   anchors: [{ x: 1, y: 2 }, { x: 3, y: 4 }]
 });
+const hitHandle: DrawingEditHandle | undefined = hitTestDrawingEditHandle(
+  editHandles,
+  { x: 1, y: 2 },
+  { kinds: ["anchor"], radius: 2 }
+);
+const handleDragOperation: DrawingHandleDragOperation | undefined = hitHandle
+  ? beginDrawingHandleDrag({
+      handle: hitHandle,
+      drawings: [
+        {
+          id: "handles",
+          type: "trendLine",
+          anchors: [{ x: 1, y: 2 }, { x: 3, y: 4 }]
+        }
+      ],
+      selectedDrawingIds: ["handles"],
+      startPoint: hitHandle
+    })
+  : undefined;
+const handleDragPreview: DrawingHandleDragPreview | undefined = handleDragOperation
+  ? updateDrawingHandleDrag(handleDragOperation, { x: 5, y: 6 })
+  : undefined;
+const handleDragCommand: DrawingEditorCommand | undefined = handleDragOperation
+  ? finishDrawingHandleDrag(handleDragOperation, { x: 5, y: 6 })
+  : undefined;
 const transformedDrawing: DrawingObject = rotateDrawing(
   resizeDrawing(
     {
@@ -223,6 +254,10 @@ void resizeCommand;
 void rotateCommand;
 void boundsCommand;
 void editHandles;
+void hitHandle;
+void handleDragOperation;
+void handleDragPreview;
+void handleDragCommand;
 void transformedDrawing;
 void parameterProperty;
 void frame;

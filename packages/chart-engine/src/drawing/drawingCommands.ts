@@ -17,6 +17,12 @@ export type DrawingEditorCommand =
   | { type: "selectDrawing"; drawingId: string }
   | { type: "selectDrawings"; drawingIds: string[] }
   | { type: "selectDrawingsInBounds"; bounds: DrawingSelectionBounds; additive?: boolean }
+  | {
+      type: "dragAnchor";
+      drawingId: string;
+      anchorIndex: number;
+      point: { x: number; y: number; time?: number; price?: number };
+    }
   | { type: "bringSelectedForward" }
   | { type: "sendSelectedBackward" }
   | { type: "copySelected" }
