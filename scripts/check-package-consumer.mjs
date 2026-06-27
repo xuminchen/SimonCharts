@@ -1,6 +1,7 @@
 import {
   calculateCoreIndicator,
   applyChartExtension,
+  checkEngineCapabilityRequirements,
   createChartEngine,
   createEngineCapabilityManifest,
   createChartExtension,
@@ -38,6 +39,13 @@ const engine = createChartEngine({
   seriesType: "candles"
 });
 const engineCapabilities = createEngineCapabilityManifest();
+const engineCompatibility = checkEngineCapabilityRequirements(engineCapabilities, {
+  seriesTypes: ["candles", "line"],
+  drawingTypes: ["trendLine"],
+  coreIndicatorIds: ["MA", "MACD"],
+  visualOutputTypes: ["line"],
+  interactionCapabilities: ["hitTest", "magnetSnap"]
+});
 
 if (
   engineCapabilities.packageName !== "@simoncharts/chart-engine" ||
@@ -47,6 +55,10 @@ if (
   engineCapabilities.drawingTools.length !== engineCapabilities.drawingTypes.length
 ) {
   throw new Error("Package consumer failed to read engine capability manifest");
+}
+
+if (!engineCompatibility.compatible || engineCompatibility.missing.length !== 0) {
+  throw new Error("Package consumer failed to check engine capability requirements");
 }
 
 engine.setViewport({

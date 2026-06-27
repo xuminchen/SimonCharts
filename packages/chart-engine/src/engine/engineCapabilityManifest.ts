@@ -57,6 +57,39 @@ export interface EngineCapabilityManifest {
   extensionContributionTypes: ExtensionContributionType[];
 }
 
+export type EngineCapabilityRequirementKey =
+  | "seriesTypes"
+  | "drawingTypes"
+  | "coreIndicatorIds"
+  | "visualOutputTypes"
+  | "drawingEditorCapabilities"
+  | "interactionCapabilities"
+  | "extensionContributionTypes";
+
+export type EngineCapabilityRequirements = Partial<
+  Record<EngineCapabilityRequirementKey, readonly string[]>
+>;
+
+export interface EngineCapabilityRequirementGap {
+  key: EngineCapabilityRequirementKey;
+  values: string[];
+}
+
+export interface EngineCapabilityCheckResult {
+  compatible: boolean;
+  missing: EngineCapabilityRequirementGap[];
+}
+
+const requirementKeys: readonly EngineCapabilityRequirementKey[] = [
+  "seriesTypes",
+  "drawingTypes",
+  "coreIndicatorIds",
+  "visualOutputTypes",
+  "drawingEditorCapabilities",
+  "interactionCapabilities",
+  "extensionContributionTypes"
+];
+
 const visualOutputTypes: VisualOutputType[] = ["line", "histogram", "band", "marker"];
 
 const drawingEditorCapabilities: DrawingEditorCapability[] = [
@@ -106,5 +139,35 @@ export function createEngineCapabilityManifest(): EngineCapabilityManifest {
     drawingEditorCapabilities: [...drawingEditorCapabilities],
     interactionCapabilities: [...interactionCapabilities],
     extensionContributionTypes: [...extensionContributionTypes]
+  };
+}
+
+export function checkEngineCapabilityRequirements(
+  manifest: EngineCapabilityManifest,
+  requirements: EngineCapabilityRequirements
+): EngineCapabilityCheckResult {
+  const missing: EngineCapabilityRequirementGap[] = [];
+
+  for (const key of requirementKeys) {
+    const requiredValues = requirements[key];
+
+    if (requiredValues === undefined) {
+      continue;
+    }
+
+    const availableValues = new Set<string>(manifest[key]);
+    const missingValues = requiredValues.filter((value) => !availableValues.has(value));
+
+    if (missingValues.length > 0) {
+      missing.push({
+        key,
+        values: missingValues
+      });
+    }
+  }
+
+  return {
+    compatible: missing.length === 0,
+    missing
   };
 }

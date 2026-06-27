@@ -1,5 +1,6 @@
 import {
   applyChartExtension,
+  checkEngineCapabilityRequirements,
   createChartEngine,
   createEngineCapabilityManifest,
   createChartExtension,
@@ -70,7 +71,11 @@ import type {
   DrawingRotateOptions,
   DrawingSelectionBoxOperation,
   DrawingSelectionBoxPreview,
+  EngineCapabilityCheckResult,
   EngineCapabilityManifest,
+  EngineCapabilityRequirementGap,
+  EngineCapabilityRequirementKey,
+  EngineCapabilityRequirements,
   EngineDrawingToolCapability,
   ExtensionContributionType,
   DrawingParameterPropertyDefinition,
@@ -98,6 +103,17 @@ const interactionCapability: InteractionCapability = engineCapabilityManifest.in
 const extensionContributionType: ExtensionContributionType =
   engineCapabilityManifest.extensionContributionTypes[0];
 const visualOutputType: VisualOutputType = engineCapabilityManifest.visualOutputTypes[0];
+const engineCapabilityRequirementKey: EngineCapabilityRequirementKey = "seriesTypes";
+const engineCapabilityRequirements: EngineCapabilityRequirements = {
+  [engineCapabilityRequirementKey]: ["candles", "line"],
+  drawingTypes: ["trendLine"]
+};
+const engineCapabilityCheckResult: EngineCapabilityCheckResult =
+  checkEngineCapabilityRequirements(engineCapabilityManifest, engineCapabilityRequirements);
+const engineCapabilityRequirementGap: EngineCapabilityRequirementGap = {
+  key: "seriesTypes",
+  values: ["futureSeries"]
+};
 const drawingEditor: DrawingEditor = createDrawingEditor({ drawings: [] });
 const customDrawingType: CustomDrawingType = "consumer.measurement-box";
 const drawingPropertySchema: DrawingPropertySchema = getDrawingPropertySchema("trendLine");
@@ -382,6 +398,10 @@ void drawingEditorCapability;
 void interactionCapability;
 void extensionContributionType;
 void visualOutputType;
+void engineCapabilityRequirementKey;
+void engineCapabilityRequirements;
+void engineCapabilityCheckResult;
+void engineCapabilityRequirementGap;
 void drawingPropertySchema;
 void metadataCommand;
 void nudgeCommand;

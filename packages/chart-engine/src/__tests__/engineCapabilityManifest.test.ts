@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   builtInDrawingToolDefinitions,
+  checkEngineCapabilityRequirements,
   coreIndicatorIds,
   createEngineCapabilityManifest,
   drawingTypes,
@@ -118,6 +119,129 @@ describe("engine capability manifest", () => {
 
     for (const word of blockedWords) {
       expect(manifestTokens).not.toContain(word);
+    }
+  });
+
+  it("accepts requirements derived from the current manifest", () => {
+    const manifest = createEngineCapabilityManifest();
+    const result = checkEngineCapabilityRequirements(manifest, {
+      seriesTypes: manifest.seriesTypes,
+      drawingTypes: manifest.drawingTypes,
+      coreIndicatorIds: manifest.coreIndicatorIds,
+      visualOutputTypes: manifest.visualOutputTypes,
+      drawingEditorCapabilities: manifest.drawingEditorCapabilities,
+      interactionCapabilities: manifest.interactionCapabilities,
+      extensionContributionTypes: manifest.extensionContributionTypes
+    });
+
+    expect(result).toEqual({
+      compatible: true,
+      missing: []
+    });
+  });
+
+  it("reports unknown future values as missing", () => {
+    const manifest = createEngineCapabilityManifest();
+    const result = checkEngineCapabilityRequirements(manifest, {
+      seriesTypes: ["line", "futureSeries"],
+      visualOutputTypes: ["futureVisual"]
+    });
+
+    expect(result).toEqual({
+      compatible: false,
+      missing: [
+        {
+          key: "seriesTypes",
+          values: ["futureSeries"]
+        },
+        {
+          key: "visualOutputTypes",
+          values: ["futureVisual"]
+        }
+      ]
+    });
+  });
+
+  it("returns multiple missing groups in deterministic requirement order", () => {
+    const manifest = createEngineCapabilityManifest();
+    const result = checkEngineCapabilityRequirements(manifest, {
+      extensionContributionTypes: ["futureContribution"],
+      seriesTypes: ["futureSeries"],
+      drawingEditorCapabilities: ["futureEditor"],
+      drawingTypes: ["futureDrawing"]
+    });
+
+    expect(result.missing.map((gap) => gap.key)).toEqual([
+      "seriesTypes",
+      "drawingTypes",
+      "drawingEditorCapabilities",
+      "extensionContributionTypes"
+    ]);
+  });
+
+  it("preserves caller order for missing values", () => {
+    const manifest = createEngineCapabilityManifest();
+    const result = checkEngineCapabilityRequirements(manifest, {
+      seriesTypes: ["futureSecond", "line", "futureFirst", "futureThird"]
+    });
+
+    expect(result.missing).toEqual([
+      {
+        key: "seriesTypes",
+        values: ["futureSecond", "futureFirst", "futureThird"]
+      }
+    ]);
+  });
+
+  it("does not mutate manifest or requirement inputs", () => {
+    const manifest = createEngineCapabilityManifest();
+    const requirements = {
+      seriesTypes: ["futureSeries", "line"],
+      drawingTypes: ["futureDrawing"]
+    } as const;
+    const manifestSnapshot = JSON.stringify(manifest);
+    const requirementsSnapshot = JSON.stringify(requirements);
+
+    checkEngineCapabilityRequirements(manifest, requirements);
+
+    expect(JSON.stringify(manifest)).toBe(manifestSnapshot);
+    expect(JSON.stringify(requirements)).toBe(requirementsSnapshot);
+  });
+
+  it("keeps stringified requirement result free of host and business vocabulary", () => {
+    const resultText = JSON.stringify(
+      checkEngineCapabilityRequirements(createEngineCapabilityManifest(), {
+        seriesTypes: ["futureSeries"],
+        drawingTypes: ["futureDrawing"],
+        coreIndicatorIds: ["futureIndicator"]
+      })
+    );
+    const resultTokens = resultText.toLowerCase().split(/[^a-z0-9]+/);
+    const blockedWords = [
+      "host",
+      "tradingreviewsystem",
+      "api",
+      "apis",
+      "store",
+      "stores",
+      "schema",
+      "route",
+      "routes",
+      "review",
+      "strategy",
+      "watchlist",
+      "ai",
+      "auth",
+      "account",
+      "billing",
+      "persistence",
+      "product",
+      "workflow",
+      "workflows"
+    ];
+
+    for (const word of blockedWords) {
+      expect(resultTokens).not.toContain(word);
     }
   });
 });

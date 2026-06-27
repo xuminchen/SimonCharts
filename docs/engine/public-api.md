@@ -4,6 +4,7 @@ Import from the package root:
 
 ```ts
 import {
+  checkEngineCapabilityRequirements,
   createChartEngine,
   createEngineCapabilityManifest,
   renderStaticChart,
@@ -62,6 +63,22 @@ console.log(manifest.coreIndicatorIds.length); // 16
 The manifest is deterministic and host-independent. It summarizes package metadata, release channel, supported series types, built-in drawing types, built-in drawing tool summaries, core indicator ids, visual output renderer families, drawing editor capabilities, interaction capabilities, and extension contribution types.
 
 Hosts can render the manifest in diagnostics, documentation, onboarding, and compatibility checks. Hosts still own product feature flags, permissions, persistence, routing, remote plugin loading, collaboration, and business workflows.
+
+Use `checkEngineCapabilityRequirements()` when a consumer needs a deterministic compatibility check against a manifest:
+
+```ts
+const result = checkEngineCapabilityRequirements(manifest, {
+  seriesTypes: ["candles", "line"],
+  drawingTypes: ["trendLine"],
+  coreIndicatorIds: ["MA", "MACD"]
+});
+
+if (!result.compatible) {
+  console.log(result.missing);
+}
+```
+
+The checker compares neutral manifest fields only. Unknown future strings are reported as missing rather than rejected, which keeps external configuration and future package versions easy to diagnose. The checker is not a host feature flag, permission, persistence, routing, plugin trust, or collaboration system.
 
 ## Facade
 

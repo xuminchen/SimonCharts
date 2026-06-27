@@ -9,6 +9,7 @@
   "calculateCoreIndicator",
   "calculateDefaultMovingAverages",
   "calculateMovingAverage",
+  "checkEngineCapabilityRequirements",
   "chooseNearestVisualHit",
   "computeVisiblePriceRange",
   "computeVisibleRange",
