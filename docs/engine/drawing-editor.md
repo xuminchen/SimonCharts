@@ -41,11 +41,26 @@ editor.pointerDown({ x: 120, y: 180 });
 editor.pointerDown({ x: 260, y: 240 });
 ```
 
-The editor owns neutral operations such as select, box select, drag, anchor edits, keyboard nudging, style edits, metadata edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
+The editor owns neutral operations such as select, box select, drag, anchor edits, keyboard nudging, resize, rotate, style edits, metadata edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
 
-Style, metadata, and text commands are exposed as `updateSelectedStyle(style)`, `updateSelectedMetadata(metadata)`, and `updateSelectedText(text)`. The corresponding command payloads are `DrawingEditorCommand` entries: `selectDrawingsInBounds`, `nudgeSelected`, `updateSelectedStyle`, `updateSelectedMetadata`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, `duplicateSelected`, `lockSelected`, `unlockSelected`, `hideSelected`, and `showSelected`.
+Style, metadata, and text commands are exposed as `updateSelectedStyle(style)`, `updateSelectedMetadata(metadata)`, and `updateSelectedText(text)`. Transform commands are exposed as `resizeSelected(options)` and `rotateSelected(options)`. The corresponding command payloads are `DrawingEditorCommand` entries: `selectDrawingsInBounds`, `nudgeSelected`, `resizeSelected`, `rotateSelected`, `updateSelectedStyle`, `updateSelectedMetadata`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, `duplicateSelected`, `lockSelected`, `unlockSelected`, `hideSelected`, and `showSelected`.
 
-`getSelectedEditHandles()` returns Engine-derived anchor, resize, and rotate handle metadata for selected drawings. The Engine exposes handle coordinates and ids only; hosts own DOM hit regions, cursor presentation, and later resize/rotate transform UI.
+`getSelectedEditHandles()` returns Engine-derived anchor, resize, and rotate handle metadata for selected drawings. The Engine exposes handle coordinates and ids only; hosts own DOM hit regions and cursor presentation.
+
+## Transform Kernel
+
+SimonCharts v1.0 adds Engine-owned resize and rotate math:
+
+- `resizeDrawing(drawing, options)`
+- `resizeDrawings(drawings, options)`
+- `rotateDrawing(drawing, options)`
+- `rotateDrawings(drawings, options)`
+- `DrawingResizeOptions`
+- `DrawingRotateOptions`
+
+`DrawingResizeOptions` uses a resize handle position, original `DrawingSelectionBounds`, target point, and optional minimum size. The Engine maps finite anchor `x` and `y` values from the original bounds to the resized bounds while preserving anchor `time`, `index`, and `price` fields. `DrawingRotateOptions` uses a supplied center and radians. Non-screen anchors remain unchanged.
+
+Hosts translate pointer drags into these neutral options, then call `resizeSelected` or `rotateSelected`. The Engine applies transforms only to editable selected drawings and keeps the operation inside undo/redo history. Hosts still own DOM events, pointer capture, visual handles, persistence, collaboration, and product workflows.
 
 ## Property Schema
 
@@ -92,6 +107,8 @@ Drawing rendering is routed through reusable figure primitives:
 - `getDrawingSelectionBounds(drawings)`
 - `getDrawingIdsInBounds(drawings, bounds)`
 - `normalizeDrawingSelectionBounds(start, end)`
+- `resizeDrawing(drawing, options)`
+- `rotateDrawing(drawing, options)`
 - `createBuiltInFigureRenderers()`
 - `createFigureRendererRegistry()`
 - `getFigureBounds(figure)`

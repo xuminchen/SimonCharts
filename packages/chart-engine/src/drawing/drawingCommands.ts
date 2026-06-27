@@ -1,4 +1,5 @@
 import type { DrawingSelectionBounds } from "./drawingInteraction";
+import type { DrawingResizeOptions, DrawingRotateOptions } from "./drawingTransform";
 import type { DrawingObject, DrawingStyle, DrawingType } from "./drawingTypes";
 
 export type DrawingEditorTool = DrawingType | "select";
@@ -22,6 +23,8 @@ export type DrawingEditorCommand =
   | { type: "pasteCopied"; offset: { dx: number; dy: number } }
   | { type: "duplicateSelected"; offset: { dx: number; dy: number } }
   | { type: "nudgeSelected"; delta: { dx: number; dy: number } }
+  | { type: "resizeSelected"; options: DrawingResizeOptions }
+  | { type: "rotateSelected"; options: DrawingRotateOptions }
   | { type: "updateSelectedStyle"; style: DrawingStyle }
   | { type: "updateSelectedMetadata"; metadata: Record<string, unknown> }
   | { type: "updateSelectedText"; text: string }

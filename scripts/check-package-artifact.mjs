@@ -45,6 +45,7 @@ const requiredFiles = [
   "dist/drawing/drawingPropertySchema.d.ts",
   "dist/drawing/drawingRegistry.d.ts",
   "dist/drawing/drawingToolRegistry.d.ts",
+  "dist/drawing/drawingTransform.d.ts",
   "dist/figures/figureRegistry.d.ts",
   "dist/render/staticRenderer.d.ts",
   "dist/series/seriesRegistry.d.ts",

@@ -27,6 +27,10 @@ test("creates edits deletes and restores a trend line drawing", async ({ page })
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"x": 121/);
+  await page.getByTestId("resize-drawing").click();
+  await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"x": 273/);
+  await page.getByTestId("rotate-drawing").click();
+  await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"x": 233/);
   await page.mouse.down();
   await page.mouse.move(box.x + 220, box.y + 250);
   await page.mouse.up();

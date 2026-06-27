@@ -24,6 +24,7 @@ import {
   defaultChartTheme,
   builtInDrawingToolDefinitions,
   deserializeDrawingObject,
+  getDrawingSelectionBounds,
   getDrawingPropertyDefinitionsForDrawing,
   renderOverlay,
   fixtureDailyCandleSeries,
@@ -506,6 +507,7 @@ function syncDrawingObjectManager(): void {
 
   drawingObjectManager.replaceChildren(createWorkbenchTitle("Objects"));
   drawingObjectManager.append(createDrawingHandleSummary(handles.length));
+  drawingObjectManager.append(createDrawingTransformControls());
 
   if (items.length === 0) {
     const empty = document.createElement("div");
@@ -545,6 +547,82 @@ function createDrawingHandleSummary(count: number): HTMLDivElement {
   summary.textContent = `${count} handles`;
 
   return summary;
+}
+
+function createDrawingTransformControls(): HTMLDivElement {
+  const controls = document.createElement("div");
+  const resizeButton = document.createElement("button");
+  const rotateButton = document.createElement("button");
+  const canTransform = drawingEditor.getCapabilities().hasEditableSelection;
+
+  controls.className = "drawing-transform-controls";
+  resizeButton.type = "button";
+  resizeButton.dataset.testid = "resize-drawing";
+  resizeButton.textContent = "Resize";
+  resizeButton.disabled = !canTransform;
+  resizeButton.addEventListener("click", () => {
+    resizeSelectedDrawing();
+  });
+
+  rotateButton.type = "button";
+  rotateButton.dataset.testid = "rotate-drawing";
+  rotateButton.textContent = "Rotate";
+  rotateButton.disabled = !canTransform;
+  rotateButton.addEventListener("click", () => {
+    rotateSelectedDrawing();
+  });
+
+  controls.append(resizeButton, rotateButton);
+
+  return controls;
+}
+
+function resizeSelectedDrawing(): void {
+  const bounds = getEditableSelectionBounds();
+
+  if (!bounds) {
+    return;
+  }
+
+  executeDrawingCommand({
+    type: "resizeSelected",
+    options: {
+      handle: "bottomRight",
+      fromBounds: bounds,
+      toPoint: {
+        x: bounds.x + bounds.width + 12,
+        y: bounds.y + bounds.height + 12
+      }
+    }
+  });
+}
+
+function rotateSelectedDrawing(): void {
+  const bounds = getEditableSelectionBounds();
+
+  if (!bounds) {
+    return;
+  }
+
+  executeDrawingCommand({
+    type: "rotateSelected",
+    options: {
+      center: {
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2
+      },
+      angleRadians: Math.PI / 2
+    }
+  });
+}
+
+function getEditableSelectionBounds(): ReturnType<typeof getDrawingSelectionBounds> {
+  const state = drawingEditor.getState();
+  const selectedIds = new Set(state.selectedDrawingIds);
+
+  return getDrawingSelectionBounds(
+    state.drawings.filter((drawing) => selectedIds.has(drawing.id) && drawing.locked !== true)
+  );
 }
 
 function syncDrawingPropertyPanel(): void {

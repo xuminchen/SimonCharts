@@ -9,6 +9,8 @@ import {
   getDrawingEditHandles,
   getDrawingPropertySchema,
   normalizeDrawingSelectionBounds,
+  resizeDrawing,
+  rotateDrawing,
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
@@ -30,6 +32,8 @@ import type {
   DrawingEditorCommand,
   DrawingEditHandle,
   DrawingObject,
+  DrawingResizeOptions,
+  DrawingRotateOptions,
   DrawingParameterPropertyDefinition,
   DrawingPropertySchema,
   IndicatorVisualOutput,
@@ -56,6 +60,17 @@ const metadataCommand: DrawingEditorCommand = {
   metadata: { fibonacciLevels: [0, 1] }
 };
 const nudgeCommand: DrawingEditorCommand = { type: "nudgeSelected", delta: { dx: 1, dy: 0 } };
+const resizeOptions: DrawingResizeOptions = {
+  handle: "bottomRight",
+  fromBounds: { x: 0, y: 0, width: 10, height: 10 },
+  toPoint: { x: 20, y: 20 }
+};
+const rotateOptions: DrawingRotateOptions = {
+  center: { x: 10, y: 10 },
+  angleRadians: Math.PI / 2
+};
+const resizeCommand: DrawingEditorCommand = { type: "resizeSelected", options: resizeOptions };
+const rotateCommand: DrawingEditorCommand = { type: "rotateSelected", options: rotateOptions };
 const boundsCommand: DrawingEditorCommand = {
   type: "selectDrawingsInBounds",
   bounds: normalizeDrawingSelectionBounds({ x: 0, y: 0 }, { x: 100, y: 100 })
@@ -65,6 +80,17 @@ const editHandles: DrawingEditHandle[] = getDrawingEditHandles({
   type: "trendLine",
   anchors: [{ x: 1, y: 2 }, { x: 3, y: 4 }]
 });
+const transformedDrawing: DrawingObject = rotateDrawing(
+  resizeDrawing(
+    {
+      id: "transform",
+      type: "rectangle",
+      anchors: [{ x: 0, y: 0 }, { x: 10, y: 10 }]
+    },
+    resizeOptions
+  ),
+  rotateOptions
+);
 const parameterProperty = drawingPropertySchema.properties.find(
   (property): property is DrawingParameterPropertyDefinition => property.scope === "parameters"
 );
@@ -193,8 +219,11 @@ void capabilities;
 void drawingPropertySchema;
 void metadataCommand;
 void nudgeCommand;
+void resizeCommand;
+void rotateCommand;
 void boundsCommand;
 void editHandles;
+void transformedDrawing;
 void parameterProperty;
 void frame;
 void invalidations;

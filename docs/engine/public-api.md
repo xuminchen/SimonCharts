@@ -83,6 +83,7 @@ Drawing platform exports include:
 - drawing tools: `drawingTypes`, `DrawingType`, `DrawingToolDefinition`, `builtInDrawingToolDefinitions`, `createDrawingToolRegistry()`
 - editor state: `createDrawingEditor()`, `DrawingEditor`, `DrawingEditorCommand`, `DrawingObjectManagerItem`
 - interaction primitives: `getDrawingEditHandles()`, `getDrawingSelectionBounds()`, `getDrawingIdsInBounds()`, `normalizeDrawingSelectionBounds()`
+- transform primitives: `resizeDrawing()`, `resizeDrawings()`, `rotateDrawing()`, `rotateDrawings()`, `DrawingResizeOptions`, `DrawingRotateOptions`, `DrawingTransformPoint`
 - property schema: `getDrawingPropertySchema()`, `getDrawingPropertyDefinitionsForDrawing()`, `DrawingPropertySchema`, `DrawingPropertyDefinition`, `DrawingParameterPropertyDefinition`, `isTextDrawingType()`, `isFillDrawingType()`
 - drawing conversion and render: `createFiguresForDrawing()`, `createDefaultDrawingRendererRegistry()`, `createDrawingLayer()`
 - drawing persistence: `currentDrawingSchemaVersion`, `SerializedDrawingObject`, `serializeDrawingObject()`, `deserializeDrawingObject()`, `migrateSerializedDrawing()`
@@ -150,7 +151,7 @@ The schema is command-oriented and host-independent. Style properties point to `
 
 Advanced drawing parameters use Engine-owned metadata keys such as `fibonacciLevels`, `gannRatios`, `positionLabel`, and `rangeLabel`. Rendering consumes valid Fibonacci level lists, Gann ratio lists, and label metadata, while invalid or missing metadata falls back to Engine defaults.
 
-Drawing interaction primitives include `selectDrawingsInBounds`, `nudgeSelected`, `getSelectedEditHandles`, `getDrawingEditHandles`, `getDrawingSelectionBounds`, `getDrawingIdsInBounds`, and `normalizeDrawingSelectionBounds`. These are DOM-free contracts for selection boxes, keyboard nudging, and edit handle metadata. Hosts still own pointer capture, keyboard event routing, cursor presentation, and full resize/rotate transforms.
+Drawing interaction primitives include `selectDrawingsInBounds`, `nudgeSelected`, `getSelectedEditHandles`, `getDrawingEditHandles`, `getDrawingSelectionBounds`, `getDrawingIdsInBounds`, and `normalizeDrawingSelectionBounds`. Drawing transform primitives include `resizeDrawing`, `resizeDrawings`, `rotateDrawing`, `rotateDrawings`, `resizeSelected`, and `rotateSelected`. These are DOM-free contracts for selection boxes, keyboard nudging, edit handle metadata, and resize/rotate geometry mutation. Hosts still own pointer capture, keyboard event routing, cursor presentation, visual handle UI, persistence, and collaboration.
 
 Custom drawing types are allowed only when namespaced, for example `acme.measurement-box`. `drawingTypes` remains the built-in drawing list. Use `isBuiltInDrawingType()`, `isCustomDrawingType()`, and `isDrawingType()` for validation.
 

@@ -153,6 +153,63 @@ describe("complete drawing editor", () => {
     expect(findDrawing(editor.getState().drawings, "free").anchors[0]).toEqual({ x: 2, y: -3 });
   });
 
+  it("resizes and rotates selected editable drawings through commands", () => {
+    const events: string[] = [];
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "free", type: "rectangle", anchors: [{ x: 0, y: 0 }, { x: 10, y: 10 }] },
+        { id: "locked", type: "rectangle", anchors: [{ x: 20, y: 20 }, { x: 30, y: 30 }], locked: true }
+      ],
+      onEvent(event) {
+        if (event.type === "drawingUpdated") {
+          events.push(event.drawing.id);
+        }
+      }
+    });
+
+    editor.selectDrawings(["free", "locked"]);
+    editor.executeCommand({
+      type: "resizeSelected",
+      options: {
+        handle: "bottomRight",
+        fromBounds: { x: 0, y: 0, width: 10, height: 10 },
+        toPoint: { x: 20, y: 20 }
+      }
+    });
+
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { x: 0, y: 0 },
+      { x: 20, y: 20 }
+    ]);
+    expect(findDrawing(editor.getState().drawings, "locked").anchors).toEqual([
+      { x: 20, y: 20 },
+      { x: 30, y: 30 }
+    ]);
+
+    editor.executeCommand({
+      type: "rotateSelected",
+      options: { center: { x: 10, y: 10 }, angleRadians: Math.PI / 2 }
+    });
+
+    expect(roundAnchors(findDrawing(editor.getState().drawings, "free"))).toEqual([
+      { x: 20, y: 0 },
+      { x: 0, y: 20 }
+    ]);
+    expect(events).toEqual(["free", "free"]);
+
+    editor.undo();
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { x: 0, y: 0 },
+      { x: 20, y: 20 }
+    ]);
+
+    editor.redo();
+    expect(roundAnchors(findDrawing(editor.getState().drawings, "free"))).toEqual([
+      { x: 20, y: 0 },
+      { x: 0, y: 20 }
+    ]);
+  });
+
   it("executes neutral drawing editor commands", () => {
     const editor = createDrawingEditor({
       drawings: [
@@ -606,4 +663,17 @@ function findDrawing(drawings: DrawingObject[], id: string): DrawingObject {
   }
 
   return drawing;
+}
+
+function roundAnchors(drawing: DrawingObject): Array<{ x: number; y: number }> {
+  return drawing.anchors.map((anchor) => ({
+    x: round(anchor.x ?? 0),
+    y: round(anchor.y ?? 0)
+  }));
+}
+
+function round(value: number): number {
+  const rounded = Math.round(value * 1000000) / 1000000;
+
+  return Object.is(rounded, -0) ? 0 : rounded;
 }

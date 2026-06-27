@@ -10,6 +10,8 @@ import {
   getDrawingEditHandles,
   getDrawingPropertySchema,
   normalizeDrawingSelectionBounds,
+  resizeDrawing,
+  rotateDrawing,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -70,6 +72,18 @@ drawingEditor.executeCommand({ type: "copySelected" });
 drawingEditor.executeCommand({ type: "pasteCopied", offset: { dx: 4, dy: 6 } });
 drawingEditor.executeCommand({ type: "updateSelectedMetadata", metadata: { fibonacciLevels: [0, 1] } });
 drawingEditor.executeCommand({ type: "nudgeSelected", delta: { dx: 1, dy: 0 } });
+drawingEditor.executeCommand({
+  type: "resizeSelected",
+  options: {
+    handle: "bottomRight",
+    fromBounds: { x: 0, y: 0, width: 80, height: 80 },
+    toPoint: { x: 100, y: 100 }
+  }
+});
+drawingEditor.executeCommand({
+  type: "rotateSelected",
+  options: { center: { x: 50, y: 50 }, angleRadians: Math.PI / 4 }
+});
 
 if (drawingEditor.getState().drawings.length !== 2) {
   throw new Error("Package consumer failed to execute drawing editor commands");
@@ -90,6 +104,20 @@ drawingEditor.executeCommand({
 
 if (drawingEditor.getState().selectedDrawingIds.length === 0) {
   throw new Error("Package consumer failed to select drawings in bounds");
+}
+
+const resizedDrawing = resizeDrawing(drawing, {
+  handle: "bottomRight",
+  fromBounds: { x: 0, y: 0, width: 80, height: 80 },
+  toPoint: { x: 120, y: 120 }
+});
+const rotatedDrawing = rotateDrawing(resizedDrawing, {
+  center: { x: 60, y: 60 },
+  angleRadians: Math.PI / 2
+});
+
+if (!Number.isFinite(rotatedDrawing.anchors[0].x)) {
+  throw new Error("Package consumer failed to execute drawing transforms");
 }
 
 if (!drawingEditor.getCapabilities().canUndo) {

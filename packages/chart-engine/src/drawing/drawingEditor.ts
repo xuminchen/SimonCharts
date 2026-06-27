@@ -6,6 +6,12 @@ import {
   type DrawingEditHandle,
   type DrawingSelectionBounds
 } from "./drawingInteraction";
+import {
+  resizeDrawing,
+  rotateDrawing,
+  type DrawingResizeOptions,
+  type DrawingRotateOptions
+} from "./drawingTransform";
 import type {
   DrawingClipboard,
   DrawingEditorCapabilities,
@@ -51,6 +57,8 @@ export interface DrawingEditor {
   pasteCopied(offset: { dx: number; dy: number }): void;
   duplicateSelected(offset: { dx: number; dy: number }): void;
   nudgeSelected(delta: { dx: number; dy: number }): void;
+  resizeSelected(options: DrawingResizeOptions): void;
+  rotateSelected(options: DrawingRotateOptions): void;
   executeCommand(command: DrawingEditorCommand): void;
   updateSelectedStyle(style: DrawingStyle): void;
   updateSelectedMetadata(metadata: Record<string, unknown>): void;
@@ -174,6 +182,12 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     },
     nudgeSelected(delta) {
       api.dragSelected(delta);
+    },
+    resizeSelected(options) {
+      mutateSelected("resizeDrawing", (drawing) => resizeDrawing(drawing, options));
+    },
+    rotateSelected(options) {
+      mutateSelected("rotateDrawing", (drawing) => rotateDrawing(drawing, options));
     },
     executeCommand(command) {
       executeCommand(command);
@@ -347,6 +361,10 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return api.duplicateSelected(command.offset);
       case "nudgeSelected":
         return api.nudgeSelected(command.delta);
+      case "resizeSelected":
+        return api.resizeSelected(command.options);
+      case "rotateSelected":
+        return api.rotateSelected(command.options);
       case "updateSelectedStyle":
         return api.updateSelectedStyle(command.style);
       case "updateSelectedMetadata":

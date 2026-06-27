@@ -37,11 +37,11 @@ npm run guard:public-api
 npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
-npm run check:package-artifact
 npm run check:package-types
 npm run check:performance
 npm run check:release-readiness
 npm run build
+npm run check:package-artifact
 npm pack --dry-run -w @simoncharts/chart-engine
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ```
@@ -76,9 +76,22 @@ npm run check:package-types
 
 `guard:sdk-imports` verifies host-facing code imports `@simoncharts/chart-engine` only from the package root.
 
-`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, drawing metadata commands, drawing interaction primitives, and drawing property schema APIs.
+`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, drawing metadata commands, drawing interaction primitives, drawing transform primitives, and drawing property schema APIs.
 
-`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, and drawing interaction types.
+`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, drawing interaction, and drawing transform types.
+
+## v1.0 Drawing Transform Verification
+
+Focused drawing transform coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/drawingTransform.test.ts packages/chart-engine/src/__tests__/drawingEditorComplete.test.ts
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-editor.spec.ts
+```
+
+Unit coverage verifies `resizeDrawing`, `resizeDrawings`, `rotateDrawing`, `rotateDrawings`, editor `resizeSelected` and `rotateSelected` commands, locked drawing protection, update events, and undo/redo behavior.
+
+Browser coverage verifies the playground can execute Engine-owned resize and rotate commands for selected drawings and reflect the transformed coordinates through neutral drawing export JSON.
 
 ## v0.9 Platform Extensibility Verification
 
