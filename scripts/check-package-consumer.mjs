@@ -1,6 +1,7 @@
 import {
   calculateCoreIndicator,
   createChartEngine,
+  createDrawingEditor,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -43,6 +44,24 @@ if (engine.getState().drawings.length !== 1) {
 
 if (!macd.outputs.some((output) => output.panelId === "MACD")) {
   throw new Error("Package consumer failed to calculate MACD outputs");
+}
+
+const drawingEditor = createDrawingEditor({ drawings: [drawing] });
+drawingEditor.executeCommand({ type: "selectDrawing", drawingId: "host-drawing-1" });
+
+if (!drawingEditor.getCapabilities().canCopy) {
+  throw new Error("Package consumer failed to expose drawing editor capabilities");
+}
+
+drawingEditor.executeCommand({ type: "copySelected" });
+drawingEditor.executeCommand({ type: "pasteCopied", offset: { dx: 4, dy: 6 } });
+
+if (drawingEditor.getState().drawings.length !== 2) {
+  throw new Error("Package consumer failed to execute drawing editor commands");
+}
+
+if (!drawingEditor.getCapabilities().canUndo) {
+  throw new Error("Package consumer failed to expose drawing editor undo capability");
 }
 
 engine.destroy();

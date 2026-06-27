@@ -51,3 +51,13 @@ The engine owns:
 `HostAdapter` can be used for neutral callback integration. It should adapt from engine events to host behavior outside the engine package.
 
 The package build emits `dist/index.js` and `dist/index.d.ts`. Host applications should import from `@simoncharts/chart-engine`, not from `packages/chart-engine/src` or internal paths.
+
+v0.8 enforces this import contract for host-facing repository code with:
+
+```bash
+npm run guard:sdk-imports
+npm run check:package-types
+npm run check:package-consumer
+```
+
+`guard:sdk-imports` scans app and consumer fixture code for internal Engine imports. `check:package-types` compiles external type-only usage against the built package declarations. `check:package-consumer` verifies runtime package consumption from the package root.

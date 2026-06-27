@@ -34,11 +34,32 @@ npm run test
 npm run typecheck
 npm run guard:engine-boundary
 npm run guard:public-api
+npm run guard:sdk-imports
 npm run check:package-consumer
+npm run check:package-types
 npm run build
 npm pack --dry-run -w @simoncharts/chart-engine
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ```
+
+## v0.8 API Stabilization Verification
+
+Focused SDK boundary coverage:
+
+```bash
+npm run guard:public-api
+npm run guard:sdk-imports
+npm run check:package-consumer
+npm run check:package-types
+```
+
+`guard:public-api` verifies runtime root exports against `packages/chart-engine/api-surface.json`.
+
+`guard:sdk-imports` verifies host-facing code imports `@simoncharts/chart-engine` only from the package root.
+
+`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, and drawing editor command/capability APIs.
+
+`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see.
 
 ## v0.6 Rendering Hardening Verification
 
