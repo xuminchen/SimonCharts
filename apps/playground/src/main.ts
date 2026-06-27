@@ -502,8 +502,10 @@ function syncDrawingWorkbench(): void {
 
 function syncDrawingObjectManager(): void {
   const items = drawingEditor.getObjectManagerItems();
+  const handles = drawingEditor.getSelectedEditHandles();
 
   drawingObjectManager.replaceChildren(createWorkbenchTitle("Objects"));
+  drawingObjectManager.append(createDrawingHandleSummary(handles.length));
 
   if (items.length === 0) {
     const empty = document.createElement("div");
@@ -533,6 +535,16 @@ function syncDrawingObjectManager(): void {
     });
     drawingObjectManager.append(button);
   }
+}
+
+function createDrawingHandleSummary(count: number): HTMLDivElement {
+  const summary = document.createElement("div");
+
+  summary.className = "drawing-property-summary";
+  summary.dataset.testid = "drawing-handle-count";
+  summary.textContent = `${count} handles`;
+
+  return summary;
 }
 
 function syncDrawingPropertyPanel(): void {
@@ -1169,7 +1181,15 @@ overlayCanvas.addEventListener("pointerleave", () => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (isEditableTarget(event.target) || !isChartKeyboardCommand(event)) {
+  if (isEditableTarget(event.target)) {
+    return;
+  }
+
+  if (handleDrawingKeyboardCommand(event)) {
+    return;
+  }
+
+  if (!isChartKeyboardCommand(event)) {
     return;
   }
 
@@ -1218,6 +1238,40 @@ function isChartKeyboardCommand(event: KeyboardEvent): boolean {
     !event.metaKey &&
     (event.key === "+" || event.key === "-" || event.key === "0")
   );
+}
+
+function handleDrawingKeyboardCommand(event: KeyboardEvent): boolean {
+  if (event.altKey || event.ctrlKey || event.metaKey || !isDrawingNudgeKey(event.key)) {
+    return false;
+  }
+
+  if (!drawingEditor.getCapabilities().canNudge) {
+    return false;
+  }
+
+  event.preventDefault();
+  const step = event.shiftKey ? 10 : 1;
+
+  drawingEditor.executeCommand({ type: "nudgeSelected", delta: getNudgeDelta(event.key, step) });
+  renderStatic();
+  return true;
+}
+
+function isDrawingNudgeKey(key: string): boolean {
+  return key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
+}
+
+function getNudgeDelta(key: string, step: number): { dx: number; dy: number } {
+  switch (key) {
+    case "ArrowLeft":
+      return { dx: -step, dy: 0 };
+    case "ArrowRight":
+      return { dx: step, dy: 0 };
+    case "ArrowUp":
+      return { dx: 0, dy: -step };
+    default:
+      return { dx: 0, dy: step };
+  }
 }
 
 resetButton.addEventListener("click", () => {

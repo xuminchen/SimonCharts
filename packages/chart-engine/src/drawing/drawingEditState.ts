@@ -33,6 +33,7 @@ export interface DrawingEditorCapabilities {
   canCopy: boolean;
   canPaste: boolean;
   canDuplicate: boolean;
+  canNudge: boolean;
   canDelete: boolean;
   canLock: boolean;
   canUnlock: boolean;

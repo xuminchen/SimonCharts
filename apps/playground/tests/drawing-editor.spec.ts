@@ -16,6 +16,7 @@ test("creates edits deletes and restores a trend line drawing", async ({ page })
   await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
   await expect(page.getByTestId("drawing-object-manager")).toContainText("trendLine");
   await expect(page.getByTestId("drawing-property-panel")).toContainText("drawing-1");
+  await expect(page.getByTestId("drawing-handle-count")).toHaveText("11 handles");
   await expect(page.getByTestId("drawing-style-line")).toBeVisible();
   await expect(page.getByTestId("drawing-state-visible")).toBeVisible();
   await expect(page.getByTestId("drawing-state-locked")).toBeVisible();
@@ -24,6 +25,8 @@ test("creates edits deletes and restores a trend line drawing", async ({ page })
   await page.getByTestId("drawing-tool-select").click();
   await page.mouse.click(box.x + 180, box.y + 210);
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"x": 121/);
   await page.mouse.down();
   await page.mouse.move(box.x + 220, box.y + 250);
   await page.mouse.up();

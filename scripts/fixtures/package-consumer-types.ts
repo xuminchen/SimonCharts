@@ -6,7 +6,9 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  getDrawingEditHandles,
   getDrawingPropertySchema,
+  normalizeDrawingSelectionBounds,
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
@@ -26,6 +28,7 @@ import type {
   DrawingEditor,
   DrawingEditorCapabilities,
   DrawingEditorCommand,
+  DrawingEditHandle,
   DrawingObject,
   DrawingParameterPropertyDefinition,
   DrawingPropertySchema,
@@ -52,6 +55,16 @@ const metadataCommand: DrawingEditorCommand = {
   type: "updateSelectedMetadata",
   metadata: { fibonacciLevels: [0, 1] }
 };
+const nudgeCommand: DrawingEditorCommand = { type: "nudgeSelected", delta: { dx: 1, dy: 0 } };
+const boundsCommand: DrawingEditorCommand = {
+  type: "selectDrawingsInBounds",
+  bounds: normalizeDrawingSelectionBounds({ x: 0, y: 0 }, { x: 100, y: 100 })
+};
+const editHandles: DrawingEditHandle[] = getDrawingEditHandles({
+  id: "handles",
+  type: "trendLine",
+  anchors: [{ x: 1, y: 2 }, { x: 3, y: 4 }]
+});
 const parameterProperty = drawingPropertySchema.properties.find(
   (property): property is DrawingParameterPropertyDefinition => property.scope === "parameters"
 );
@@ -179,6 +192,9 @@ serializeChartLayoutSnapshot(snapshot);
 void capabilities;
 void drawingPropertySchema;
 void metadataCommand;
+void nudgeCommand;
+void boundsCommand;
+void editHandles;
 void parameterProperty;
 void frame;
 void invalidations;

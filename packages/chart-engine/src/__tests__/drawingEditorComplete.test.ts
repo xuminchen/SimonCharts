@@ -35,6 +35,7 @@ describe("complete drawing editor", () => {
       canSendSelectedBackward: false,
       canCopy: true,
       canDuplicate: true,
+      canNudge: true,
       canDelete: true,
       canLock: true,
       canUnlock: true,
@@ -68,6 +69,88 @@ describe("complete drawing editor", () => {
       canUndo: false,
       canRedo: true
     });
+  });
+
+  it("selects drawings in bounds with additive mode and skips hidden locked drawings", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "a", type: "trendLine", anchors: [{ x: 0, y: 0 }, { x: 20, y: 20 }] },
+        { id: "b", type: "rectangle", anchors: [{ x: 40, y: 40 }, { x: 80, y: 80 }] },
+        { id: "hidden", type: "trendLine", anchors: [{ x: 0, y: 0 }, { x: 10, y: 10 }], visible: false },
+        { id: "locked", type: "trendLine", anchors: [{ x: 5, y: 5 }, { x: 10, y: 10 }], locked: true }
+      ]
+    });
+
+    editor.executeCommand({
+      type: "selectDrawingsInBounds",
+      bounds: { x: -1, y: -1, width: 25, height: 25 }
+    });
+
+    expect(editor.getState().selectedDrawingIds).toEqual(["a"]);
+
+    editor.executeCommand({
+      type: "selectDrawingsInBounds",
+      bounds: { x: 30, y: 30, width: 60, height: 60 },
+      additive: true
+    });
+
+    expect(editor.getState().selectedDrawingIds).toEqual(["a", "b"]);
+  });
+
+  it("nudges selected editable drawings and exposes selected edit handles", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "free", type: "trendLine", anchors: [{ x: 0, y: 0 }, { x: 20, y: 20 }] },
+        { id: "locked", type: "trendLine", anchors: [{ x: 40, y: 40 }, { x: 80, y: 80 }], locked: true }
+      ]
+    });
+
+    editor.selectDrawings(["free", "locked"]);
+    editor.executeCommand({ type: "nudgeSelected", delta: { dx: 2, dy: -3 } });
+
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { x: 2, y: -3 },
+      { x: 22, y: 17 }
+    ]);
+    expect(findDrawing(editor.getState().drawings, "locked").anchors).toEqual([
+      { x: 40, y: 40 },
+      { x: 80, y: 80 }
+    ]);
+    expect(editor.getSelectedEditHandles().map((handle) => handle.kind)).toEqual([
+      "anchor",
+      "anchor",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "rotate",
+      "anchor",
+      "anchor",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "resize",
+      "rotate"
+    ]);
+
+    const handles = editor.getSelectedEditHandles();
+
+    handles[0].x = 999;
+    expect(editor.getSelectedEditHandles()[0].x).toBe(2);
+
+    editor.undo();
+    expect(findDrawing(editor.getState().drawings, "free").anchors[0]).toEqual({ x: 0, y: 0 });
+
+    editor.redo();
+    expect(findDrawing(editor.getState().drawings, "free").anchors[0]).toEqual({ x: 2, y: -3 });
   });
 
   it("executes neutral drawing editor commands", () => {

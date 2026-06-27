@@ -7,7 +7,9 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  getDrawingEditHandles,
   getDrawingPropertySchema,
+  normalizeDrawingSelectionBounds,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
   serializeDrawingObject
@@ -67,6 +69,7 @@ if (!drawingEditor.getCapabilities().canCopy) {
 drawingEditor.executeCommand({ type: "copySelected" });
 drawingEditor.executeCommand({ type: "pasteCopied", offset: { dx: 4, dy: 6 } });
 drawingEditor.executeCommand({ type: "updateSelectedMetadata", metadata: { fibonacciLevels: [0, 1] } });
+drawingEditor.executeCommand({ type: "nudgeSelected", delta: { dx: 1, dy: 0 } });
 
 if (drawingEditor.getState().drawings.length !== 2) {
   throw new Error("Package consumer failed to execute drawing editor commands");
@@ -74,6 +77,19 @@ if (drawingEditor.getState().drawings.length !== 2) {
 
 if (!drawingEditor.getState().drawings.some((item) => Array.isArray(item.metadata?.fibonacciLevels))) {
   throw new Error("Package consumer failed to execute drawing metadata commands");
+}
+
+if (drawingEditor.getSelectedEditHandles().length === 0 || getDrawingEditHandles(drawing).length === 0) {
+  throw new Error("Package consumer failed to expose drawing edit handles");
+}
+
+drawingEditor.executeCommand({
+  type: "selectDrawingsInBounds",
+  bounds: normalizeDrawingSelectionBounds({ x: -1, y: -1 }, { x: 200, y: 200 })
+});
+
+if (drawingEditor.getState().selectedDrawingIds.length === 0) {
+  throw new Error("Package consumer failed to select drawings in bounds");
 }
 
 if (!drawingEditor.getCapabilities().canUndo) {

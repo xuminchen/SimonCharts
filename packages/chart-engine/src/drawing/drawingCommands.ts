@@ -1,3 +1,4 @@
+import type { DrawingSelectionBounds } from "./drawingInteraction";
 import type { DrawingObject, DrawingStyle, DrawingType } from "./drawingTypes";
 
 export type DrawingEditorTool = DrawingType | "select";
@@ -14,11 +15,13 @@ export type DrawingEditorCommand =
   | { type: "setTool"; tool: DrawingEditorTool }
   | { type: "selectDrawing"; drawingId: string }
   | { type: "selectDrawings"; drawingIds: string[] }
+  | { type: "selectDrawingsInBounds"; bounds: DrawingSelectionBounds; additive?: boolean }
   | { type: "bringSelectedForward" }
   | { type: "sendSelectedBackward" }
   | { type: "copySelected" }
   | { type: "pasteCopied"; offset: { dx: number; dy: number } }
   | { type: "duplicateSelected"; offset: { dx: number; dy: number } }
+  | { type: "nudgeSelected"; delta: { dx: number; dy: number } }
   | { type: "updateSelectedStyle"; style: DrawingStyle }
   | { type: "updateSelectedMetadata"; metadata: Record<string, unknown> }
   | { type: "updateSelectedText"; text: string }

@@ -1,5 +1,11 @@
 import { createCommandHistory } from "../commands/history";
 import type { DrawingEditorCommand, DrawingEditorEvent, DrawingEditorTool } from "./drawingCommands";
+import {
+  getDrawingEditHandles,
+  getDrawingIdsInBounds,
+  type DrawingEditHandle,
+  type DrawingSelectionBounds
+} from "./drawingInteraction";
 import type {
   DrawingClipboard,
   DrawingEditorCapabilities,
@@ -38,16 +44,19 @@ export interface DrawingEditor {
   cancel(): void;
   selectDrawing(id: string): void;
   selectDrawings(ids: string[]): void;
+  selectDrawingsInBounds(bounds: DrawingSelectionBounds, options?: { additive?: boolean }): void;
   bringSelectedForward(): void;
   sendSelectedBackward(): void;
   copySelected(): void;
   pasteCopied(offset: { dx: number; dy: number }): void;
   duplicateSelected(offset: { dx: number; dy: number }): void;
+  nudgeSelected(delta: { dx: number; dy: number }): void;
   executeCommand(command: DrawingEditorCommand): void;
   updateSelectedStyle(style: DrawingStyle): void;
   updateSelectedMetadata(metadata: Record<string, unknown>): void;
   updateSelectedText(text: string): void;
   getObjectManagerItems(): DrawingObjectManagerItem[];
+  getSelectedEditHandles(): DrawingEditHandle[];
   dragSelected(delta: { dx: number; dy: number }): void;
   dragAnchor(id: string, anchorIndex: number, point: DrawingEditorPoint): void;
   deleteSelected(): void;
@@ -131,6 +140,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       selectedDrawingIds = getExistingUniqueIds(ids);
       emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
     },
+    selectDrawingsInBounds(bounds, options = {}) {
+      const matchingIds = getDrawingIdsInBounds(drawings, bounds);
+      const nextIds = options.additive ? [...selectedDrawingIds, ...matchingIds] : matchingIds;
+
+      selectedDrawingIds = getExistingUniqueIds(nextIds);
+      emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+    },
     bringSelectedForward() {
       reorderSelected("forward");
     },
@@ -155,6 +171,9 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
       clipboard = { drawings: selectedDrawings.map(cloneDrawing) };
       pasteDrawings(clipboard.drawings, offset, "duplicateDrawing");
+    },
+    nudgeSelected(delta) {
+      api.dragSelected(delta);
     },
     executeCommand(command) {
       executeCommand(command);
@@ -185,6 +204,11 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         selected: selectedIds.has(drawing.id),
         zIndex: index
       }));
+    },
+    getSelectedEditHandles() {
+      return getSelectedDrawings().flatMap((drawing) =>
+        getDrawingEditHandles(drawing).map((handle) => ({ ...handle }))
+      );
     },
     dragSelected(delta) {
       const selectedIds = new Set(selectedDrawingIds);
@@ -309,6 +333,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return api.selectDrawing(command.drawingId);
       case "selectDrawings":
         return api.selectDrawings(command.drawingIds);
+      case "selectDrawingsInBounds":
+        return api.selectDrawingsInBounds(command.bounds, { additive: command.additive });
       case "bringSelectedForward":
         return api.bringSelectedForward();
       case "sendSelectedBackward":
@@ -319,6 +345,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return api.pasteCopied(command.offset);
       case "duplicateSelected":
         return api.duplicateSelected(command.offset);
+      case "nudgeSelected":
+        return api.nudgeSelected(command.delta);
       case "updateSelectedStyle":
         return api.updateSelectedStyle(command.style);
       case "updateSelectedMetadata":
@@ -373,6 +401,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       canCopy: selectedDrawings.length > 0,
       canPaste: clipboard.drawings.length > 0,
       canDuplicate: selectedDrawings.length > 0,
+      canNudge: editableSelectedDrawings.length > 0,
       canDelete: editableSelectedDrawings.length > 0,
       canLock: selectedDrawings.some((drawing) => !drawing.locked),
       canUnlock: selectedDrawings.some((drawing) => drawing.locked === true),
