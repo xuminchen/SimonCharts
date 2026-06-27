@@ -62,6 +62,7 @@ const requiredScripts = [
   "guard:public-types",
   "guard:sdk-imports",
   "check:package-consumer",
+  "check:package-artifact",
   "check:package-types",
   "check:performance",
   "check:release-readiness",

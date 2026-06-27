@@ -16,6 +16,7 @@
     "guard:public-types": "node scripts/check-public-types.mjs",
     "guard:sdk-imports": "node scripts/check-sdk-imports.mjs",
     "check:package-consumer": "node scripts/check-package-consumer.mjs",
+    "check:package-artifact": "node scripts/check-package-artifact.mjs",
     "check:package-types": "node scripts/check-package-types.mjs",
     "check:performance": "vitest run packages/chart-engine/src/__tests__/performanceBaseline.test.ts --reporter=dot",
     "check:release-readiness": "node scripts/check-release-readiness.mjs",

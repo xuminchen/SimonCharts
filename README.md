@@ -49,6 +49,7 @@ npm run guard:public-api
 npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
+npm run check:package-artifact
 npm run check:package-types
 npm run check:performance
 npm run check:release-readiness

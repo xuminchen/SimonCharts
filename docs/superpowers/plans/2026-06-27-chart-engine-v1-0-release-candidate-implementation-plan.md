@@ -75,6 +75,7 @@
 - `npm run guard:public-types`
 - `npm run guard:sdk-imports`
 - `npm run check:package-consumer`
+- `npm run check:package-artifact`
 - `npm run check:package-types`
 - `npm run check:performance`
 - `npm run check:release-readiness`
@@ -96,6 +97,7 @@ Completed on 2026-06-27:
 - `npm run guard:public-types` passed: 291 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
+- `npm run check:package-artifact` passed: 112 package files.
 - `npm run check:package-types` passed.
 - `npm run check:performance` passed: 1 test file, 2 performance scenarios.
 - `npm run build` passed for `@simoncharts/chart-engine@1.0.0-rc.0` and `@simoncharts/playground`.
