@@ -61,6 +61,19 @@ The flow starts from Engine-owned `DrawingEditHandle` metadata. Hosts pass a poi
 
 Hosts still own native pointer events, pointer capture, CSS cursors, hover feedback, render invalidation, and persistence. The Engine owns handle geometry, operation state, preview mutation from the original snapshot, and final neutral command generation.
 
+## Move Drag Flow
+
+SimonCharts v1.0 adds a DOM-free selected drawing move drag operation flow:
+
+- `beginDrawingMoveDrag(options)`
+- `updateDrawingMoveDrag(operation, point)`
+- `finishDrawingMoveDrag(operation, point)`
+- `getDrawingMoveDragCommand(operation, point)`
+
+The flow starts from a neutral drawing snapshot, selected drawing ids, and a start point. The Engine returns preview drawings derived from the original operation snapshot during movement, and `finishDrawingMoveDrag()` returns one final `dragSelected` command for undoable commit through `DrawingEditor.executeCommand()`.
+
+Hosts still own native pointer events, pointer capture, cursor UI, render invalidation, persistence, and collaboration. The Engine owns operation snapshot isolation, preview movement for editable selected drawings, locked drawing protection, and final neutral command generation.
+
 ## Selection Box Flow
 
 SimonCharts v1.0 adds a DOM-free selection box operation flow:

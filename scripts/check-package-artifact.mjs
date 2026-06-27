@@ -42,6 +42,7 @@ const requiredFiles = [
   "dist/extensions/chartExtension.d.ts",
   "dist/drawing/drawingHandleDrag.d.ts",
   "dist/drawing/drawingInteraction.d.ts",
+  "dist/drawing/drawingMoveDrag.d.ts",
   "dist/drawing/drawingParameters.d.ts",
   "dist/drawing/drawingPropertySchema.d.ts",
   "dist/drawing/drawingRegistry.d.ts",

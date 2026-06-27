@@ -361,6 +361,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return api.pasteCopied(command.offset);
       case "duplicateSelected":
         return api.duplicateSelected(command.offset);
+      case "dragSelected":
+        return api.dragSelected(command.delta);
       case "nudgeSelected":
         return api.nudgeSelected(command.delta);
       case "resizeSelected":

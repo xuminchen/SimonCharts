@@ -21,12 +21,14 @@ import {
   createVisualLayer,
   createVisualRendererRegistry,
   beginDrawingHandleDrag,
+  beginDrawingMoveDrag,
   beginDrawingSelectionBox,
   coreIndicatorDefinitions,
   defaultChartTheme,
   builtInDrawingToolDefinitions,
   deserializeDrawingObject,
   finishDrawingHandleDrag,
+  finishDrawingMoveDrag,
   finishDrawingSelectionBox,
   getDrawingSelectionBounds,
   getDrawingPropertyDefinitionsForDrawing,
@@ -36,6 +38,7 @@ import {
   renderStaticChart,
   resizeCanvas,
   serializeDrawingObject,
+  updateDrawingMoveDrag,
   updateDrawingSelectionBox,
   updateDrawingHandleDrag,
   supportedSeriesTypes
@@ -58,6 +61,7 @@ import type {
   DrawingEditorCommand,
   DrawingEditorTool,
   DrawingHandleDragOperation,
+  DrawingMoveDragOperation,
   DrawingObject,
   DrawingPropertyDefinition,
   DrawingSelectionBoxOperation,
@@ -354,9 +358,10 @@ let crosshair: ChartCrosshairState | undefined;
 let layout: ChartLayout | undefined;
 let panels: PanelArea[] = [];
 let interactionEngine: InteractionEngine | undefined;
-let drawingDragStart: { x: number; y: number } | undefined;
 let drawingHandleDragOperation: DrawingHandleDragOperation | undefined;
 let drawingHandleDragPoint: { x: number; y: number } | undefined;
+let drawingMoveDragOperation: DrawingMoveDragOperation | undefined;
+let drawingMoveDragPoint: { x: number; y: number } | undefined;
 let drawingSelectionBoxOperation: DrawingSelectionBoxOperation | undefined;
 let drawingSelectionPreviewIds: string[] | undefined;
 let drawingPreviewDrawings: DrawingObject[] | undefined;
@@ -1142,9 +1147,10 @@ function createCurrentInteractionEngine(): InteractionEngine {
 }
 
 function cancelPointerInteraction(): void {
-  drawingDragStart = undefined;
   drawingHandleDragOperation = undefined;
   drawingHandleDragPoint = undefined;
+  drawingMoveDragOperation = undefined;
+  drawingMoveDragPoint = undefined;
   drawingSelectionBoxOperation = undefined;
   drawingSelectionPreviewIds = undefined;
   drawingPreviewDrawings = undefined;
@@ -1152,6 +1158,7 @@ function cancelPointerInteraction(): void {
   if (layout && viewport) {
     interactionEngine = createCurrentInteractionEngine();
   }
+  renderStatic();
 }
 
 function clearTransientInteraction(inputType: "leave" | "blur"): void {
@@ -1162,9 +1169,10 @@ function clearTransientInteraction(inputType: "leave" | "blur"): void {
 }
 
 function clearIndicatorInteractionState(): void {
-  drawingDragStart = undefined;
   drawingHandleDragOperation = undefined;
   drawingHandleDragPoint = undefined;
+  drawingMoveDragOperation = undefined;
+  drawingMoveDragPoint = undefined;
   drawingSelectionBoxOperation = undefined;
   drawingSelectionPreviewIds = undefined;
   drawingPreviewDrawings = undefined;
@@ -1172,6 +1180,7 @@ function clearIndicatorInteractionState(): void {
   interactionEngine = undefined;
   lastKeyboardCommandText = "none";
   interactionSession.handleInput({ type: "leave" });
+  renderStatic();
   syncInteractionDiagnostics();
 }
 
@@ -1501,8 +1510,19 @@ function handleDrawingPointerDown(
     return false;
   }
 
-  drawingEditor.selectDrawing(hitDrawing.id);
-  drawingDragStart = point;
+  if (!editorState.selectedDrawingIds.includes(hitDrawing.id)) {
+    drawingEditor.selectDrawing(hitDrawing.id);
+  }
+  const selectedState = drawingEditor.getState();
+  const operation = beginDrawingMoveDrag({
+    drawings: selectedState.drawings,
+    selectedDrawingIds: selectedState.selectedDrawingIds,
+    startPoint: point
+  });
+
+  drawingMoveDragOperation = operation;
+  drawingMoveDragPoint = point;
+  drawingPreviewDrawings = undefined;
   renderStatic();
   return true;
 }
@@ -1519,6 +1539,17 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
     return true;
   }
 
+  if (drawingMoveDragPoint) {
+    const preview = drawingMoveDragOperation
+      ? updateDrawingMoveDrag(drawingMoveDragOperation, point)
+      : undefined;
+
+    drawingMoveDragPoint = point;
+    drawingPreviewDrawings = preview?.drawings;
+    renderStatic();
+    return true;
+  }
+
   if (drawingSelectionBoxOperation) {
     const preview = updateDrawingSelectionBox(drawingSelectionBoxOperation, point);
 
@@ -1527,17 +1558,7 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
     return true;
   }
 
-  if (!drawingDragStart) {
-    return false;
-  }
-
-  drawingEditor.dragSelected({
-    dx: point.x - drawingDragStart.x,
-    dy: point.y - drawingDragStart.y
-  });
-  drawingDragStart = point;
-  renderStatic();
-  return true;
+  return false;
 }
 
 function handleDrawingPointerUp(point: { x: number; y: number }): boolean {
@@ -1545,16 +1566,15 @@ function handleDrawingPointerUp(point: { x: number; y: number }): boolean {
     return finishDrawingHandlePointerDrag(point);
   }
 
+  if (drawingMoveDragPoint) {
+    return finishDrawingMovePointerDrag(point);
+  }
+
   if (drawingSelectionBoxOperation) {
     return finishDrawingSelectionBoxPointerDrag(point);
   }
 
-  if (!drawingDragStart) {
-    return false;
-  }
-
-  drawingDragStart = undefined;
-  return true;
+  return false;
 }
 
 function finishDrawingHandlePointerDrag(point: { x: number; y: number }): boolean {
@@ -1568,6 +1588,28 @@ function finishDrawingHandlePointerDrag(point: { x: number; y: number }): boolea
 
   drawingHandleDragOperation = undefined;
   drawingHandleDragPoint = undefined;
+  drawingPreviewDrawings = undefined;
+
+  if (!command) {
+    renderStatic();
+    return true;
+  }
+
+  executeDrawingCommand(command);
+
+  return true;
+}
+
+function finishDrawingMovePointerDrag(point: { x: number; y: number }): boolean {
+  if (!drawingMoveDragPoint) {
+    return false;
+  }
+
+  const operation = drawingMoveDragOperation;
+  const command = operation ? finishDrawingMoveDrag(operation, point) : undefined;
+
+  drawingMoveDragOperation = undefined;
+  drawingMoveDragPoint = undefined;
   drawingPreviewDrawings = undefined;
 
   if (!command) {

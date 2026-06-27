@@ -7,8 +7,10 @@ import {
   createDrawingEditor,
   createDrawingToolRegistry,
   beginDrawingHandleDrag,
+  beginDrawingMoveDrag,
   beginDrawingSelectionBox,
   finishDrawingHandleDrag,
+  finishDrawingMoveDrag,
   finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingPropertySchema,
@@ -17,6 +19,7 @@ import {
   resizeDrawing,
   rotateDrawing,
   updateDrawingHandleDrag,
+  updateDrawingMoveDrag,
   updateDrawingSelectionBox,
   createRenderScheduler,
   createVisualRendererRegistry,
@@ -40,6 +43,9 @@ import type {
   DrawingEditHandle,
   DrawingHandleDragOperation,
   DrawingHandleDragPreview,
+  DrawingMoveDragCommand,
+  DrawingMoveDragOperation,
+  DrawingMoveDragPreview,
   DrawingObject,
   DrawingResizeOptions,
   DrawingRotateOptions,
@@ -136,6 +142,23 @@ const selectionBoxCommand: DrawingEditorCommand = finishDrawingSelectionBox(sele
   x: 20,
   y: 20
 });
+const moveDragOperation: DrawingMoveDragOperation | undefined = beginDrawingMoveDrag({
+  drawings: [
+    {
+      id: "move-drag",
+      type: "trendLine",
+      anchors: [{ x: 0, y: 0 }, { x: 10, y: 10 }]
+    }
+  ],
+  selectedDrawingIds: ["move-drag"],
+  startPoint: { x: 0, y: 0 }
+});
+const moveDragPreview: DrawingMoveDragPreview | undefined = moveDragOperation
+  ? updateDrawingMoveDrag(moveDragOperation, { x: 2, y: 3 })
+  : undefined;
+const moveDragCommand: DrawingMoveDragCommand | undefined = moveDragOperation
+  ? finishDrawingMoveDrag(moveDragOperation, { x: 2, y: 3 })
+  : undefined;
 const transformedDrawing: DrawingObject = rotateDrawing(
   resizeDrawing(
     {
@@ -286,6 +309,9 @@ void handleDragCommand;
 void selectionBoxOperation;
 void selectionBoxPreview;
 void selectionBoxCommand;
+void moveDragOperation;
+void moveDragPreview;
+void moveDragCommand;
 void transformedDrawing;
 void parameterProperty;
 void frame;

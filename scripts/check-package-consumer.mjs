@@ -8,8 +8,10 @@ import {
   createDrawingEditor,
   createDrawingToolRegistry,
   beginDrawingHandleDrag,
+  beginDrawingMoveDrag,
   beginDrawingSelectionBox,
   finishDrawingHandleDrag,
+  finishDrawingMoveDrag,
   finishDrawingSelectionBox,
   getDrawingEditHandles,
   getDrawingPropertySchema,
@@ -18,6 +20,7 @@ import {
   resizeDrawing,
   rotateDrawing,
   updateDrawingHandleDrag,
+  updateDrawingMoveDrag,
   updateDrawingSelectionBox,
   deserializeDrawingObject,
   fixtureDailyCandleSeries,
@@ -150,6 +153,44 @@ if (selectionPreview.selectedDrawingIds.length === 0 || selectionCommand.type !=
 }
 
 drawingEditor.executeCommand(selectionCommand);
+
+const moveDrag = beginDrawingMoveDrag({
+  drawings: drawingEditor.getState().drawings,
+  selectedDrawingIds: drawingEditor.getState().selectedDrawingIds,
+  startPoint: { x: 0, y: 0 }
+});
+const movePreview = moveDrag ? updateDrawingMoveDrag(moveDrag, { x: 7, y: -3 }) : undefined;
+const moveCommand = moveDrag ? finishDrawingMoveDrag(moveDrag, { x: 7, y: -3 }) : undefined;
+
+if (!movePreview || moveCommand?.type !== "dragSelected") {
+  throw new Error("Package consumer failed to execute drawing move drag flow");
+}
+
+const movedPreviewDrawing = movePreview.drawings.find((item) => item.id === drawingEditor.getState().selectedDrawingIds[0]);
+const originalMoveDrawing = drawingEditor
+  .getState()
+  .drawings.find((item) => item.id === drawingEditor.getState().selectedDrawingIds[0]);
+
+if (
+  !movedPreviewDrawing ||
+  !originalMoveDrawing ||
+  movedPreviewDrawing.anchors[0].x !== (originalMoveDrawing.anchors[0].x ?? 0) + 7 ||
+  movedPreviewDrawing.anchors[0].y !== (originalMoveDrawing.anchors[0].y ?? 0) - 3
+) {
+  throw new Error("Package consumer failed to preview drawing move drag flow");
+}
+
+drawingEditor.executeCommand(moveCommand);
+
+const committedMoveDrawing = drawingEditor.getState().drawings.find((item) => item.id === originalMoveDrawing.id);
+
+if (
+  !committedMoveDrawing ||
+  committedMoveDrawing.anchors[0].x !== movedPreviewDrawing.anchors[0].x ||
+  committedMoveDrawing.anchors[0].y !== movedPreviewDrawing.anchors[0].y
+) {
+  throw new Error("Package consumer failed to commit drawing move drag command");
+}
 
 const resizedDrawing = resizeDrawing(drawing, {
   handle: "bottomRight",

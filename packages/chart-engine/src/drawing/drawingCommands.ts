@@ -28,6 +28,7 @@ export type DrawingEditorCommand =
   | { type: "copySelected" }
   | { type: "pasteCopied"; offset: { dx: number; dy: number } }
   | { type: "duplicateSelected"; offset: { dx: number; dy: number } }
+  | { type: "dragSelected"; delta: { dx: number; dy: number } }
   | { type: "nudgeSelected"; delta: { dx: number; dy: number } }
   | { type: "resizeSelected"; options: DrawingResizeOptions }
   | { type: "rotateSelected"; options: DrawingRotateOptions }

@@ -247,6 +247,43 @@ describe("complete drawing editor", () => {
     expect(findDrawing(editor.getState().drawings, "free").anchors[1]).toEqual({ x: 40, y: 50 });
   });
 
+  it("drags selected drawings through one neutral editor command", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "free", type: "trendLine", anchors: [{ x: 0, y: 0 }, { x: 10, y: 10 }] },
+        { id: "locked", type: "trendLine", anchors: [{ x: 20, y: 20 }, { x: 30, y: 30 }], locked: true }
+      ]
+    });
+
+    editor.selectDrawings(["free", "locked"]);
+    editor.executeCommand({ type: "dragSelected", delta: { dx: 12, dy: -4 } });
+
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { x: 12, y: -4 },
+      { x: 22, y: 6 }
+    ]);
+    expect(findDrawing(editor.getState().drawings, "locked").anchors).toEqual([
+      { x: 20, y: 20 },
+      { x: 30, y: 30 }
+    ]);
+
+    editor.undo();
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 10 }
+    ]);
+    expect(editor.getCapabilities()).toMatchObject({
+      canUndo: false,
+      canRedo: true
+    });
+
+    editor.redo();
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { x: 12, y: -4 },
+      { x: 22, y: 6 }
+    ]);
+  });
+
   it("executes neutral drawing editor commands", () => {
     const editor = createDrawingEditor({
       drawings: [

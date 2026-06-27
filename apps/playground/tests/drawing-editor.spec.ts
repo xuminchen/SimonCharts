@@ -90,6 +90,101 @@ test("drags selected drawing anchor handles through engine operation flow", asyn
   await expect(page.getByTestId("drawing-json-export")).toHaveValue(/"y": 200/);
 });
 
+test("body drag commits one undoable drawing move command", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.getByTestId("drawing-tool-select").click();
+  await page.mouse.click(box.x + 150, box.y + 193);
+  await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
+
+  const getAnchors = async (): Promise<Array<{ x: number; y: number }>> => {
+    const payload = JSON.parse(await page.getByTestId("drawing-json-export").inputValue()) as {
+      drawings: Array<{ anchors: Array<{ x: number; y: number }> }>;
+    };
+
+    return payload.drawings[0].anchors;
+  };
+  const originalAnchors = await getAnchors();
+
+  await page.mouse.move(box.x + 160, box.y + 197);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 170, box.y + 207);
+  await page.mouse.move(box.x + 180, box.y + 217);
+  await page.mouse.move(box.x + 190, box.y + 227);
+  await page.mouse.up();
+
+  await expect.poll(getAnchors).toEqual([
+    { x: originalAnchors[0].x + 30, y: originalAnchors[0].y + 30 },
+    { x: originalAnchors[1].x + 30, y: originalAnchors[1].y + 30 }
+  ]);
+
+  await page.getByTestId("undo").click();
+
+  await expect.poll(getAnchors).toEqual(originalAnchors);
+});
+
+test("body drag preserves multi-selection and moves selected drawings together", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 120, box.y + 180);
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + 300, box.y + 200);
+  await page.mouse.click(box.x + 440, box.y + 260);
+  await page.getByTestId("drawing-tool-select").click();
+
+  await page.keyboard.down("Shift");
+  await page.mouse.move(box.x + 100, box.y + 150);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 460, box.y + 280);
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+
+  await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1, drawing-2");
+
+  const getDrawings = async (): Promise<Array<{ anchors: Array<{ x: number; y: number }> }>> => {
+    const payload = JSON.parse(await page.getByTestId("drawing-json-export").inputValue()) as {
+      drawings: Array<{ anchors: Array<{ x: number; y: number }> }>;
+    };
+
+    return payload.drawings;
+  };
+  const originalDrawings = await getDrawings();
+
+  await page.mouse.move(box.x + 180, box.y + 206);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 190, box.y + 216);
+  await page.mouse.move(box.x + 200, box.y + 226);
+  await page.mouse.move(box.x + 210, box.y + 236);
+  await page.mouse.up();
+
+  await expect.poll(getDrawings).toEqual(
+    originalDrawings.map((drawing) => ({
+      ...drawing,
+      anchors: drawing.anchors.map((anchor) => ({ x: anchor.x + 30, y: anchor.y + 30 }))
+    }))
+  );
+
+  await page.getByTestId("undo").click();
+
+  await expect.poll(getDrawings).toEqual(originalDrawings);
+});
+
 test("box-selects drawings through engine selection flow", async ({ page }) => {
   await page.goto("/");
   const overlay = page.getByTestId("chart-overlay");

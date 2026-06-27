@@ -106,6 +106,19 @@ Unit coverage verifies handle hit-testing, handle drag operation creation, ancho
 
 Browser coverage verifies the playground can route a selected drawing anchor handle drag through the Engine operation flow and commit the resulting neutral command.
 
+## v1.0 Drawing Move Drag Verification
+
+Focused drawing move drag coverage:
+
+```bash
+npm run test -- packages/chart-engine/src/__tests__/drawingMoveDrag.test.ts packages/chart-engine/src/__tests__/drawingEditorComplete.test.ts
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- apps/playground/tests/drawing-editor.spec.ts
+```
+
+Unit coverage verifies move drag operation creation, preview drawings derived from the original operation snapshot, final `dragSelected` command generation, locked drawing protection, zero-distance rejection, and editor undo/redo behavior for the committed move command.
+
+Browser coverage verifies the playground can route selected drawing body movement through the Engine operation flow, render previews during pointer movement, and commit one neutral command on pointer up.
+
 ## v1.0 Drawing Selection Box Verification
 
 Focused drawing selection box coverage:
