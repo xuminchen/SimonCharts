@@ -21,7 +21,9 @@ import type {
 } from "../index";
 
 const candleCount = 10_000;
+const largeCandleCount = 50_000;
 const visibleCandleCount = 600;
+const largeVisibleCandleCount = 1_200;
 
 class FakeCanvasContext {
   fillStyle = "";
@@ -105,6 +107,58 @@ describe("performance baseline", () => {
     expect(staticRendererMs).toBeLessThan(1_000);
     expect(schedulerMs).toBeLessThan(250);
   });
+
+  it("keeps 50k-candle release paths within conservative upper bounds", () => {
+    const series = createLargeSeries(largeCandleCount);
+    const viewport = createViewport(largeCandleCount, largeVisibleCandleCount);
+
+    const renderModelMs = measure(() => {
+      const model = createSourceSeriesRenderModel("candles", series);
+
+      expect(model.points).toHaveLength(largeCandleCount);
+    });
+
+    const autoscaleMs = measure(() => {
+      const range = computeVisiblePriceRange(series, { from: 0, to: largeCandleCount - 1 });
+
+      expect(range.max).toBeGreaterThan(range.min);
+    });
+
+    const indicatorsMs = measure(() => {
+      for (const id of coreIndicatorIds) {
+        const result = calculateCoreIndicator(id, series);
+
+        expect(result.outputs.length).toBeGreaterThan(0);
+      }
+    });
+
+    const staticRendererMs = measure(() => {
+      renderStaticChart(createRenderContext(series, viewport));
+    });
+
+    const schedulerMs = measure(() => {
+      const scheduler = createRenderScheduler({
+        requestFrame(callback) {
+          callback();
+          return 1;
+        },
+        renderPass() {}
+      });
+
+      for (let index = 0; index < 5_000; index += 1) {
+        scheduler.invalidate({
+          layers: ["series", "crosshair"],
+          reason: `perf-50k-${index}`
+        });
+      }
+    });
+
+    expect(renderModelMs).toBeLessThan(1_000);
+    expect(autoscaleMs).toBeLessThan(500);
+    expect(indicatorsMs).toBeLessThan(8_000);
+    expect(staticRendererMs).toBeLessThan(3_000);
+    expect(schedulerMs).toBeLessThan(1_000);
+  });
 });
 
 function measure(action: () => void): number {
@@ -145,9 +199,9 @@ function createLargeSeries(count: number): CandleSeries {
   };
 }
 
-function createViewport(count: number): ViewportState {
+function createViewport(count: number, visibleCount = visibleCandleCount): ViewportState {
   return {
-    visibleRange: { from: count - visibleCandleCount, to: count - 1 },
+    visibleRange: { from: count - visibleCount, to: count - 1 },
     candleWidth: 6,
     scrollOffset: 0,
     priceScaleMode: "linear"

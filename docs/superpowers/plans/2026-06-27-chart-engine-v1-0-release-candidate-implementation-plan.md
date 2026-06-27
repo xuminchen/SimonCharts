@@ -75,6 +75,7 @@
 - `npm run guard:sdk-imports`
 - `npm run check:package-consumer`
 - `npm run check:package-types`
+- `npm run check:performance`
 - `npm run check:release-readiness`
 - `npm run build`
 - `npm pack --dry-run -w @simoncharts/chart-engine`
@@ -87,13 +88,14 @@ Completed on 2026-06-27:
 - `npm install --package-lock-only` passed and synchronized `@simoncharts/chart-engine@1.0.0-rc.0` into `package-lock.json`.
 - Version verification passed: `packages/chart-engine/package.json`, `apps/playground/package.json`, and `package-lock.json` all reference `1.0.0-rc.0`.
 - `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
-- `npm run test` passed: 32 test files, 386 tests.
+- `npm run test` passed: 32 test files, 387 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 141 files scanned.
 - `npm run guard:public-api` passed: 109 runtime exports.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.
+- `npm run check:performance` passed: 1 test file, 2 performance scenarios.
 - `npm run build` passed for `@simoncharts/chart-engine@1.0.0-rc.0` and `@simoncharts/playground`.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 112 files including package `README.md`, `dist/index.js`, `dist/index.d.ts`, and extension declarations.
 - `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 32 browser tests.

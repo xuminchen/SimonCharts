@@ -62,6 +62,7 @@ const requiredScripts = [
   "guard:sdk-imports",
   "check:package-consumer",
   "check:package-types",
+  "check:performance",
   "check:release-readiness",
   "build",
   "test:e2e"

@@ -37,6 +37,7 @@ npm run guard:public-api
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types
+npm run check:performance
 npm run check:release-readiness
 npm run build
 npm pack --dry-run -w @simoncharts/chart-engine
@@ -44,6 +45,8 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ```
 
 ## v1.0 Release Candidate Verification
+
+`npm run check:performance` runs the Engine performance baseline as a focused release gate. It covers deterministic 10k-candle and 50k-candle scenarios for render model creation, autoscale, core indicators, static rendering, drawing figure conversion, and render scheduler invalidation throughput.
 
 `npm run check:release-readiness` verifies the RC package version, package metadata, root export map, required docs, required root scripts, and workspace lockfile version alignment.
 
