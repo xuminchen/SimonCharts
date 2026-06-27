@@ -10,6 +10,8 @@ npm run test
 
 Focused examples include model validation, series transforms, renderer registries, autoscale, hit-test, visual outputs, drawing editor operations, command history, `ChartEngine`, and static rendering.
 
+Capability manifest tests verify the package-root Engine support summary, including count alignment for 17 series types, 63 built-in drawing types, and 16 core indicators.
+
 Type and boundary verification:
 
 ```bash
@@ -47,6 +49,8 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ```
 
 ## v1.0 Release Candidate Verification
+
+`createEngineCapabilityManifest()` has focused coverage so hosts can inspect the Engine feature surface through a neutral package-root API. The manifest is validated as diagnostics metadata only; it does not control host feature flags, permissions, persistence, remote plugins, or collaboration.
 
 `npm run check:performance` runs the Engine performance baseline as a focused release gate. It covers deterministic 10k-candle and 50k-candle scenarios for render model creation, autoscale, core indicators, static rendering, drawing figure conversion, and render scheduler invalidation throughput.
 

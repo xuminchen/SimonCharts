@@ -33,6 +33,7 @@
   "createDrawingLayer",
   "createDrawingRendererRegistry",
   "createDrawingToolRegistry",
+  "createEngineCapabilityManifest",
   "createFigureRendererRegistry",
   "createFiguresForDrawing",
   "createGridLayer",

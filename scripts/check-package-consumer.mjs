@@ -2,6 +2,7 @@ import {
   calculateCoreIndicator,
   applyChartExtension,
   createChartEngine,
+  createEngineCapabilityManifest,
   createChartExtension,
   createChartExtensionLifecycle,
   createDrawingRendererRegistry,
@@ -36,6 +37,17 @@ const engine = createChartEngine({
   series: fixtureDailyCandleSeries,
   seriesType: "candles"
 });
+const engineCapabilities = createEngineCapabilityManifest();
+
+if (
+  engineCapabilities.packageName !== "@simoncharts/chart-engine" ||
+  engineCapabilities.seriesTypes.length !== 17 ||
+  engineCapabilities.drawingTypes.length !== 63 ||
+  engineCapabilities.coreIndicatorIds.length !== 16 ||
+  engineCapabilities.drawingTools.length !== engineCapabilities.drawingTypes.length
+) {
+  throw new Error("Package consumer failed to read engine capability manifest");
+}
 
 engine.setViewport({
   visibleRange: { from: 5, to: 25 },

@@ -1,6 +1,7 @@
 import {
   applyChartExtension,
   createChartEngine,
+  createEngineCapabilityManifest,
   createChartExtension,
   createChartExtensionLifecycle,
   createDrawingRendererRegistry,
@@ -42,6 +43,7 @@ import type {
   ChartExtensionInstallResult,
   ChartExtensionUninstallResult,
   CustomDrawingType,
+  DrawingEditorCapability,
   DrawingEditor,
   DrawingEditorCapabilities,
   DrawingEditorCommand,
@@ -68,6 +70,9 @@ import type {
   DrawingRotateOptions,
   DrawingSelectionBoxOperation,
   DrawingSelectionBoxPreview,
+  EngineCapabilityManifest,
+  EngineDrawingToolCapability,
+  ExtensionContributionType,
   DrawingParameterPropertyDefinition,
   DrawingPropertySchema,
   IndicatorVisualOutput,
@@ -77,11 +82,22 @@ import type {
   RenderInvalidation,
   RenderScheduler,
   VisualRenderer,
-  VisualRendererRegistry
+  VisualRendererRegistry,
+  InteractionCapability,
+  VisualOutputType
 } from "@simoncharts/chart-engine";
 
 const series: CandleSeries = fixtureDailyCandleSeries;
 const engine: ChartEngine = createChartEngine({ series, seriesType: "candles" });
+const engineCapabilityManifest: EngineCapabilityManifest = createEngineCapabilityManifest();
+const engineDrawingToolCapability: EngineDrawingToolCapability =
+  engineCapabilityManifest.drawingTools[0];
+const drawingEditorCapability: DrawingEditorCapability =
+  engineCapabilityManifest.drawingEditorCapabilities[0];
+const interactionCapability: InteractionCapability = engineCapabilityManifest.interactionCapabilities[0];
+const extensionContributionType: ExtensionContributionType =
+  engineCapabilityManifest.extensionContributionTypes[0];
+const visualOutputType: VisualOutputType = engineCapabilityManifest.visualOutputTypes[0];
 const drawingEditor: DrawingEditor = createDrawingEditor({ drawings: [] });
 const customDrawingType: CustomDrawingType = "consumer.measurement-box";
 const drawingPropertySchema: DrawingPropertySchema = getDrawingPropertySchema("trendLine");
@@ -360,6 +376,12 @@ const snapshot: ChartLayoutSnapshot = {
 serializeChartLayoutSnapshot(snapshot);
 
 void capabilities;
+void engineCapabilityManifest;
+void engineDrawingToolCapability;
+void drawingEditorCapability;
+void interactionCapability;
+void extensionContributionType;
+void visualOutputType;
 void drawingPropertySchema;
 void metadataCommand;
 void nudgeCommand;

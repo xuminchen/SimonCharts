@@ -5,6 +5,7 @@ Import from the package root:
 ```ts
 import {
   createChartEngine,
+  createEngineCapabilityManifest,
   renderStaticChart,
   createStaticLayers,
   createInteractionEngine,
@@ -45,6 +46,22 @@ SimonCharts v0.8 adds SDK consumer gates:
 - `npm run check:package-consumer` verifies runtime package consumption, including drawing editor command and capability APIs.
 
 The stable SDK rule is simple: external consumers import from `@simoncharts/chart-engine` only. Internal source paths are not a public API.
+
+## Capability Manifest
+
+`createEngineCapabilityManifest()` returns the current Engine capability surface from package-root exports:
+
+```ts
+const manifest = createEngineCapabilityManifest();
+
+console.log(manifest.seriesTypes.length); // 17
+console.log(manifest.drawingTypes.length); // 63
+console.log(manifest.coreIndicatorIds.length); // 16
+```
+
+The manifest is deterministic and host-independent. It summarizes package metadata, release channel, supported series types, built-in drawing types, built-in drawing tool summaries, core indicator ids, visual output renderer families, drawing editor capabilities, interaction capabilities, and extension contribution types.
+
+Hosts can render the manifest in diagnostics, documentation, onboarding, and compatibility checks. Hosts still own product feature flags, permissions, persistence, routing, remote plugin loading, collaboration, and business workflows.
 
 ## Facade
 

@@ -28,6 +28,7 @@ export * from "./drawing/drawingToolDefinitions";
 export * from "./drawing/drawingToolRegistry";
 export * from "./drawing/drawingTransform";
 export * from "./drawing/drawingTypes";
+export * from "./engine/engineCapabilityManifest";
 export * from "./engine/chartEngine";
 export * from "./engine/chartState";
 export * from "./engine/events";
