@@ -19,6 +19,7 @@ The release candidate includes:
 - Engine-owned drawing interaction primitives for box selection, keyboard nudging, and edit handles
 - Engine-owned drawing body hit-test for neutral drawings, renderer registries, hidden/locked filtering, and distance/z-order sorting
 - Engine-owned drawing hover intent for neutral drawings, selected handles, pointer points, renderer registries, target ids, and cursor intent
+- Engine-owned OHLC magnet target projection from neutral candle series, viewport, plot area, optional price range, and optional fields
 - Engine-owned drawing magnet snap state for neutral points, magnet targets, snap radius, snapped points, matched targets, and neutral magnet session state
 - Engine-owned drawing handle drag flow for anchor, resize, and rotate operations
 - Engine-owned drawing move drag flow for selected drawing body movement previews and one final command
@@ -39,7 +40,7 @@ Hosts own:
 - persistence and collaboration
 - routing and product UI
 - DOM cursor styling, pointer events, and hover invalidation
-- drawing magnet target collection timing, render invalidation, and UI toggles
+- drawing magnet toggles, target collection timing, render invalidation, and UI toggles
 - business workflows
 - extension distribution and trust policy
 
@@ -88,11 +89,11 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Completed on 2026-06-28:
 
-- `npm run test` passed: 40 test files, 460 tests.
+- `npm run test` passed: 41 test files, 466 tests.
 - `npm run typecheck` passed.
-- `npm run guard:engine-boundary` passed: 157 files scanned.
-- `npm run guard:public-api` passed: 140 runtime exports.
-- `npm run guard:public-types` passed: 363 type symbols.
+- `npm run guard:engine-boundary` passed: 158 files scanned.
+- `npm run guard:public-api` passed: 141 runtime exports.
+- `npm run guard:public-types` passed: 367 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.
@@ -101,7 +102,21 @@ Completed on 2026-06-28:
 - `npm run build` passed for the Engine package and playground.
 - `npm run check:package-artifact` passed: 120 package files.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 120 files.
-- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 42 browser tests.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+
+Focused OHLC Magnet Target Projection Task 3 evidence on 2026-06-28:
+
+- `npm run build -w @simoncharts/chart-engine` passed.
+- Pre-snapshot `npm run guard:public-api` failed as expected with added runtime export `createOhlcMagnetTargetsFromSeries`.
+- Pre-snapshot `npm run guard:public-types` failed as expected with added symbols `MagnetPlotArea`, `MagnetPriceRange`, `OhlcMagnetTargetOptions`, and `createOhlcMagnetTargetsFromSeries`.
+- Runtime API snapshot was intentionally refreshed to 141 runtime exports.
+- `node scripts/check-public-types.mjs --write` refreshed the type snapshot to 367 type symbols.
+- `npm run guard:public-api` passed: 141 runtime exports.
+- `npm run guard:public-types` passed: 367 type symbols.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
+- `git diff --check` passed.
 
 Focused Drawing Magnet Snap State Task 3 evidence on 2026-06-28:
 

@@ -16,6 +16,7 @@ import {
   getDrawingEditHandles,
   getDrawingHoverState,
   getMagnetSnapState,
+  createOhlcMagnetTargetsFromSeries,
   getDrawingPropertySchema,
   hitTestDrawing,
   hitTestDrawingAll,
@@ -295,6 +296,21 @@ if (
   magnetSnapState.magnet.mode !== "drawingAnchor"
 ) {
   throw new Error("Package consumer failed to execute drawing magnet snap state API");
+}
+
+const ohlcTargets = createOhlcMagnetTargetsFromSeries({
+  series: fixtureDailyCandleSeries,
+  viewport: engine.getState().viewport,
+  plotArea: { x: 0, y: 0, width: 640, height: 320 }
+});
+
+if (
+  ohlcTargets.length === 0 ||
+  ohlcTargets[0].type !== "ohlc" ||
+  typeof ohlcTargets[0].field !== "string" ||
+  typeof ohlcTargets[0].dataIndex !== "number"
+) {
+  throw new Error("Package consumer failed to execute OHLC magnet target projection API");
 }
 
 const lifecycleDrawingRenderers = createDrawingRendererRegistry();

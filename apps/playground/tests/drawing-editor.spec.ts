@@ -1,12 +1,72 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import {
+  createChartLayout,
+  createInitialViewport,
+  createOhlcMagnetTargetsFromSeries,
+  createPanelLayout,
+  fixtureDailyCandleSeries
+} from "@simoncharts/chart-engine";
 
 interface DrawingExportPayload {
   drawings: Array<{ anchors: Array<{ x: number; y: number }> }>;
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
 async function getDrawingExport(page: Page): Promise<DrawingExportPayload> {
   return JSON.parse(await page.getByTestId("drawing-json-export").inputValue()) as DrawingExportPayload;
+}
+
+function expectPointToEqual(actual: Point, expected: Point): void {
+  expect(actual.x).toBeCloseTo(expected.x, 5);
+  expect(actual.y).toBeCloseTo(expected.y, 5);
+}
+
+function getVisibleHighTarget(width: number, height: number): Point {
+  const layout = createChartLayout(Math.floor(width), Math.floor(height));
+  const panels = createPanelLayout({
+    width: layout.width,
+    height: layout.height,
+    rightAxisWidth: layout.rightAxisWidth,
+    bottomAxisHeight: layout.bottomAxisHeight,
+    panels: [
+      { id: "main", kind: "main", label: "Main", heightRatio: 3 },
+      { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
+    ]
+  });
+  const mainPanel = panels.find((panel) => panel.kind === "main") ?? panels[0];
+
+  if (!mainPanel) {
+    throw new Error("main panel missing");
+  }
+
+  const viewport = createInitialViewport(
+    fixtureDailyCandleSeries.candles.length,
+    layout.plotArea.width
+  );
+  const targets = createOhlcMagnetTargetsFromSeries({
+    series: fixtureDailyCandleSeries,
+    viewport,
+    plotArea: mainPanel.plotArea,
+    fields: ["high"]
+  });
+  const target = targets.find(
+    (candidate) =>
+      candidate.x > 500 &&
+      candidate.x < mainPanel.plotArea.width - 360 &&
+      candidate.y > 180 &&
+      candidate.y < mainPanel.plotArea.height - 40
+  );
+
+  if (!target) {
+    throw new Error("visible OHLC high target missing");
+  }
+
+  return { x: target.x, y: target.y };
 }
 
 test("creates edits deletes and restores a trend line drawing", async ({ page }) => {
@@ -123,6 +183,31 @@ test("snaps new drawing anchors to existing drawing anchors", async ({ page }) =
   const drawings = (await getDrawingExport(page)).drawings;
 
   expect(drawings[1].anchors[0]).toEqual(firstAnchor);
+});
+
+test("snaps drawing creation to visible candle OHLC targets", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  const target = getVisibleHighTarget(box.width, box.height);
+  const rawClickPoint = { x: target.x + 4, y: target.y + 3 };
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + rawClickPoint.x, box.y + rawClickPoint.y);
+  await expect(page.getByTestId("magnet-state")).toHaveText("ohlc");
+  await page.mouse.click(box.x + target.x + 120, box.y + target.y + 80);
+
+  await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
+  const firstAnchor = (await getDrawingExport(page)).drawings[0].anchors[0];
+
+  expect(firstAnchor).not.toEqual(rawClickPoint);
+  expectPointToEqual(firstAnchor, target);
 });
 
 test("snaps selected anchor handle drags to another drawing anchor", async ({ page }) => {

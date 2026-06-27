@@ -27,6 +27,7 @@ import {
   createDrawingAnchorMagnetTargets,
   defaultChartTheme,
   builtInDrawingToolDefinitions,
+  createOhlcMagnetTargetsFromSeries,
   deserializeDrawingObject,
   finishDrawingHandleDrag,
   finishDrawingMoveDrag,
@@ -1254,20 +1255,27 @@ function getWheelPoint(event: WheelEvent): { x: number; y: number } {
   };
 }
 
-function getDrawingAnchorMagnetTargets(exclude?: {
+function getDrawingMagnetTargets(exclude?: {
   drawingId: string;
   anchorIndex: number;
 }): MagnetSnapTarget[] {
-  const targets = createDrawingAnchorMagnetTargets(drawingEditor.getState().drawings);
+  const drawingTargets = createDrawingAnchorMagnetTargets(drawingEditor.getState().drawings);
+  const filteredDrawingTargets = exclude
+    ? drawingTargets.filter(
+        (target) =>
+          target.drawingId !== exclude.drawingId || target.anchorIndex !== exclude.anchorIndex
+      )
+    : drawingTargets;
+  const ohlcTargets =
+    layout && viewport
+      ? createOhlcMagnetTargetsFromSeries({
+          series: fixtureDailyCandleSeries,
+          viewport,
+          plotArea: getMainPanelLayout().plotArea
+        })
+      : [];
 
-  if (!exclude) {
-    return targets;
-  }
-
-  return targets.filter(
-    (target) =>
-      target.drawingId !== exclude.drawingId || target.anchorIndex !== exclude.anchorIndex
-  );
+  return [...ohlcTargets, ...filteredDrawingTargets];
 }
 
 function getDrawingSnapPoint(
@@ -1276,7 +1284,7 @@ function getDrawingSnapPoint(
 ): { x: number; y: number } {
   const snap = getMagnetSnapState({
     point,
-    targets: getDrawingAnchorMagnetTargets(exclude),
+    targets: getDrawingMagnetTargets(exclude),
     radius: drawingMagnetRadius
   });
 

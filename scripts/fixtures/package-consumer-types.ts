@@ -15,6 +15,7 @@ import {
   getDrawingEditHandles,
   getDrawingHoverState,
   getMagnetSnapState,
+  createOhlcMagnetTargetsFromSeries,
   getDrawingPropertySchema,
   hitTestDrawing,
   hitTestDrawingAll,
@@ -58,6 +59,9 @@ import type {
   DrawingMoveDragPreview,
   MagnetSnapState,
   MagnetSnapStateOptions,
+  MagnetPlotArea,
+  MagnetPriceRange,
+  OhlcMagnetTargetOptions,
   DrawingObject,
   DrawingPoint,
   DrawingResizeOptions,
@@ -315,6 +319,16 @@ const magnetSnapStateOptions: MagnetSnapStateOptions = {
   radius: 4
 };
 const magnetSnapState: MagnetSnapState = getMagnetSnapState(magnetSnapStateOptions);
+const magnetPlotArea: MagnetPlotArea = { x: 0, y: 0, width: 640, height: 320 };
+const magnetPriceRange: MagnetPriceRange = { min: 10, max: 30 };
+const ohlcMagnetTargetOptions: OhlcMagnetTargetOptions = {
+  series,
+  viewport: engine.getState().viewport,
+  plotArea: magnetPlotArea,
+  priceRange: magnetPriceRange,
+  fields: ["open", "high", "low", "close"]
+};
+const ohlcMagnetTargets = createOhlcMagnetTargetsFromSeries(ohlcMagnetTargetOptions);
 
 const layout: ChartLayout = {
   width: 800,
@@ -374,6 +388,10 @@ void drawingHoverState;
 void neutralCursorInput;
 void magnetSnapStateOptions;
 void magnetSnapState;
+void magnetPlotArea;
+void magnetPriceRange;
+void ohlcMagnetTargetOptions;
+void ohlcMagnetTargets;
 void frame;
 void invalidations;
 void layerContext;

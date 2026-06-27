@@ -76,9 +76,25 @@ npm run check:package-types
 
 `guard:sdk-imports` verifies host-facing code imports `@simoncharts/chart-engine` only from the package root.
 
-`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, drawing metadata commands, drawing interaction primitives, drawing transform primitives, and drawing property schema APIs.
+`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, drawing metadata commands, drawing interaction primitives, drawing transform primitives, drawing property schema APIs, and OHLC magnet target projection from neutral candle series.
 
-`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, drawing interaction, drawing magnet snap state, and drawing transform types.
+`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including drawing property schema, advanced parameter, drawing interaction, drawing magnet snap state, OHLC magnet target projection, and drawing transform types.
+
+## v1.0 OHLC Magnet Target Projection Verification
+
+Focused OHLC magnet target projection coverage:
+
+```bash
+npm run build -w @simoncharts/chart-engine
+npm run guard:public-api
+npm run guard:public-types
+npm run check:package-consumer
+npm run check:package-types
+```
+
+SDK runtime coverage verifies package-root consumers can call `createOhlcMagnetTargetsFromSeries()` with `fixtureDailyCandleSeries`, the Engine viewport, and a neutral plot area, then read visible candle OHLC targets. Type coverage verifies `OhlcMagnetTargetOptions`, `MagnetPlotArea`, and `MagnetPriceRange` against built declarations.
+
+OHLC target creation is DOM-free. Hosts pass neutral candle series, viewport, plot area, optional price range, and optional fields; the Engine returns visible candle OHLC `MagnetSnapTarget[]`. Hosts still own pointer events, magnet toggles, target collection timing, render invalidation, persistence, and collaboration.
 
 ## v1.0 Drawing Magnet Snap State Verification
 
