@@ -16,7 +16,7 @@ The release candidate includes:
 - command-driven drawing editor with selection, drag, anchor editing, style editing, text editing, z-order, copy, paste, duplicate, lock, hide, delete, undo, and redo
 - drawing serialization and layout snapshot contracts
 - extension registration for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers
-- SDK guards for public API, package-root imports, runtime consumers, and type consumers
+- SDK guards for runtime public API, type public API, package-root imports, runtime consumers, and type consumers
 
 ## Boundaries
 
@@ -53,6 +53,7 @@ npm run test
 npm run typecheck
 npm run guard:engine-boundary
 npm run guard:public-api
+npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types
@@ -78,6 +79,7 @@ Completed on 2026-06-27:
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 141 files scanned.
 - `npm run guard:public-api` passed: 109 runtime exports.
+- `npm run guard:public-types` passed: 287 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.

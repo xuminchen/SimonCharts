@@ -59,6 +59,7 @@ const requiredScripts = [
   "typecheck",
   "guard:engine-boundary",
   "guard:public-api",
+  "guard:public-types",
   "guard:sdk-imports",
   "check:package-consumer",
   "check:package-types",
@@ -75,6 +76,7 @@ for (const script of requiredScripts) {
 const requiredDocs = [
   "README.md",
   "packages/chart-engine/README.md",
+  "packages/chart-engine/api-types.json",
   "CHANGELOG.md",
   "docs/engine/release-candidate.md",
   "docs/superpowers/plans/2026-06-27-chart-engine-v1-0-release-candidate-writing-plan.md",

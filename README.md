@@ -21,7 +21,7 @@ import {
 } from "@simoncharts/chart-engine";
 ```
 
-Internal source paths are not public API. The public API snapshot is guarded by `npm run guard:public-api`.
+Internal source paths are not public API. Runtime exports are guarded by `npm run guard:public-api`; TypeScript public symbols are guarded by `npm run guard:public-types`.
 
 ## Current RC Scope
 
@@ -46,6 +46,7 @@ npm run test
 npm run typecheck
 npm run guard:engine-boundary
 npm run guard:public-api
+npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types

@@ -72,6 +72,7 @@
 - `npm run typecheck`
 - `npm run guard:engine-boundary`
 - `npm run guard:public-api`
+- `npm run guard:public-types`
 - `npm run guard:sdk-imports`
 - `npm run check:package-consumer`
 - `npm run check:package-types`
@@ -92,6 +93,7 @@ Completed on 2026-06-27:
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 141 files scanned.
 - `npm run guard:public-api` passed: 109 runtime exports.
+- `npm run guard:public-types` passed: 287 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.

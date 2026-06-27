@@ -34,6 +34,7 @@ npm run test
 npm run typecheck
 npm run guard:engine-boundary
 npm run guard:public-api
+npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types
@@ -48,6 +49,8 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 `npm run check:performance` runs the Engine performance baseline as a focused release gate. It covers deterministic 10k-candle and 50k-candle scenarios for render model creation, autoscale, core indicators, static rendering, drawing figure conversion, and render scheduler invalidation throughput.
 
+`npm run guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`. It complements `npm run guard:public-api`, which verifies runtime exports.
+
 `npm run check:release-readiness` verifies the RC package version, package metadata, root export map, required docs, required root scripts, and workspace lockfile version alignment.
 
 The v1.0 RC gate is intentionally package-focused. It does not add TradingReviewSystem or host application checks because SimonCharts Engine is validated as an independent reusable kernel.
@@ -58,12 +61,15 @@ Focused SDK boundary coverage:
 
 ```bash
 npm run guard:public-api
+npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types
 ```
 
 `guard:public-api` verifies runtime root exports against `packages/chart-engine/api-surface.json`.
+
+`guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`.
 
 `guard:sdk-imports` verifies host-facing code imports `@simoncharts/chart-engine` only from the package root.
 

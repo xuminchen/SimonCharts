@@ -28,9 +28,12 @@ The package root is backed by the built SDK artifacts:
 
 `packages/chart-engine/api-surface.json` is the runtime public API snapshot. `npm run guard:public-api` fails when root exports change without an intentional snapshot update.
 
+`packages/chart-engine/api-types.json` is the package-root TypeScript symbol snapshot. `npm run guard:public-types` uses the TypeScript checker to resolve exports from `packages/chart-engine/src/index.ts` and fails when public type symbols change without an intentional snapshot update.
+
 SimonCharts v0.8 adds SDK consumer gates:
 
 - `npm run check:package-types` compiles an external TypeScript consumer fixture against the package root and built declarations.
+- `npm run guard:public-types` verifies the complete package-root TypeScript symbol snapshot.
 - `npm run guard:sdk-imports` verifies host-facing code uses `@simoncharts/chart-engine` from the package root instead of internal package subpaths or `packages/chart-engine/src`.
 - `npm run check:package-consumer` verifies runtime package consumption, including drawing editor command and capability APIs.
 
@@ -103,7 +106,8 @@ v0.4 adds package-level integration contracts:
 v0.8 keeps the package root as the only stable entrypoint and adds verification for both runtime and type consumers:
 
 - runtime exports: `packages/chart-engine/api-surface.json` plus `npm run guard:public-api`
-- type exports: `scripts/fixtures/package-consumer-types.ts` plus `npm run check:package-types`
+- type exports: `packages/chart-engine/api-types.json` plus `npm run guard:public-types`
+- type consumers: `scripts/fixtures/package-consumer-types.ts` plus `npm run check:package-types`
 - host-facing imports: `npm run guard:sdk-imports`
 - runtime package smoke: `npm run check:package-consumer`
 

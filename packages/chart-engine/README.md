@@ -23,7 +23,7 @@ import {
 } from "@simoncharts/chart-engine";
 ```
 
-The package root is the public SDK entrypoint. Internal files under `dist/` or `src/` are not stable public API.
+The package root is the public SDK entrypoint. Internal files under `dist/` or `src/` are not stable public API. Runtime exports are guarded by `npm run guard:public-api`; TypeScript public symbols are guarded by `npm run guard:public-types`.
 
 ## Engine Scope
 
@@ -117,6 +117,7 @@ npm run test
 npm run typecheck
 npm run guard:engine-boundary
 npm run guard:public-api
+npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types

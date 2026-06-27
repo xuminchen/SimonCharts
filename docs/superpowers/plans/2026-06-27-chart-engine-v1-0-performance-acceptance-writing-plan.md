@@ -46,6 +46,7 @@ npm run test
 npm run typecheck
 npm run guard:engine-boundary
 npm run guard:public-api
+npm run guard:public-types
 npm run guard:sdk-imports
 npm run check:package-consumer
 npm run check:package-types
