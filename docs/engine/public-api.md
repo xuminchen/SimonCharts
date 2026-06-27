@@ -12,6 +12,7 @@ import {
   createRenderScheduler,
   createDrawingEditor,
   createChartExtension,
+  createChartExtensionLifecycle,
   applyChartExtension,
   serializeChartLayoutSnapshot,
   deserializeChartLayoutSnapshot,
@@ -122,11 +123,15 @@ v0.9 adds a neutral extension kernel:
 - `ChartExtensionContributions`
 - `ChartExtensionInstallContext`
 - `ChartExtensionInstallResult`
+- `ChartExtensionLifecycle`
+- `ChartExtensionLifecycleState`
+- `ChartExtensionUninstallResult`
 - `createChartExtension()`
 - `createChartExtensionRegistry()`
+- `createChartExtensionLifecycle()`
 - `applyChartExtension()`
 
-Extension contributions install into existing Engine registries for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers.
+Extension contributions install into existing Engine registries for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers. Use `createChartExtensionLifecycle(context)` for local install state, duplicate contribution detection, installed extension snapshots, and uninstall restoration. Use `applyChartExtension()` for direct one-way installs.
 
 Custom drawing types are allowed only when namespaced, for example `acme.measurement-box`. `drawingTypes` remains the built-in drawing list. Use `isBuiltInDrawingType()`, `isCustomDrawingType()`, and `isDrawingType()` for validation.
 

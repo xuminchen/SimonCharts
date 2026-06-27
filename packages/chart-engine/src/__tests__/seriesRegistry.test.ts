@@ -49,6 +49,29 @@ describe("series renderer registry", () => {
     expect(registry.get("line")).toBe(renderer);
   });
 
+  it("unregisters a renderer and returns the removed value", () => {
+    const registry = createSeriesRendererRegistry();
+    const renderer: SeriesRenderer = {
+      type: "line",
+      render() {},
+      getAutoscale() {
+        return undefined;
+      },
+      hitTest() {
+        return undefined;
+      },
+      getTooltipRows() {
+        return [];
+      }
+    };
+
+    registry.register(renderer);
+
+    expect(registry.unregister("line")).toBe(renderer);
+    expect(registry.get("line")).toBeUndefined();
+    expect(registry.unregister("line")).toBeUndefined();
+  });
+
   it("throws a clear error when a renderer is missing", () => {
     const registry = createSeriesRendererRegistry();
 

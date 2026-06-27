@@ -18,6 +18,8 @@ export interface DrawingRenderer {
 
 export interface DrawingRendererRegistry {
   register(renderer: DrawingRenderer): void;
+  unregister(type: DrawingType): DrawingRenderer | undefined;
+  get(type: DrawingType): DrawingRenderer | undefined;
   require(type: DrawingType): DrawingRenderer;
   list(): DrawingRenderer[];
 }
@@ -28,6 +30,16 @@ export function createDrawingRendererRegistry(): DrawingRendererRegistry {
   return {
     register(renderer) {
       renderers.set(renderer.type, renderer);
+    },
+    unregister(type) {
+      const renderer = renderers.get(type);
+
+      renderers.delete(type);
+
+      return renderer;
+    },
+    get(type) {
+      return renderers.get(type);
     },
     require(type) {
       const renderer = renderers.get(type);

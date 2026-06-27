@@ -36,4 +36,25 @@ describe("drawing tool registry", () => {
       drawingMode: "step"
     });
   });
+
+  it("gets and unregisters custom drawing tools by type", () => {
+    const registry = createDrawingToolRegistry();
+    const definition = {
+      type: "acme.measurement-box" as const,
+      label: "Measurement Box",
+      category: "measurement" as const,
+      totalStep: 3,
+      anchorCount: 2,
+      drawingMode: "step" as const,
+      defaultStyle: { color: "#2563eb", lineWidth: 2 },
+      hotkeyId: "drawing.acme.measurement-box"
+    };
+
+    registry.register(definition);
+
+    expect(registry.get("acme.measurement-box")).toBe(definition);
+    expect(registry.unregister("acme.measurement-box")).toBe(definition);
+    expect(registry.get("acme.measurement-box")).toBeUndefined();
+    expect(registry.unregister("acme.measurement-box")).toBeUndefined();
+  });
 });

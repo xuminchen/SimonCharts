@@ -2,6 +2,7 @@ import type { VisualOutputType, VisualRenderer } from "./visualTypes";
 
 export interface VisualRendererRegistry {
   register(renderer: VisualRenderer): void;
+  unregister(type: VisualOutputType): VisualRenderer | undefined;
   get(type: VisualOutputType): VisualRenderer | undefined;
   require(type: VisualOutputType): VisualRenderer;
   list(): VisualRenderer[];
@@ -13,6 +14,13 @@ export function createVisualRendererRegistry(): VisualRendererRegistry {
   return {
     register(renderer) {
       renderers.set(renderer.type, renderer);
+    },
+    unregister(type) {
+      const renderer = renderers.get(type);
+
+      renderers.delete(type);
+
+      return renderer;
     },
     get(type) {
       return renderers.get(type);

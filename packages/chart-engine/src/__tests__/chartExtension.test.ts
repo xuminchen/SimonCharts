@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyChartExtension,
   createChartExtension,
+  createChartExtensionLifecycle,
   createChartExtensionRegistry,
   createDrawingRendererRegistry,
   createDrawingToolRegistry,
@@ -122,6 +123,110 @@ describe("chart extensions", () => {
       createChartExtension({ id: "acme.bad", label: "Bad", version: "" })
     ).toThrow("Chart extension version must be a non-empty string");
   });
+
+  it("installs and uninstalls local extension contributions through a lifecycle", () => {
+    const builtInRenderer = createDrawingRenderer("acme.measurement-box", "built-in");
+    const extensionRenderer = createDrawingRenderer("acme.measurement-box", "extension");
+    const drawingRenderers = createDrawingRendererRegistry();
+    const drawingTools = createDrawingToolRegistry();
+    const lifecycle = createChartExtensionLifecycle({ drawingRenderers, drawingTools });
+    const extension = createChartExtension(
+      { id: "acme.lifecycle", label: "Lifecycle", version: "1.0.0" },
+      {
+        drawingRenderers: [extensionRenderer],
+        drawingTools: [createDrawingTool("acme.measurement-box")]
+      }
+    );
+
+    drawingRenderers.register(builtInRenderer);
+
+    const result = lifecycle.install(extension);
+
+    expect(result.installed.drawingRenderers).toBe(1);
+    expect(result.installed.drawingTools).toBe(1);
+    expect(lifecycle.isInstalled("acme.lifecycle")).toBe(true);
+    expect(lifecycle.getState()).toEqual({
+      installedExtensionIds: ["acme.lifecycle"],
+      installedCount: 1
+    });
+    expect(drawingRenderers.require("acme.measurement-box")).toBe(extensionRenderer);
+    expect(drawingTools.require("acme.measurement-box").label).toBe("Measurement Box");
+
+    const uninstallResult = lifecycle.uninstall("acme.lifecycle");
+
+    expect(uninstallResult).toEqual({
+      extensionId: "acme.lifecycle",
+      uninstalled: {
+        seriesRenderers: 0,
+        visualRenderers: 0,
+        drawingRenderers: 1,
+        drawingTools: 1,
+        figureRenderers: 0
+      }
+    });
+    expect(lifecycle.isInstalled("acme.lifecycle")).toBe(false);
+    expect(drawingRenderers.require("acme.measurement-box")).toBe(builtInRenderer);
+    expect(drawingTools.get("acme.measurement-box")).toBeUndefined();
+  });
+
+  it("rejects duplicate lifecycle installs and duplicate contribution keys", () => {
+    const drawingRenderers = createDrawingRendererRegistry();
+    const lifecycle = createChartExtensionLifecycle({ drawingRenderers });
+    const first = createChartExtension(
+      { id: "acme.first", label: "First", version: "1.0.0" },
+      { drawingRenderers: [createDrawingRenderer("acme.measurement-box", "first")] }
+    );
+    const second = createChartExtension(
+      { id: "acme.second", label: "Second", version: "1.0.0" },
+      { drawingRenderers: [createDrawingRenderer("acme.measurement-box", "second")] }
+    );
+    const duplicatedContribution = createChartExtension(
+      { id: "acme.duplicated", label: "Duplicated", version: "1.0.0" },
+      {
+        drawingRenderers: [
+          createDrawingRenderer("acme.duplicate", "first"),
+          createDrawingRenderer("acme.duplicate", "second")
+        ]
+      }
+    );
+
+    lifecycle.install(first);
+
+    expect(() => lifecycle.install(first)).toThrow("Chart extension is already installed: acme.first");
+    expect(() => lifecycle.install(second)).toThrow(
+      "Chart extension contribution is already installed: drawingRenderers acme.measurement-box by acme.first"
+    );
+    expect(() => lifecycle.install(duplicatedContribution)).toThrow(
+      "Chart extension contribution is duplicated: drawingRenderers acme.duplicate"
+    );
+  });
+
+  it("returns cloned installed extension snapshots", () => {
+    const lifecycle = createChartExtensionLifecycle({});
+    const extension = createChartExtension(
+      {
+        id: "acme.snapshot",
+        label: "Snapshot",
+        version: "1.0.0",
+        capabilities: ["drawingTools"]
+      },
+      { drawingTools: [createDrawingTool("acme.snapshot-tool")] }
+    );
+
+    lifecycle.install(extension);
+
+    const installed = lifecycle.listInstalled();
+
+    installed[0].manifest.capabilities?.push("mutated");
+    installed[0].contributions.drawingTools?.[0]?.defaultStyle.lineDash?.push(99);
+
+    expect(lifecycle.listInstalled()[0].manifest.capabilities).toEqual(["drawingTools"]);
+    expect(lifecycle.listInstalled()[0].contributions.drawingTools?.[0]?.defaultStyle.lineDash).toEqual([
+      4,
+      2
+    ]);
+    expect(() => lifecycle.uninstall("missing")).toThrow("Chart extension is not installed: missing");
+  });
 });
 
 function createSeriesRenderer(): SeriesRenderer {
@@ -156,19 +261,22 @@ function createVisualRenderer(): VisualRenderer {
   };
 }
 
-function createDrawingRenderer(): DrawingRenderer {
+function createDrawingRenderer(
+  type: DrawingRenderer["type"] = "acme.measurement-box",
+  label = "renderer"
+): DrawingRenderer {
   return {
-    type: "acme.measurement-box",
+    type,
     render() {},
     hitTest(drawing) {
-      return { drawingId: drawing.id, distance: 0 };
+      return { drawingId: `${label}:${drawing.id}`, distance: 0 };
     }
   };
 }
 
-function createDrawingTool(): DrawingToolDefinition {
+function createDrawingTool(type: DrawingToolDefinition["type"] = "acme.measurement-box"): DrawingToolDefinition {
   return {
-    type: "acme.measurement-box",
+    type,
     label: "Measurement Box",
     category: "measurement",
     totalStep: 3,

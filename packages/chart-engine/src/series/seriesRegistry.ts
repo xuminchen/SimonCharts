@@ -2,6 +2,7 @@ import type { SeriesRenderer, SeriesType } from "./seriesTypes";
 
 export interface SeriesRendererRegistry {
   register(renderer: SeriesRenderer): void;
+  unregister(type: SeriesType): SeriesRenderer | undefined;
   get(type: SeriesType): SeriesRenderer | undefined;
   require(type: SeriesType): SeriesRenderer;
   list(): SeriesRenderer[];
@@ -13,6 +14,13 @@ export function createSeriesRendererRegistry(): SeriesRendererRegistry {
   return {
     register(renderer) {
       renderers.set(renderer.type, renderer);
+    },
+    unregister(type) {
+      const renderer = renderers.get(type);
+
+      renderers.delete(type);
+
+      return renderer;
     },
     get(type) {
       return renderers.get(type);

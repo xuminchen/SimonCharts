@@ -2,6 +2,7 @@ import {
   applyChartExtension,
   createChartEngine,
   createChartExtension,
+  createChartExtensionLifecycle,
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
@@ -17,7 +18,9 @@ import type {
   ChartLayout,
   ChartLayoutSnapshot,
   ChartExtension,
+  ChartExtensionLifecycle,
   ChartExtensionInstallResult,
+  ChartExtensionUninstallResult,
   CustomDrawingType,
   DrawingEditor,
   DrawingEditorCapabilities,
@@ -118,6 +121,13 @@ const extensionInstallResult: ChartExtensionInstallResult = applyChartExtension(
   drawingRenderers: createDrawingRendererRegistry(),
   drawingTools: createDrawingToolRegistry()
 });
+const extensionLifecycle: ChartExtensionLifecycle = createChartExtensionLifecycle({
+  drawingRenderers: createDrawingRendererRegistry(),
+  drawingTools: createDrawingToolRegistry()
+});
+const lifecycleInstallResult: ChartExtensionInstallResult = extensionLifecycle.install(extension);
+const lifecycleUninstallResult: ChartExtensionUninstallResult =
+  extensionLifecycle.uninstall("consumer.extension");
 
 const customDrawing: DrawingObject = {
   id: "consumer-custom-drawing",
@@ -159,3 +169,5 @@ void frame;
 void invalidations;
 void layerContext;
 void extensionInstallResult;
+void lifecycleInstallResult;
+void lifecycleUninstallResult;

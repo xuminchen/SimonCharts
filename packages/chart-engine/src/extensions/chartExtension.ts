@@ -48,6 +48,30 @@ export interface ChartExtensionInstallResult {
   };
 }
 
+export interface ChartExtensionUninstallResult {
+  extensionId: string;
+  uninstalled: {
+    seriesRenderers: number;
+    visualRenderers: number;
+    drawingRenderers: number;
+    drawingTools: number;
+    figureRenderers: number;
+  };
+}
+
+export interface ChartExtensionLifecycleState {
+  installedExtensionIds: string[];
+  installedCount: number;
+}
+
+export interface ChartExtensionLifecycle {
+  install(extension: ChartExtension): ChartExtensionInstallResult;
+  uninstall(extensionId: string): ChartExtensionUninstallResult;
+  isInstalled(extensionId: string): boolean;
+  listInstalled(): ChartExtension[];
+  getState(): ChartExtensionLifecycleState;
+}
+
 export interface ChartExtensionRegistry {
   register(extension: ChartExtension): void;
   get(id: string): ChartExtension | undefined;
@@ -103,6 +127,88 @@ export function createChartExtensionRegistry(): ChartExtensionRegistry {
   };
 }
 
+export function createChartExtensionLifecycle(
+  context: ChartExtensionInstallContext
+): ChartExtensionLifecycle {
+  const records = new Map<string, InstalledExtensionRecord>();
+  const contributionOwners = new Map<string, string>();
+
+  return {
+    install(extension) {
+      const clonedExtension = cloneExtension(extension);
+      const extensionId = clonedExtension.manifest.id;
+
+      assertManifest(clonedExtension.manifest);
+
+      if (records.has(extensionId)) {
+        throw new Error(`Chart extension is already installed: ${extensionId}`);
+      }
+
+      const snapshots = createContributionSnapshots(
+        clonedExtension,
+        context,
+        contributionOwners
+      );
+
+      for (const snapshot of snapshots) {
+        snapshot.registry?.register(snapshot.installed as never);
+      }
+
+      for (const snapshot of snapshots) {
+        contributionOwners.set(contributionKey(snapshot.kind, snapshot.type), extensionId);
+      }
+
+      const result = createInstallResult(clonedExtension);
+
+      records.set(extensionId, {
+        extension: clonedExtension,
+        result,
+        snapshots
+      });
+
+      return result;
+    },
+    uninstall(extensionId) {
+      const record = records.get(extensionId);
+
+      if (!record) {
+        throw new Error(`Chart extension is not installed: ${extensionId}`);
+      }
+
+      const uninstalled = createEmptyContributionCounts();
+
+      for (const snapshot of [...record.snapshots].reverse()) {
+        const restored = restoreContributionSnapshot(snapshot);
+
+        if (restored) {
+          uninstalled[snapshot.kind] += 1;
+        }
+
+        contributionOwners.delete(contributionKey(snapshot.kind, snapshot.type));
+      }
+
+      records.delete(extensionId);
+
+      return {
+        extensionId,
+        uninstalled
+      };
+    },
+    isInstalled(extensionId) {
+      return records.has(extensionId);
+    },
+    listInstalled() {
+      return [...records.values()].map((record) => cloneExtension(record.extension));
+    },
+    getState() {
+      return {
+        installedExtensionIds: [...records.keys()],
+        installedCount: records.size
+      };
+    }
+  };
+}
+
 export function applyChartExtension(
   extension: ChartExtension,
   context: ChartExtensionInstallContext
@@ -141,6 +247,171 @@ export function applyChartExtension(
       figureRenderers: contributions.figureRenderers?.length ?? 0
     }
   };
+}
+
+type ContributionKind = keyof ChartExtensionInstallResult["installed"];
+
+type ContributionWithType =
+  | SeriesRenderer
+  | VisualRenderer
+  | DrawingRenderer
+  | DrawingToolDefinition
+  | FigureRenderer;
+
+interface LifecycleRegistry<TContribution extends ContributionWithType> {
+  register(contribution: TContribution): void;
+  unregister(type: TContribution["type"]): TContribution | undefined;
+  get(type: TContribution["type"]): TContribution | undefined;
+}
+
+interface ContributionSnapshot<TContribution extends ContributionWithType = ContributionWithType> {
+  kind: ContributionKind;
+  type: TContribution["type"];
+  installed: TContribution;
+  previous: TContribution | undefined;
+  registry: LifecycleRegistry<TContribution> | undefined;
+}
+
+interface InstalledExtensionRecord {
+  extension: ChartExtension;
+  result: ChartExtensionInstallResult;
+  snapshots: ContributionSnapshot[];
+}
+
+type ContributionCounts = ChartExtensionInstallResult["installed"];
+
+function createContributionSnapshots(
+  extension: ChartExtension,
+  context: ChartExtensionInstallContext,
+  contributionOwners: Map<string, string>
+): ContributionSnapshot[] {
+  const snapshots: ContributionSnapshot[] = [];
+  const localContributionKeys = new Set<string>();
+
+  appendContributionSnapshots(
+    snapshots,
+    "seriesRenderers",
+    extension.contributions.seriesRenderers,
+    context.seriesRenderers,
+    contributionOwners,
+    localContributionKeys
+  );
+  appendContributionSnapshots(
+    snapshots,
+    "visualRenderers",
+    extension.contributions.visualRenderers,
+    context.visualRenderers,
+    contributionOwners,
+    localContributionKeys
+  );
+  appendContributionSnapshots(
+    snapshots,
+    "drawingRenderers",
+    extension.contributions.drawingRenderers,
+    context.drawingRenderers,
+    contributionOwners,
+    localContributionKeys
+  );
+  appendContributionSnapshots(
+    snapshots,
+    "drawingTools",
+    extension.contributions.drawingTools,
+    context.drawingTools,
+    contributionOwners,
+    localContributionKeys
+  );
+  appendContributionSnapshots(
+    snapshots,
+    "figureRenderers",
+    extension.contributions.figureRenderers,
+    context.figureRenderers,
+    contributionOwners,
+    localContributionKeys
+  );
+
+  return snapshots;
+}
+
+function appendContributionSnapshots<TContribution extends ContributionWithType>(
+  snapshots: ContributionSnapshot[],
+  kind: ContributionKind,
+  contributions: TContribution[] | undefined,
+  registry: LifecycleRegistry<TContribution> | undefined,
+  contributionOwners: Map<string, string>,
+  localContributionKeys: Set<string>
+): void {
+  for (const contribution of contributions ?? []) {
+    const key = contributionKey(kind, contribution.type);
+
+    if (localContributionKeys.has(key)) {
+      throw new Error(`Chart extension contribution is duplicated: ${kind} ${contribution.type}`);
+    }
+
+    const owner = contributionOwners.get(key);
+
+    if (owner) {
+      throw new Error(
+        `Chart extension contribution is already installed: ${kind} ${contribution.type} by ${owner}`
+      );
+    }
+
+    localContributionKeys.add(key);
+    snapshots.push({
+      kind,
+      type: contribution.type,
+      installed: contribution,
+      previous: registry?.get(contribution.type),
+      registry
+    });
+  }
+}
+
+function restoreContributionSnapshot(snapshot: ContributionSnapshot): boolean {
+  if (!snapshot.registry) {
+    return false;
+  }
+
+  const registry = snapshot.registry as LifecycleRegistry<ContributionWithType>;
+  const current = registry.get(snapshot.type);
+
+  if (current !== snapshot.installed) {
+    return false;
+  }
+
+  if (snapshot.previous) {
+    registry.register(snapshot.previous);
+  } else {
+    registry.unregister(snapshot.type);
+  }
+
+  return true;
+}
+
+function createInstallResult(extension: ChartExtension): ChartExtensionInstallResult {
+  return {
+    extensionId: extension.manifest.id,
+    installed: {
+      seriesRenderers: extension.contributions.seriesRenderers?.length ?? 0,
+      visualRenderers: extension.contributions.visualRenderers?.length ?? 0,
+      drawingRenderers: extension.contributions.drawingRenderers?.length ?? 0,
+      drawingTools: extension.contributions.drawingTools?.length ?? 0,
+      figureRenderers: extension.contributions.figureRenderers?.length ?? 0
+    }
+  };
+}
+
+function createEmptyContributionCounts(): ContributionCounts {
+  return {
+    seriesRenderers: 0,
+    visualRenderers: 0,
+    drawingRenderers: 0,
+    drawingTools: 0,
+    figureRenderers: 0
+  };
+}
+
+function contributionKey(kind: ContributionKind, type: string): string {
+  return `${kind}:${type}`;
 }
 
 function assertManifest(manifest: ChartExtensionManifest): void {
@@ -194,4 +465,3 @@ function cloneDrawingTool(definition: DrawingToolDefinition): DrawingToolDefinit
     }
   };
 }
-

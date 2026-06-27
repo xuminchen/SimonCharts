@@ -33,6 +33,33 @@ const result = applyChartExtension(extension, {
 
 `ChartExtensionInstallResult` reports installed contribution counts. `createChartExtensionRegistry()` stores extension manifests and rejects duplicate extension ids.
 
+## Local Lifecycle
+
+Use `createChartExtensionLifecycle(context)` when a host needs local install state and uninstall behavior:
+
+```ts
+const lifecycle = createChartExtensionLifecycle({
+  drawingTools,
+  drawingRenderers,
+  visualRenderers,
+  seriesRenderers,
+  figureRenderers
+});
+
+lifecycle.install(extension);
+lifecycle.uninstall(extension.manifest.id);
+```
+
+The lifecycle manager:
+
+- rejects duplicate installed extension ids
+- rejects duplicate installed contribution keys such as `drawingTools:acme.measurement-box`
+- exposes `isInstalled(id)`, `listInstalled()`, and `getState()`
+- captures previous registry entries before install
+- restores previous registry entries when an extension is uninstalled and its installed contribution is still current
+
+Use `applyChartExtension()` for direct one-way installs when lifecycle state is not needed.
+
 ## Contribution Types
 
 Supported v0.9 contributions:
@@ -65,5 +92,4 @@ Use:
 
 ## Non-Goals
 
-v0.9 does not load remote plugins, execute sandboxed code, provide a marketplace, persist extensions, or grant extensions access to host APIs. Extension loading and trust policy remain host responsibilities.
-
+v1.0 local lifecycle does not load remote plugins, execute sandboxed code, provide a marketplace, persist extensions, define trust policy, or grant extensions access to host APIs. Extension loading, trust policy, and persistence remain host responsibilities.

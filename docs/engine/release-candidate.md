@@ -15,7 +15,7 @@ The release candidate includes:
 - 63 built-in drawing tools
 - command-driven drawing editor with selection, drag, anchor editing, style editing, text editing, z-order, copy, paste, duplicate, lock, hide, delete, undo, and redo
 - drawing serialization and layout snapshot contracts
-- extension registration for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers
+- extension registration and local lifecycle management for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers
 - SDK guards for runtime public API, type public API, package-root imports, runtime consumers, and type consumers
 
 ## Boundaries
@@ -67,7 +67,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 ## Residual Risks
 
 - The package is marked `UNLICENSED` until a repository license is chosen.
-- The extension kernel registers local contributions but does not manage remote loading, sandboxing, trust, or uninstall lifecycle.
+- The extension kernel manages local install/uninstall lifecycle but does not manage remote loading, sandboxing, trust policy, or persistence.
 - Performance coverage includes deterministic local 10k-candle and 50k-candle acceptance baselines. Broader device, browser, and production telemetry benchmarks remain post-RC work.
 - npm audit currently reports development dependency vulnerabilities; fixing them may require dependency upgrades outside this RC hardening scope.
 
@@ -75,11 +75,11 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Completed on 2026-06-27:
 
-- `npm run test` passed: 32 test files, 387 tests.
+- `npm run test` passed: 32 test files, 393 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 141 files scanned.
-- `npm run guard:public-api` passed: 109 runtime exports.
-- `npm run guard:public-types` passed: 287 type symbols.
+- `npm run guard:public-api` passed: 110 runtime exports.
+- `npm run guard:public-types` passed: 291 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.

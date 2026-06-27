@@ -48,6 +48,18 @@ describe("visual renderer registry", () => {
 
     expect(registry.list()).toEqual([lineRenderer, bandRenderer]);
   });
+
+  it("unregisters visual renderers by type", () => {
+    const registry = createVisualRendererRegistry();
+    const lineRenderer = createRenderer("line");
+
+    registry.register(lineRenderer);
+
+    expect(registry.unregister("line")).toBe(lineRenderer);
+    expect(registry.get("line")).toBeUndefined();
+    expect(registry.list()).toEqual([]);
+    expect(registry.unregister("line")).toBeUndefined();
+  });
 });
 
 describe("visual helpers", () => {

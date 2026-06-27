@@ -3,6 +3,7 @@ import {
   applyChartExtension,
   createChartEngine,
   createChartExtension,
+  createChartExtensionLifecycle,
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
@@ -104,6 +105,25 @@ if (installResult.installed.drawingRenderers !== 1 || installResult.installed.dr
 
 if (drawingTools.require("consumer.measurement-box").label !== "Measurement Box") {
   throw new Error("Package consumer failed to read installed custom drawing tool");
+}
+
+const lifecycleDrawingRenderers = createDrawingRendererRegistry();
+const lifecycleDrawingTools = createDrawingToolRegistry();
+const lifecycle = createChartExtensionLifecycle({
+  drawingRenderers: lifecycleDrawingRenderers,
+  drawingTools: lifecycleDrawingTools
+});
+
+lifecycle.install(extension);
+
+if (!lifecycle.isInstalled("consumer.extension")) {
+  throw new Error("Package consumer failed to install chart extension lifecycle");
+}
+
+lifecycle.uninstall("consumer.extension");
+
+if (lifecycleDrawingTools.get("consumer.measurement-box")) {
+  throw new Error("Package consumer failed to uninstall chart extension lifecycle");
 }
 
 deserializeDrawingObject(

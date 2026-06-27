@@ -67,11 +67,11 @@
 Completed on 2026-06-27:
 
 - `node scripts/check-public-types.mjs --write` generated `packages/chart-engine/api-types.json`.
-- `npm run guard:public-types` passed: 287 type symbols.
-- `npm run test` passed: 32 test files, 387 tests.
+- `npm run guard:public-types` passed: 291 type symbols.
+- `npm run test` passed: 32 test files, 393 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 141 files scanned.
-- `npm run guard:public-api` passed: 109 runtime exports.
+- `npm run guard:public-api` passed: 110 runtime exports.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.
