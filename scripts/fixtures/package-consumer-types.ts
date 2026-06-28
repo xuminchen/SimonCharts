@@ -45,6 +45,9 @@ import type {
   ChartExtension,
   ChartExtensionLifecycle,
   ChartExtensionInstallResult,
+  ChartExtensionInstallValidationIssue,
+  ChartExtensionInstallValidationIssueCode,
+  ChartExtensionInstallValidationResult,
   ChartExtensionUninstallResult,
   ChartExtensionValidationIssue,
   ChartExtensionValidationIssueCode,
@@ -322,7 +325,19 @@ const extensionLifecycle: ChartExtensionLifecycle = createChartExtensionLifecycl
   drawingRenderers: createDrawingRendererRegistry(),
   drawingTools: createDrawingToolRegistry()
 });
+const lifecyclePreflight: ChartExtensionInstallValidationResult =
+  extensionLifecycle.validateInstall(extension);
+const lifecycleInstallValidationIssueCode: ChartExtensionInstallValidationIssueCode =
+  "install.alreadyInstalled";
+const lifecycleInstallValidationIssue: ChartExtensionInstallValidationIssue = {
+  code: lifecycleInstallValidationIssueCode,
+  path: "manifest.id",
+  message: "Example install issue",
+  ownerExtensionId: "consumer.extension"
+};
 const lifecycleInstallResult: ChartExtensionInstallResult = extensionLifecycle.install(extension);
+const lifecycleDuplicatePreflight: ChartExtensionInstallValidationResult =
+  extensionLifecycle.validateInstall(extension);
 const lifecycleUninstallResult: ChartExtensionUninstallResult =
   extensionLifecycle.uninstall("consumer.extension");
 
@@ -460,5 +475,9 @@ void extensionCompatibility;
 void extensionValidationIssueCode;
 void extensionValidationIssue;
 void extensionValidation;
+void lifecyclePreflight;
+void lifecycleInstallValidationIssueCode;
+void lifecycleInstallValidationIssue;
 void lifecycleInstallResult;
+void lifecycleDuplicatePreflight;
 void lifecycleUninstallResult;

@@ -363,10 +363,25 @@ const lifecycle = createChartExtensionLifecycle({
   drawingTools: lifecycleDrawingTools
 });
 
+const lifecyclePreflight = lifecycle.validateInstall(extension);
+
+if (!lifecyclePreflight.valid || lifecyclePreflight.issues.length !== 0) {
+  throw new Error("Package consumer failed to validate chart extension lifecycle install");
+}
+
 lifecycle.install(extension);
 
 if (!lifecycle.isInstalled("consumer.extension")) {
   throw new Error("Package consumer failed to install chart extension lifecycle");
+}
+
+const lifecycleDuplicatePreflight = lifecycle.validateInstall(extension);
+
+if (
+  lifecycleDuplicatePreflight.valid ||
+  !lifecycleDuplicatePreflight.issues.some((issue) => issue.code === "install.alreadyInstalled")
+) {
+  throw new Error("Package consumer failed to diagnose duplicate chart extension lifecycle install");
 }
 
 lifecycle.uninstall("consumer.extension");

@@ -58,6 +58,8 @@ Extension compatibility helpers have focused coverage for deriving requirements 
 
 Extension validation diagnostics have focused coverage for manifest identity issues, duplicate contribution keys, drawing contribution type validation, deterministic issue ordering, and non-mutating behavior. Validation is structural diagnostics only, not security review, sandboxing, trust policy, marketplace review, persistence, or permissioning.
 
+Lifecycle install validation has focused coverage for local install diagnostics, including structural issue passthrough, already installed extension ids, installed contribution conflicts, owner extension ids, and non-mutating behavior.
+
 `npm run check:performance` runs the Engine performance baseline as a focused release gate. It covers deterministic 10k-candle and 50k-candle scenarios for render model creation, autoscale, core indicators, static rendering, drawing figure conversion, and render scheduler invalidation throughput.
 
 `npm run guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`. It complements `npm run guard:public-api`, which verifies runtime exports.

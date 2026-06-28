@@ -73,6 +73,7 @@ export interface ChartExtensionLifecycleState {
 }
 
 export interface ChartExtensionLifecycle {
+  validateInstall(extension: ChartExtension): ChartExtensionInstallValidationResult;
   install(extension: ChartExtension): ChartExtensionInstallResult;
   uninstall(extensionId: string): ChartExtensionUninstallResult;
   isInstalled(extensionId: string): boolean;
@@ -103,6 +104,23 @@ export interface ChartExtensionValidationIssue {
 export interface ChartExtensionValidationResult {
   valid: boolean;
   issues: ChartExtensionValidationIssue[];
+}
+
+export type ChartExtensionInstallValidationIssueCode =
+  | ChartExtensionValidationIssueCode
+  | "install.alreadyInstalled"
+  | "install.contributionConflict";
+
+export interface ChartExtensionInstallValidationIssue {
+  code: ChartExtensionInstallValidationIssueCode;
+  path: string;
+  message: string;
+  ownerExtensionId?: string;
+}
+
+export interface ChartExtensionInstallValidationResult {
+  valid: boolean;
+  issues: ChartExtensionInstallValidationIssue[];
 }
 
 const extensionContributionOrder: readonly ExtensionContributionType[] = [
@@ -226,6 +244,27 @@ export function createChartExtensionLifecycle(
   const contributionOwners = new Map<string, string>();
 
   return {
+    validateInstall(extension) {
+      const issues: ChartExtensionInstallValidationIssue[] = [
+        ...validateChartExtension(extension).issues
+      ];
+      const extensionId = extension?.manifest?.id;
+
+      if (typeof extensionId === "string" && records.has(extensionId)) {
+        issues.push({
+          code: "install.alreadyInstalled",
+          path: "manifest.id",
+          message: `Chart extension is already installed: ${extensionId}`
+        });
+      }
+
+      appendInstallContributionConflictIssues(issues, extension, contributionOwners);
+
+      return {
+        valid: issues.length === 0,
+        issues
+      };
+    },
     install(extension) {
       const clonedExtension = cloneExtension(extension);
       const extensionId = clonedExtension.manifest.id;
@@ -454,6 +493,35 @@ function appendContributionSnapshots<TContribution extends ContributionWithType>
       installed: contribution,
       previous: registry?.get(contribution.type),
       registry
+    });
+  }
+}
+
+function appendInstallContributionConflictIssues(
+  issues: ChartExtensionInstallValidationIssue[],
+  extension: ChartExtension,
+  contributionOwners: Map<string, string>
+): void {
+  for (const contributionType of extensionContributionOrder) {
+    getContributionArray(extension?.contributions, contributionType).forEach((contribution, index) => {
+      if (typeof contribution.type !== "string") {
+        return;
+      }
+
+      const ownerExtensionId = contributionOwners.get(
+        contributionKey(contributionType, contribution.type)
+      );
+
+      if (!ownerExtensionId) {
+        return;
+      }
+
+      issues.push({
+        code: "install.contributionConflict",
+        path: `contributions.${contributionType}[${index}].type`,
+        message: `Chart extension contribution is already installed: ${contributionType} ${contribution.type} by ${ownerExtensionId}`,
+        ownerExtensionId
+      });
     });
   }
 }

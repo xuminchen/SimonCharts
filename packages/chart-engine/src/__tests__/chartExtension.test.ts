@@ -14,6 +14,7 @@ import {
   getChartExtensionCapabilityRequirements,
   validateChartExtension,
   type ChartExtension,
+  type ChartExtensionInstallValidationResult,
   type DrawingRenderer,
   type DrawingToolDefinition,
   type FigureRenderer,
@@ -427,6 +428,187 @@ describe("chart extensions", () => {
     expect(drawingTools[0]?.defaultStyle.lineDash).toEqual([4, 2]);
   });
 
+  it("validates install candidates without issues", () => {
+    const lifecycle = createChartExtensionLifecycle({});
+    const extension = createChartExtension(
+      { id: "acme.install-valid", label: "Install Valid", version: "1.0.0" },
+      {
+        seriesRenderers: [createSeriesRenderer()],
+        visualRenderers: [createVisualRenderer()],
+        drawingRenderers: [createDrawingRenderer("trendLine")],
+        drawingTools: [createDrawingTool("trendLine")],
+        figureRenderers: [createFigureRenderer()]
+      }
+    );
+
+    expect(lifecycle.validateInstall(extension)).toEqual({
+      valid: true,
+      issues: []
+    });
+  });
+
+  it("includes structural install validation issues without throwing", () => {
+    const lifecycle = createChartExtensionLifecycle({});
+    const extension = {
+      manifest: {
+        id: "",
+        label: "Bad",
+        version: "1.0.0"
+      },
+      contributions: {
+        drawingRenderers: [createDrawingRenderer("invalid" as DrawingRenderer["type"])]
+      }
+    } as ChartExtension;
+
+    expect(() => lifecycle.validateInstall(extension)).not.toThrow();
+    expect(lifecycle.validateInstall(extension)).toEqual(validateChartExtension(extension));
+  });
+
+  it("reports already-installed ids before contribution conflicts", () => {
+    const lifecycle = createChartExtensionLifecycle({});
+    const installed = createChartExtension(
+      { id: "acme.same-id", label: "Same ID", version: "1.0.0" },
+      { drawingRenderers: [createDrawingRenderer("acme.same-renderer", "installed")] }
+    );
+    const nextExtension = createChartExtension(
+      { id: "acme.same-id", label: "Same ID Next", version: "1.0.0" },
+      { drawingRenderers: [createDrawingRenderer("acme.same-renderer", "next")] }
+    );
+
+    lifecycle.install(installed);
+
+    expect(lifecycle.validateInstall(nextExtension).issues).toEqual([
+      {
+        code: "install.alreadyInstalled",
+        path: "manifest.id",
+        message: "Chart extension is already installed: acme.same-id"
+      },
+      {
+        code: "install.contributionConflict",
+        path: "contributions.drawingRenderers[0].type",
+        message: "Chart extension contribution is already installed: drawingRenderers acme.same-renderer by acme.same-id",
+        ownerExtensionId: "acme.same-id"
+      }
+    ]);
+  });
+
+  it("reports contribution conflicts with owner ids in contribution order", () => {
+    const lifecycle = createChartExtensionLifecycle({});
+    const installed = createChartExtension(
+      { id: "acme.owner", label: "Owner", version: "1.0.0" },
+      {
+        seriesRenderers: [createSeriesRenderer("bars"), createSeriesRenderer("line")],
+        visualRenderers: [createVisualRenderer("histogram")],
+        drawingRenderers: [createDrawingRenderer("trendLine")],
+        drawingTools: [createDrawingTool("trendLine")],
+        figureRenderers: [createFigureRenderer("marker")]
+      }
+    );
+    const nextExtension = createChartExtension(
+      { id: "acme.next", label: "Next", version: "1.0.0" },
+      {
+        figureRenderers: [createFigureRenderer("marker")],
+        drawingTools: [createDrawingTool("trendLine")],
+        drawingRenderers: [createDrawingRenderer("trendLine")],
+        visualRenderers: [createVisualRenderer("histogram")],
+        seriesRenderers: [createSeriesRenderer("line"), createSeriesRenderer("bars")]
+      }
+    );
+
+    lifecycle.install(installed);
+
+    expect(lifecycle.validateInstall(nextExtension).issues).toEqual([
+      {
+        code: "install.contributionConflict",
+        path: "contributions.seriesRenderers[0].type",
+        message: "Chart extension contribution is already installed: seriesRenderers line by acme.owner",
+        ownerExtensionId: "acme.owner"
+      },
+      {
+        code: "install.contributionConflict",
+        path: "contributions.seriesRenderers[1].type",
+        message: "Chart extension contribution is already installed: seriesRenderers bars by acme.owner",
+        ownerExtensionId: "acme.owner"
+      },
+      {
+        code: "install.contributionConflict",
+        path: "contributions.visualRenderers[0].type",
+        message: "Chart extension contribution is already installed: visualRenderers histogram by acme.owner",
+        ownerExtensionId: "acme.owner"
+      },
+      {
+        code: "install.contributionConflict",
+        path: "contributions.drawingRenderers[0].type",
+        message: "Chart extension contribution is already installed: drawingRenderers trendLine by acme.owner",
+        ownerExtensionId: "acme.owner"
+      },
+      {
+        code: "install.contributionConflict",
+        path: "contributions.drawingTools[0].type",
+        message: "Chart extension contribution is already installed: drawingTools trendLine by acme.owner",
+        ownerExtensionId: "acme.owner"
+      },
+      {
+        code: "install.contributionConflict",
+        path: "contributions.figureRenderers[0].type",
+        message: "Chart extension contribution is already installed: figureRenderers marker by acme.owner",
+        ownerExtensionId: "acme.owner"
+      }
+    ]);
+  });
+
+  it("does not mutate lifecycle state, registries, or extension inputs while validating installs", () => {
+    const drawingRenderers = createDrawingRendererRegistry();
+    const drawingTools = createDrawingToolRegistry();
+    const lifecycle = createChartExtensionLifecycle({ drawingRenderers, drawingTools });
+    const installedRenderer = createDrawingRenderer("acme.persisted", "installed");
+    const installed = createChartExtension(
+      { id: "acme.installed", label: "Installed", version: "1.0.0" },
+      {
+        drawingRenderers: [installedRenderer],
+        drawingTools: [createDrawingTool("acme.persisted")]
+      }
+    );
+    const nextRenderer = createDrawingRenderer("acme.persisted", "next");
+    const nextTool = createDrawingTool("acme.persisted");
+    const nextExtension: ChartExtension = {
+      manifest: {
+        id: "acme.next",
+        label: "Next",
+        version: "1.0.0",
+        capabilities: ["drawingTools"]
+      },
+      contributions: {
+        drawingRenderers: [nextRenderer],
+        drawingTools: [nextTool]
+      }
+    };
+
+    lifecycle.install(installed);
+
+    const stateBefore = lifecycle.getState();
+    const installedBefore = lifecycle.listInstalled();
+    const rendererBefore = drawingRenderers.require("acme.persisted");
+    const toolBefore = drawingTools.require("acme.persisted");
+
+    lifecycle.validateInstall(nextExtension);
+
+    expect(lifecycle.getState()).toEqual(stateBefore);
+    expect(lifecycle.listInstalled()).toEqual(installedBefore);
+    expect(drawingRenderers.require("acme.persisted")).toBe(rendererBefore);
+    expect(drawingTools.require("acme.persisted")).toBe(toolBefore);
+    expect(lifecycle.isInstalled("acme.next")).toBe(false);
+    expect(nextExtension.manifest).toEqual({
+      id: "acme.next",
+      label: "Next",
+      version: "1.0.0",
+      capabilities: ["drawingTools"]
+    });
+    expect(nextExtension.contributions.drawingRenderers?.[0]).toBe(nextRenderer);
+    expect(nextExtension.contributions.drawingTools?.[0]).toBe(nextTool);
+    expect(nextTool.defaultStyle.lineDash).toEqual([4, 2]);
+  });
+
   it("installs and uninstalls local extension contributions through a lifecycle", () => {
     const builtInRenderer = createDrawingRenderer("acme.measurement-box", "built-in");
     const extensionRenderer = createDrawingRenderer("acme.measurement-box", "extension");
@@ -495,6 +677,25 @@ describe("chart extensions", () => {
 
     lifecycle.install(first);
 
+    expect(lifecycle.validateInstall(first).issues.map((issue) => issue.code)).toEqual([
+      "install.alreadyInstalled",
+      "install.contributionConflict"
+    ]);
+    expect(lifecycle.validateInstall(second).issues).toEqual([
+      {
+        code: "install.contributionConflict",
+        path: "contributions.drawingRenderers[0].type",
+        message: "Chart extension contribution is already installed: drawingRenderers acme.measurement-box by acme.first",
+        ownerExtensionId: "acme.first"
+      }
+    ]);
+    expect(lifecycle.validateInstall(duplicatedContribution).issues).toEqual([
+      {
+        code: "contribution.duplicate",
+        path: "contributions.drawingRenderers[1].type",
+        message: "Chart extension contribution type is duplicated: drawingRenderers acme.duplicate"
+      }
+    ]);
     expect(() => lifecycle.install(first)).toThrow("Chart extension is already installed: acme.first");
     expect(() => lifecycle.install(second)).toThrow(
       "Chart extension contribution is already installed: drawingRenderers acme.measurement-box by acme.first"
@@ -532,9 +733,9 @@ describe("chart extensions", () => {
   });
 });
 
-function createSeriesRenderer(): SeriesRenderer {
+function createSeriesRenderer(type: SeriesRenderer["type"] = "line"): SeriesRenderer {
   return {
-    type: "line",
+    type,
     render() {},
     getAutoscale() {
       return undefined;
@@ -548,9 +749,9 @@ function createSeriesRenderer(): SeriesRenderer {
   };
 }
 
-function createVisualRenderer(): VisualRenderer {
+function createVisualRenderer(type: VisualRenderer["type"] = "line"): VisualRenderer {
   return {
-    type: "line",
+    type,
     render() {},
     getAutoscale() {
       return undefined;
@@ -590,11 +791,14 @@ function createDrawingTool(type: DrawingToolDefinition["type"] = "acme.measureme
   };
 }
 
-function createFigureRenderer(): FigureRenderer {
+function createFigureRenderer(type: FigureRenderer["type"] = "marker"): FigureRenderer {
   return {
-    type: "marker",
+    type,
     render() {}
   };
 }
 
 function _typeCheckExtension(_extension: ChartExtension): void {}
+function _typeCheckInstallValidation(
+  _result: ChartExtensionInstallValidationResult
+): void {}

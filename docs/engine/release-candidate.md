@@ -11,6 +11,7 @@ The release candidate includes:
 - Engine-owned capability requirement checker for deterministic manifest compatibility diagnostics
 - Engine-owned extension compatibility preflight helpers for deriving contribution requirements and checking them against the capability manifest
 - Engine-owned extension validation diagnostics for local extension structure and contribution issues
+- Engine-owned lifecycle install validation diagnostics for already-installed ids and local contribution conflicts
 - 17 built-in chart series types through `supportedSeriesTypes`
 - static canvas rendering and layered rendering primitives
 - interaction engine, interaction session, crosshair state, and render scheduler
@@ -93,11 +94,11 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Completed on 2026-06-28:
 
-- `npm run test` passed: 42 test files, 488 tests.
+- `npm run test` passed: 42 test files, 493 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 160 files scanned.
 - `npm run guard:public-api` passed: 146 runtime exports.
-- `npm run guard:public-types` passed: 384 type symbols.
+- `npm run guard:public-types` passed: 387 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.
@@ -107,6 +108,29 @@ Completed on 2026-06-28:
 - `npm run check:package-artifact` passed: 121 package files.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
 - `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+
+Focused Extension Install Validation evidence on 2026-06-28:
+
+- `npm run test -- packages/chart-engine/src/__tests__/chartExtension.test.ts -- --reporter=dot` passed: 23 tests.
+- `npm run build -w @simoncharts/chart-engine` passed.
+- Pre-snapshot `npm run guard:public-api` passed unchanged at 146 runtime exports.
+- Pre-snapshot `npm run guard:public-types` failed as expected with added symbols `ChartExtensionInstallValidationIssue`, `ChartExtensionInstallValidationIssueCode`, and `ChartExtensionInstallValidationResult`.
+- `node scripts/check-public-types.mjs --write` refreshed the type snapshot to 387 type symbols.
+- `npm run guard:public-api` passed: 146 runtime exports.
+- `npm run guard:public-types` passed: 387 type symbols.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- `npm run typecheck` passed.
+- `npm run guard:engine-boundary` passed: 160 files scanned.
+- `npm run guard:sdk-imports` passed.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
+- `npm run build` passed for the Engine package and playground.
+- `npm run test` passed: 42 test files, 493 tests.
+- `npm run check:performance` passed: 1 test file, 2 performance scenarios.
+- `npm run check:package-artifact` passed: 121 package files.
+- `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+- `git diff --check` passed.
 
 Focused Extension Validation evidence on 2026-06-28:
 

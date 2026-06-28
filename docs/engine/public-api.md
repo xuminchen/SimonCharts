@@ -190,6 +190,8 @@ Extension contributions install into existing Engine registries for series rende
 
 `validateChartExtension(extension)` returns deterministic validation issues for local extension definitions. It checks manifest identity fields, duplicate contribution keys, and drawing contribution type names without installing the extension. Hosts still own security review, sandboxing, trust policy, marketplace review, persistence, permissions, and product workflows.
 
+`createChartExtensionLifecycle(context).validateInstall(extension)` returns install-time diagnostics for the current local lifecycle state. It reports structural validation issues, already installed extension ids, and installed contribution conflicts without installing, uninstalling, mutating registries, loading code, sandboxing code, trusting code, persisting extensions, or granting permissions.
+
 ## v1.0 Drawing Property Schema
 
 v1.0 adds Engine-owned drawing property metadata so complete drawing editor property panels can be generated from package-root APIs:

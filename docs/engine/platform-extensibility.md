@@ -79,6 +79,8 @@ Use `validateChartExtension(extension)` when hosts or extension authoring tools 
 
 The validator returns issue objects instead of installing the extension or throwing. It is not a security review, sandbox, trust policy, marketplace review, persistence layer, or permission system.
 
+Use `createChartExtensionLifecycle(context).validateInstall(extension)` when hosts need install-time diagnostics for the current local lifecycle state. It reports structural validation issues, already installed extension ids, and installed contribution conflicts without mutating lifecycle records or registries.
+
 ## Contribution Types
 
 Supported v0.9 contributions:
