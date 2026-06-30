@@ -52,6 +52,8 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 `createEngineCapabilityManifest()` has focused coverage so hosts can inspect the Engine feature surface through a neutral package-root API. The manifest is validated as diagnostics metadata only; it does not control host feature flags, permissions, persistence, remote plugins, or collaboration.
 
+`checkEngineApiVersionCompatibility()` has focused coverage for deterministic exact-match API contract diagnostics, including package name, package version, API version, release channel, fixed mismatch ordering, and unknown future strings. The checker does not implement semver ranges, host feature flags, permissions, persistence, routing, plugin trust, or TradingReviewSystem workflows.
+
 `checkEngineCapabilityRequirements()` has focused coverage for deterministic manifest compatibility checks, including unknown future strings and missing capability groups. The checker only compares neutral Engine capability fields and remains outside host feature flags, permissions, persistence, routing, plugin trust, and collaboration.
 
 Extension compatibility helpers have focused coverage for deriving requirements from local extension contribution arrays and checking those requirements against the Engine manifest. The helpers are diagnostics/preflight only and do not load, sandbox, trust, persist, install, or distribute extensions.

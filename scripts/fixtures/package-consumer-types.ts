@@ -1,6 +1,7 @@
 import {
   applyChartExtension,
   checkChartExtensionCompatibility,
+  checkEngineApiVersionCompatibility,
   checkEngineCapabilityRequirements,
   createChartEngine,
   createEngineCapabilityManifest,
@@ -34,6 +35,7 @@ import {
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
+  engineApiVersion,
   fixtureDailyCandleSeries,
   serializeChartLayoutSnapshot
 } from "@simoncharts/chart-engine";
@@ -80,6 +82,9 @@ import type {
   DrawingRotateOptions,
   DrawingSelectionBoxOperation,
   DrawingSelectionBoxPreview,
+  EngineApiVersionCheckResult,
+  EngineApiVersionMismatch,
+  EngineApiVersionRequirement,
   EngineCapabilityCheckResult,
   EngineCapabilityManifest,
   EngineCapabilityRequirementGap,
@@ -97,6 +102,7 @@ import type {
   RenderScheduler,
   VisualRenderer,
   VisualRendererRegistry,
+  EngineReleaseChannel,
   InteractionCapability,
   VisualOutputType
 } from "@simoncharts/chart-engine";
@@ -112,6 +118,19 @@ const interactionCapability: InteractionCapability = engineCapabilityManifest.in
 const extensionContributionType: ExtensionContributionType =
   engineCapabilityManifest.extensionContributionTypes[0];
 const visualOutputType: VisualOutputType = engineCapabilityManifest.visualOutputTypes[0];
+const engineReleaseChannel: EngineReleaseChannel = engineCapabilityManifest.releaseChannel;
+const engineApiVersionRequirement: EngineApiVersionRequirement = {
+  packageName: "@simoncharts/chart-engine",
+  apiVersion: engineApiVersion,
+  releaseChannel: engineReleaseChannel
+};
+const engineApiVersionCheckResult: EngineApiVersionCheckResult =
+  checkEngineApiVersionCompatibility(engineCapabilityManifest, engineApiVersionRequirement);
+const engineApiVersionMismatch: EngineApiVersionMismatch = {
+  key: "apiVersion",
+  expected: "future",
+  actual: engineApiVersion
+};
 const engineCapabilityRequirementKey: EngineCapabilityRequirementKey = "seriesTypes";
 const engineCapabilityRequirements: EngineCapabilityRequirements = {
   [engineCapabilityRequirementKey]: ["candles", "line"],
@@ -430,6 +449,10 @@ void drawingEditorCapability;
 void interactionCapability;
 void extensionContributionType;
 void visualOutputType;
+void engineReleaseChannel;
+void engineApiVersionRequirement;
+void engineApiVersionCheckResult;
+void engineApiVersionMismatch;
 void engineCapabilityRequirementKey;
 void engineCapabilityRequirements;
 void engineCapabilityCheckResult;

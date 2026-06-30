@@ -5,8 +5,10 @@ Import from the package root:
 ```ts
 import {
   checkEngineCapabilityRequirements,
+  checkEngineApiVersionCompatibility,
   createChartEngine,
   createEngineCapabilityManifest,
+  engineApiVersion,
   renderStaticChart,
   createStaticLayers,
   createInteractionEngine,
@@ -81,6 +83,22 @@ if (!result.compatible) {
 ```
 
 The checker compares neutral manifest fields only. Unknown future strings are reported as missing rather than rejected, which keeps external configuration and future package versions easy to diagnose. The checker is not a host feature flag, permission, persistence, routing, plugin trust, or collaboration system.
+
+Use `checkEngineApiVersionCompatibility()` when a consumer needs exact API contract diagnostics before relying on package-root APIs:
+
+```ts
+const result = checkEngineApiVersionCompatibility(manifest, {
+  packageName: "@simoncharts/chart-engine",
+  apiVersion: engineApiVersion,
+  releaseChannel: "rc"
+});
+
+if (!result.compatible) {
+  console.log(result.mismatches);
+}
+```
+
+API version diagnostics compare provided strings exactly in deterministic order. They are separate from capability requirements and do not implement semver ranges, host feature flags, permissions, persistence, routing, plugin trust, or TradingReviewSystem workflows.
 
 ## Facade
 

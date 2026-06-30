@@ -10,6 +10,28 @@ import type { VisualOutputType } from "../visuals/visualTypes";
 
 export type { VisualOutputType } from "../visuals/visualTypes";
 
+export const engineApiVersion = "1.0.0-rc.0";
+
+export type EngineReleaseChannel = "rc";
+
+export interface EngineApiVersionRequirement {
+  packageName?: string;
+  packageVersion?: string;
+  apiVersion?: string;
+  releaseChannel?: string;
+}
+
+export interface EngineApiVersionMismatch {
+  key: keyof EngineApiVersionRequirement;
+  expected: string;
+  actual: string;
+}
+
+export interface EngineApiVersionCheckResult {
+  compatible: boolean;
+  mismatches: EngineApiVersionMismatch[];
+}
+
 export type ExtensionContributionType =
   | "seriesRenderers"
   | "visualRenderers"
@@ -46,7 +68,8 @@ export interface EngineDrawingToolCapability {
 export interface EngineCapabilityManifest {
   packageName: "@simoncharts/chart-engine";
   packageVersion: "1.0.0-rc.0";
-  releaseChannel: "rc";
+  apiVersion: typeof engineApiVersion;
+  releaseChannel: EngineReleaseChannel;
   seriesTypes: SeriesType[];
   drawingTypes: BuiltInDrawingType[];
   drawingTools: EngineDrawingToolCapability[];
@@ -90,6 +113,13 @@ const requirementKeys: readonly EngineCapabilityRequirementKey[] = [
   "extensionContributionTypes"
 ];
 
+const apiVersionRequirementKeys: readonly (keyof EngineApiVersionRequirement)[] = [
+  "packageName",
+  "packageVersion",
+  "apiVersion",
+  "releaseChannel"
+];
+
 const visualOutputTypes: VisualOutputType[] = ["line", "histogram", "band", "marker"];
 
 const drawingEditorCapabilities: DrawingEditorCapability[] = [
@@ -122,6 +152,7 @@ export function createEngineCapabilityManifest(): EngineCapabilityManifest {
   return {
     packageName: "@simoncharts/chart-engine",
     packageVersion: "1.0.0-rc.0",
+    apiVersion: engineApiVersion,
     releaseChannel: "rc",
     seriesTypes: [...supportedSeriesTypes],
     drawingTypes: [...drawingTypes],
@@ -139,6 +170,36 @@ export function createEngineCapabilityManifest(): EngineCapabilityManifest {
     drawingEditorCapabilities: [...drawingEditorCapabilities],
     interactionCapabilities: [...interactionCapabilities],
     extensionContributionTypes: [...extensionContributionTypes]
+  };
+}
+
+export function checkEngineApiVersionCompatibility(
+  manifest: EngineCapabilityManifest,
+  requirement: EngineApiVersionRequirement
+): EngineApiVersionCheckResult {
+  const mismatches: EngineApiVersionMismatch[] = [];
+
+  for (const key of apiVersionRequirementKeys) {
+    const expected = requirement[key];
+
+    if (expected === undefined) {
+      continue;
+    }
+
+    const actual = manifest[key];
+
+    if (actual !== expected) {
+      mismatches.push({
+        key,
+        expected,
+        actual
+      });
+    }
+  }
+
+  return {
+    compatible: mismatches.length === 0,
+    mismatches
   };
 }
 

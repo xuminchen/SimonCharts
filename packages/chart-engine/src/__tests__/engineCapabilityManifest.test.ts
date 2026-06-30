@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   builtInDrawingToolDefinitions,
+  checkEngineApiVersionCompatibility,
   checkEngineCapabilityRequirements,
   coreIndicatorIds,
   createEngineCapabilityManifest,
   drawingTypes,
+  engineApiVersion,
   supportedSeriesTypes
 } from "../index";
 
@@ -14,7 +16,109 @@ describe("engine capability manifest", () => {
 
     expect(manifest.packageName).toBe("@simoncharts/chart-engine");
     expect(manifest.packageVersion).toBe("1.0.0-rc.0");
+    expect(manifest.apiVersion).toBe(engineApiVersion);
     expect(manifest.releaseChannel).toBe("rc");
+  });
+
+  it("accepts exact API version requirements", () => {
+    const manifest = createEngineCapabilityManifest();
+    const result = checkEngineApiVersionCompatibility(manifest, {
+      packageName: "@simoncharts/chart-engine",
+      packageVersion: "1.0.0-rc.0",
+      apiVersion: engineApiVersion,
+      releaseChannel: "rc"
+    });
+
+    expect(result).toEqual({
+      compatible: true,
+      mismatches: []
+    });
+  });
+
+  it("checks only provided API version requirement keys with exact strings", () => {
+    const manifest = createEngineCapabilityManifest();
+    const result = checkEngineApiVersionCompatibility(manifest, {
+      packageVersion: ">=1.0.0-rc.0"
+    });
+
+    expect(result).toEqual({
+      compatible: false,
+      mismatches: [
+        {
+          key: "packageVersion",
+          expected: ">=1.0.0-rc.0",
+          actual: "1.0.0-rc.0"
+        }
+      ]
+    });
+  });
+
+  it("reports API version mismatches in deterministic metadata order", () => {
+    const manifest = createEngineCapabilityManifest();
+    const result = checkEngineApiVersionCompatibility(manifest, {
+      releaseChannel: "stable",
+      apiVersion: "2.0.0",
+      packageVersion: "1.0.0",
+      packageName: "@simoncharts/future-chart-engine"
+    });
+
+    expect(result).toEqual({
+      compatible: false,
+      mismatches: [
+        {
+          key: "packageName",
+          expected: "@simoncharts/future-chart-engine",
+          actual: "@simoncharts/chart-engine"
+        },
+        {
+          key: "packageVersion",
+          expected: "1.0.0",
+          actual: "1.0.0-rc.0"
+        },
+        {
+          key: "apiVersion",
+          expected: "2.0.0",
+          actual: engineApiVersion
+        },
+        {
+          key: "releaseChannel",
+          expected: "stable",
+          actual: "rc"
+        }
+      ]
+    });
+  });
+
+  it("reports unknown future API version strings as mismatches", () => {
+    const manifest = createEngineCapabilityManifest();
+
+    expect(() =>
+      checkEngineApiVersionCompatibility(manifest, {
+        apiVersion: "2099.0.0-future.0",
+        releaseChannel: "future"
+      })
+    ).not.toThrow();
+
+    expect(
+      checkEngineApiVersionCompatibility(manifest, {
+        apiVersion: "2099.0.0-future.0",
+        releaseChannel: "future"
+      })
+    ).toEqual({
+      compatible: false,
+      mismatches: [
+        {
+          key: "apiVersion",
+          expected: "2099.0.0-future.0",
+          actual: engineApiVersion
+        },
+        {
+          key: "releaseChannel",
+          expected: "future",
+          actual: "rc"
+        }
+      ]
+    });
   });
 
   it("aligns capability counts with engine constants", () => {

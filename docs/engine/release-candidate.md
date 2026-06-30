@@ -7,7 +7,8 @@
 The release candidate includes:
 
 - neutral market data, viewport, theme, settings, and chart state contracts
-- Engine-owned capability manifest for package metadata, release channel, supported series, built-in drawings, core indicators, drawing editor capabilities, interaction capabilities, visual output families, and extension contribution types
+- Engine-owned capability manifest for package metadata, API version, release channel, supported series, built-in drawings, core indicators, drawing editor capabilities, interaction capabilities, visual output families, and extension contribution types
+- Engine-owned API version compatibility checker for exact package/API/release diagnostics
 - Engine-owned capability requirement checker for deterministic manifest compatibility diagnostics
 - Engine-owned extension compatibility preflight helpers for deriving contribution requirements and checking them against the capability manifest
 - Engine-owned extension validation diagnostics for local extension structure and contribution issues
@@ -94,11 +95,11 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Current acceptance evidence refreshed on 2026-07-01:
 
-- `npm run test` passed: 42 test files, 495 tests.
+- `npm run test` passed: 42 test files, 499 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 160 files scanned.
-- `npm run guard:public-api` passed: 146 runtime exports.
-- `npm run guard:public-types` passed: 387 type symbols.
+- `npm run guard:public-api` passed: 148 runtime exports.
+- `npm run guard:public-types` passed: 393 type symbols.
 - `npm run guard:sdk-imports` passed.
 - `npm run check:package-consumer` passed.
 - `npm run check:package-types` passed.
@@ -108,6 +109,31 @@ Current acceptance evidence refreshed on 2026-07-01:
 - `npm run check:package-artifact` passed: 121 package files.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
 - `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+
+Focused Engine API Version Compatibility evidence on 2026-07-01:
+
+- `npm run test -- packages/chart-engine/src/__tests__/engineCapabilityManifest.test.ts -- --reporter=dot` passed: 15 tests.
+- `npm run typecheck -w @simoncharts/chart-engine` passed.
+- `npm run guard:engine-boundary` passed: 160 files scanned.
+- `npm run build -w @simoncharts/chart-engine` passed.
+- Pre-snapshot `npm run guard:public-api` failed as expected with added runtime exports `checkEngineApiVersionCompatibility` and `engineApiVersion`.
+- Pre-snapshot `npm run guard:public-types` failed as expected with added symbols `EngineApiVersionCheckResult`, `EngineApiVersionMismatch`, `EngineApiVersionRequirement`, `EngineReleaseChannel`, `checkEngineApiVersionCompatibility`, and `engineApiVersion`.
+- Runtime API snapshot was intentionally refreshed to 148 runtime exports.
+- `node scripts/check-public-types.mjs --write` refreshed the type snapshot to 393 type symbols.
+- `npm run guard:public-api` passed: 148 runtime exports.
+- `npm run guard:public-types` passed: 393 type symbols.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- `npm run typecheck` passed.
+- `npm run guard:sdk-imports` passed.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
+- `npm run build` passed for the Engine package and playground.
+- `npm run test` passed: 42 test files, 499 tests.
+- `npm run check:performance` passed: 1 test file, 2 performance scenarios.
+- `npm run check:package-artifact` passed: 121 package files.
+- `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+- `git diff --check` passed.
 
 Focused Extension Lifecycle Rollback evidence on 2026-07-01:
 

@@ -2,6 +2,7 @@ import {
   calculateCoreIndicator,
   applyChartExtension,
   checkChartExtensionCompatibility,
+  checkEngineApiVersionCompatibility,
   checkEngineCapabilityRequirements,
   createChartEngine,
   createEngineCapabilityManifest,
@@ -33,6 +34,7 @@ import {
   updateDrawingSelectionBox,
   validateChartExtension,
   deserializeDrawingObject,
+  engineApiVersion,
   fixtureDailyCandleSeries,
   serializeDrawingObject
 } from "@simoncharts/chart-engine";
@@ -42,6 +44,11 @@ const engine = createChartEngine({
   seriesType: "candles"
 });
 const engineCapabilities = createEngineCapabilityManifest();
+const engineApiCompatibility = checkEngineApiVersionCompatibility(engineCapabilities, {
+  packageName: "@simoncharts/chart-engine",
+  apiVersion: engineApiVersion,
+  releaseChannel: "rc"
+});
 const engineCompatibility = checkEngineCapabilityRequirements(engineCapabilities, {
   seriesTypes: ["candles", "line"],
   drawingTypes: ["trendLine"],
@@ -52,12 +59,17 @@ const engineCompatibility = checkEngineCapabilityRequirements(engineCapabilities
 
 if (
   engineCapabilities.packageName !== "@simoncharts/chart-engine" ||
+  engineCapabilities.apiVersion !== engineApiVersion ||
   engineCapabilities.seriesTypes.length !== 17 ||
   engineCapabilities.drawingTypes.length !== 63 ||
   engineCapabilities.coreIndicatorIds.length !== 16 ||
   engineCapabilities.drawingTools.length !== engineCapabilities.drawingTypes.length
 ) {
   throw new Error("Package consumer failed to read engine capability manifest");
+}
+
+if (!engineApiCompatibility.compatible || engineApiCompatibility.mismatches.length !== 0) {
+  throw new Error("Package consumer failed to check engine API version compatibility");
 }
 
 if (!engineCompatibility.compatible || engineCompatibility.missing.length !== 0) {
