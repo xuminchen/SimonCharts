@@ -1,11 +1,19 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const projectRoot = process.cwd();
 const snapshotPath = path.join(projectRoot, "packages/chart-engine/api-surface.json");
-const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+const shouldWrite = process.argv.includes("--write");
 const runtimeModule = await import("@simoncharts/chart-engine");
 const actual = Object.keys(runtimeModule).sort();
+
+if (shouldWrite) {
+  await writeFile(snapshotPath, `${JSON.stringify(actual, null, 2)}\n`);
+  console.log(`Public API snapshot written (${actual.length} runtime exports).`);
+  process.exit(0);
+}
+
+const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
 const expected = [...snapshot].sort();
 
 const added = actual.filter((name) => !expected.includes(name));
