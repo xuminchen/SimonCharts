@@ -77,6 +77,7 @@ for (const script of requiredScripts) {
 const requiredDocs = [
   "README.md",
   "packages/chart-engine/README.md",
+  "packages/chart-engine/api-surface.json",
   "packages/chart-engine/api-types.json",
   "CHANGELOG.md",
   "docs/engine/release-candidate.md",

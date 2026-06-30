@@ -70,7 +70,7 @@ Lifecycle install rollback has focused coverage for atomic local registry mutati
 
 `npm run check:package-artifact` verifies the dry-run npm tarball contains only package files (`README.md`, `package.json`, and `dist/`) and includes required runtime and declaration artifacts.
 
-`npm run check:release-readiness` verifies the RC package version, package metadata, root export map, required docs, required root scripts, and workspace lockfile version alignment.
+`npm run check:release-readiness` verifies the RC package version, package metadata, root export map, required docs and API snapshots (`api-surface.json` and `api-types.json`), required root scripts, and workspace lockfile version alignment.
 
 The v1.0 RC gate is intentionally package-focused. It does not add TradingReviewSystem or host application checks because SimonCharts Engine is validated as an independent reusable kernel.
 
