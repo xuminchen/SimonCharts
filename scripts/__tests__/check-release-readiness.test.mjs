@@ -108,6 +108,7 @@ function rootPackageFixture() {
     "guard:sdk-imports",
     "check:package-consumer",
     "check:package-artifact",
+    "check:host-smoke",
     "check:package-types",
     "check:performance",
     "check:release-readiness",

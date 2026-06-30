@@ -38,6 +38,7 @@ npm run guard:engine-boundary
 npm run guard:public-api
 npm run guard:public-types
 npm run guard:sdk-imports
+npm run check:host-smoke
 npm run check:package-consumer
 npm run check:package-types
 npm run check:performance
@@ -69,6 +70,8 @@ Lifecycle install rollback has focused coverage for atomic local registry mutati
 `npm run guard:public-api` verifies package-root runtime exports against `packages/chart-engine/api-surface.json` and requires the snapshot to be a sorted string array; intentional runtime API changes are accepted with `node scripts/check-public-api.mjs --write` after reviewing the diff. `npm run guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`; intentional type API changes are accepted with `node scripts/check-public-types.mjs --write`. Both guards are package-root SDK checks, not host API, route, persistence, or TradingReviewSystem checks.
 
 `npm run check:package-artifact` verifies the dry-run npm tarball contains only package files (`README.md`, `package.json`, and `dist/`) and includes required runtime and declaration artifacts.
+
+`npm run check:host-smoke` verifies the packed tarball in a temporary non-workspace host project. The smoke script imports only from `@simoncharts/chart-engine` and covers the capability manifest, chart engine state, layout snapshot round-trip, drawing editor commands, MA indicator output, and extension lifecycle install/uninstall.
 
 `npm run check:release-readiness` verifies the RC package version, package metadata, root export map, required docs and API snapshots (`api-surface.json` and `api-types.json`), required root scripts, and workspace lockfile version alignment.
 

@@ -56,8 +56,9 @@ v0.8 enforces this import contract for host-facing repository code with:
 
 ```bash
 npm run guard:sdk-imports
+npm run check:host-smoke
 npm run check:package-types
 npm run check:package-consumer
 ```
 
-`guard:sdk-imports` scans app and consumer fixture code for internal Engine imports. `check:package-types` compiles external type-only usage against the built package declarations. `check:package-consumer` verifies runtime package consumption from the package root.
+`guard:sdk-imports` scans app and consumer fixture code for internal Engine imports. `check:host-smoke` packs `@simoncharts/chart-engine`, installs the generated tarball into a temporary non-workspace host project, and runs a neutral ESM host script whose only package import is `@simoncharts/chart-engine`. `check:package-types` compiles external type-only usage against the built package declarations. `check:package-consumer` verifies runtime package consumption from the package root.
