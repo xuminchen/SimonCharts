@@ -281,8 +281,27 @@ export function createChartExtensionLifecycle(
         contributionOwners
       );
 
-      for (const snapshot of snapshots) {
-        snapshot.registry?.register(snapshot.installed as never);
+      const appliedSnapshots: ContributionSnapshot[] = [];
+
+      try {
+        for (const snapshot of snapshots) {
+          if (!snapshot.registry) {
+            continue;
+          }
+
+          snapshot.registry.register(snapshot.installed as never);
+          appliedSnapshots.push(snapshot);
+        }
+      } catch (error) {
+        for (const snapshot of [...appliedSnapshots].reverse()) {
+          try {
+            restoreContributionSnapshot(snapshot);
+          } catch {
+            // Preserve the original registry error that caused install to fail.
+          }
+        }
+
+        throw error;
       }
 
       for (const snapshot of snapshots) {

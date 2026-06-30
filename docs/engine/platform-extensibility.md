@@ -56,7 +56,10 @@ The lifecycle manager:
 - rejects duplicate installed contribution keys such as `drawingTools:acme.measurement-box`
 - exposes `isInstalled(id)`, `listInstalled()`, and `getState()`
 - captures previous registry entries before install
+- rolls back contribution registry mutations from the current install attempt if a registry throws before install completes
 - restores previous registry entries when an extension is uninstalled and its installed contribution is still current
+
+Lifecycle records and contribution owner tracking are committed only after every local contribution registry accepts its install. Rollback is local mutation cleanup; it is not sandboxing, trust policy, persistence, marketplace review, or host workflow compensation.
 
 Use `applyChartExtension()` for direct one-way installs when lifecycle state is not needed.
 

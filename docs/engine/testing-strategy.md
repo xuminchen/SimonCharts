@@ -60,6 +60,8 @@ Extension validation diagnostics have focused coverage for manifest identity iss
 
 Lifecycle install validation has focused coverage for local install diagnostics, including structural issue passthrough, already installed extension ids, installed contribution conflicts, owner extension ids, and non-mutating behavior.
 
+Lifecycle install rollback has focused coverage for atomic local registry mutation cleanup when a contribution registry throws during install. Tests verify applied contributions are rolled back, previous registry entries are restored, lifecycle records and owner tracking remain uncommitted, and later valid installs can reuse the same contribution keys.
+
 `npm run check:performance` runs the Engine performance baseline as a focused release gate. It covers deterministic 10k-candle and 50k-candle scenarios for render model creation, autoscale, core indicators, static rendering, drawing figure conversion, and render scheduler invalidation throughput.
 
 `npm run guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`. It complements `npm run guard:public-api`, which verifies runtime exports.

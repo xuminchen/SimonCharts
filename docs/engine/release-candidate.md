@@ -31,7 +31,7 @@ The release candidate includes:
 - Engine-owned drawing selection box flow for preview ids and final selection commands
 - Engine-owned drawing transform primitives for resize and rotate commands
 - drawing serialization and layout snapshot contracts
-- extension registration and local lifecycle management for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers
+- extension registration and local lifecycle management for series renderers, visual renderers, drawing renderers, drawing tools, and figure renderers, including atomic local rollback for failed lifecycle installs
 - SDK guards for runtime public API, type public API, package-root imports, runtime consumers, and type consumers
 
 ## Boundaries
@@ -92,9 +92,9 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 ## Acceptance Evidence
 
-Completed on 2026-06-28:
+Current acceptance evidence refreshed on 2026-07-01:
 
-- `npm run test` passed: 42 test files, 493 tests.
+- `npm run test` passed: 42 test files, 495 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 160 files scanned.
 - `npm run guard:public-api` passed: 146 runtime exports.
@@ -108,6 +108,24 @@ Completed on 2026-06-28:
 - `npm run check:package-artifact` passed: 121 package files.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
 - `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+
+Focused Extension Lifecycle Rollback evidence on 2026-07-01:
+
+- `npm run test -- packages/chart-engine/src/__tests__/chartExtension.test.ts -- --reporter=dot` passed: 25 tests.
+- `npm run typecheck -w @simoncharts/chart-engine` passed.
+- `npm run guard:engine-boundary` passed: 160 files scanned.
+- `npm run build -w @simoncharts/chart-engine` passed.
+- `npm run guard:public-api` passed unchanged: 146 runtime exports.
+- `npm run guard:public-types` passed unchanged: 387 type symbols.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- `npm run guard:sdk-imports` passed.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
+- `npm run typecheck` passed.
+- `npm run build` passed for the Engine package and playground.
+- `npm run check:performance` passed: 1 test file, 2 performance scenarios.
+- `npm run test` passed on rerun: 42 test files, 495 tests.
+- `git diff --check` passed.
 
 Focused Extension Install Validation evidence on 2026-06-28:
 

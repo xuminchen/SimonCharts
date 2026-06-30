@@ -16,6 +16,7 @@ import {
   type ChartExtension,
   type ChartExtensionInstallValidationResult,
   type DrawingRenderer,
+  type DrawingRendererRegistry,
   type DrawingToolDefinition,
   type FigureRenderer,
   type SeriesRenderer,
@@ -654,6 +655,94 @@ describe("chart extensions", () => {
     expect(drawingTools.get("acme.measurement-box")).toBeUndefined();
   });
 
+  it("rolls back earlier contribution registrations when a later register fails", () => {
+    const registerError = new Error("registry register failed");
+    const drawingRenderers = createFailingDrawingRendererRegistry(
+      "acme.rollback-fail",
+      registerError
+    );
+    const lifecycle = createChartExtensionLifecycle({ drawingRenderers });
+    const firstRenderer = createDrawingRenderer("acme.rollback-ok", "first");
+    const failedExtension = createChartExtension(
+      { id: "acme.rollback", label: "Rollback", version: "1.0.0" },
+      {
+        drawingRenderers: [
+          firstRenderer,
+          createDrawingRenderer("acme.rollback-fail", "fail")
+        ]
+      }
+    );
+
+    const stateBefore = lifecycle.getState();
+    const installedBefore = lifecycle.listInstalled();
+    let thrown: unknown;
+
+    try {
+      lifecycle.install(failedExtension);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(registerError);
+    expect(lifecycle.getState()).toEqual(stateBefore);
+    expect(lifecycle.listInstalled()).toEqual(installedBefore);
+    expect(lifecycle.isInstalled("acme.rollback")).toBe(false);
+    expect(drawingRenderers.get("acme.rollback-ok")).toBeUndefined();
+    expect(drawingRenderers.get("acme.rollback-fail")).toBeUndefined();
+
+    const replacementRenderer = createDrawingRenderer("acme.rollback-ok", "replacement");
+    const replacementExtension = createChartExtension(
+      { id: "acme.rollback-replacement", label: "Rollback Replacement", version: "1.0.0" },
+      { drawingRenderers: [replacementRenderer] }
+    );
+
+    expect(lifecycle.validateInstall(replacementExtension)).toEqual({
+      valid: true,
+      issues: []
+    });
+    expect(lifecycle.install(replacementExtension).extensionId).toBe("acme.rollback-replacement");
+    expect(drawingRenderers.require("acme.rollback-ok")).toBe(replacementRenderer);
+  });
+
+  it("restores previous registry entries when install fails after replacing them", () => {
+    const registerError = new Error("registry register failed");
+    const drawingRenderers = createFailingDrawingRendererRegistry(
+      "acme.restore-fail",
+      registerError
+    );
+    const lifecycle = createChartExtensionLifecycle({ drawingRenderers });
+    const previousRenderer = createDrawingRenderer("trendLine", "previous");
+    const extensionRenderer = createDrawingRenderer("trendLine", "extension");
+    const failedExtension = createChartExtension(
+      { id: "acme.restore-previous", label: "Restore Previous", version: "1.0.0" },
+      {
+        drawingRenderers: [
+          extensionRenderer,
+          createDrawingRenderer("acme.restore-fail", "fail")
+        ]
+      }
+    );
+
+    drawingRenderers.register(previousRenderer);
+
+    let thrown: unknown;
+
+    try {
+      lifecycle.install(failedExtension);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(registerError);
+    expect(lifecycle.getState()).toEqual({
+      installedExtensionIds: [],
+      installedCount: 0
+    });
+    expect(lifecycle.isInstalled("acme.restore-previous")).toBe(false);
+    expect(drawingRenderers.require("trendLine")).toBe(previousRenderer);
+    expect(drawingRenderers.get("acme.restore-fail")).toBeUndefined();
+  });
+
   it("rejects duplicate lifecycle installs and duplicate contribution keys", () => {
     const drawingRenderers = createDrawingRendererRegistry();
     const lifecycle = createChartExtensionLifecycle({ drawingRenderers });
@@ -774,6 +863,45 @@ function createDrawingRenderer(
     render() {},
     hitTest(drawing) {
       return { drawingId: `${label}:${drawing.id}`, distance: 0 };
+    }
+  };
+}
+
+function createFailingDrawingRendererRegistry(
+  failingType: DrawingRenderer["type"],
+  registerError: Error
+): DrawingRendererRegistry {
+  const renderers = new Map<DrawingRenderer["type"], DrawingRenderer>();
+
+  return {
+    register(renderer) {
+      if (renderer.type === failingType) {
+        throw registerError;
+      }
+
+      renderers.set(renderer.type, renderer);
+    },
+    unregister(type) {
+      const renderer = renderers.get(type);
+
+      renderers.delete(type);
+
+      return renderer;
+    },
+    get(type) {
+      return renderers.get(type);
+    },
+    require(type) {
+      const renderer = renderers.get(type);
+
+      if (!renderer) {
+        throw new Error(`Drawing renderer is not registered: ${type}`);
+      }
+
+      return renderer;
+    },
+    list() {
+      return [...renderers.values()];
     }
   };
 }
