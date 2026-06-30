@@ -14,7 +14,23 @@ if (shouldWrite) {
 }
 
 const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+
+if (!Array.isArray(snapshot)) {
+  console.error("Public API snapshot must be an array of export names.");
+  process.exit(1);
+}
+
+if (snapshot.some((name) => typeof name !== "string")) {
+  console.error("Public API snapshot must contain only string export names.");
+  process.exit(1);
+}
+
 const expected = [...snapshot].sort();
+
+if (JSON.stringify(snapshot) !== JSON.stringify(expected)) {
+  console.error("Public API snapshot must be sorted.");
+  process.exit(1);
+}
 
 const added = actual.filter((name) => !expected.includes(name));
 const removed = expected.filter((name) => !actual.includes(name));

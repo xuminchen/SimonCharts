@@ -95,7 +95,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 
 Current acceptance evidence refreshed on 2026-07-01:
 
-- `npm run test` passed: 43 test files, 502 tests.
+- `npm run test` passed: 43 test files, 505 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 160 files scanned.
 - `npm run guard:public-api` passed: 148 runtime exports.
@@ -109,6 +109,26 @@ Current acceptance evidence refreshed on 2026-07-01:
 - `npm run check:package-artifact` passed: 121 package files.
 - `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
 - `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+
+Focused Runtime API Snapshot Integrity evidence on 2026-07-01:
+
+- `npm run test -- scripts/__tests__/check-public-api.test.mjs -- --reporter=dot` passed: 6 tests.
+- `node scripts/check-public-api.mjs --write` passed and left `packages/chart-engine/api-surface.json` unchanged.
+- `npm run guard:public-api` passed: 148 runtime exports.
+- `npm run guard:public-types` passed: 393 type symbols.
+- `npm run guard:sdk-imports` passed.
+- `npm run check:package-consumer` passed.
+- `npm run check:package-types` passed.
+- `npm run typecheck` passed.
+- `npm run guard:engine-boundary` passed: 160 files scanned.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.0`.
+- `npm run build` passed for the Engine package and playground.
+- `npm run test` passed: 43 test files, 505 tests.
+- `npm run check:performance` passed: 1 test file, 2 performance scenarios.
+- `npm run check:package-artifact` passed: 121 package files.
+- `npm pack --dry-run -w @simoncharts/chart-engine` passed for `@simoncharts/chart-engine@1.0.0-rc.0`; tarball contained 121 files.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 43 browser tests.
+- `git diff --check` passed.
 
 Focused Public API Snapshot Writer evidence on 2026-07-01:
 

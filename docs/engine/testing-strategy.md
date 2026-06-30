@@ -66,7 +66,7 @@ Lifecycle install rollback has focused coverage for atomic local registry mutati
 
 `npm run check:performance` runs the Engine performance baseline as a focused release gate. It covers deterministic 10k-candle and 50k-candle scenarios for render model creation, autoscale, core indicators, static rendering, drawing figure conversion, and render scheduler invalidation throughput.
 
-`npm run guard:public-api` verifies package-root runtime exports against `packages/chart-engine/api-surface.json`; intentional runtime API changes are accepted with `node scripts/check-public-api.mjs --write` after reviewing the diff. `npm run guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`; intentional type API changes are accepted with `node scripts/check-public-types.mjs --write`. Both guards are package-root SDK checks, not host API, route, persistence, or TradingReviewSystem checks.
+`npm run guard:public-api` verifies package-root runtime exports against `packages/chart-engine/api-surface.json` and requires the snapshot to be a sorted string array; intentional runtime API changes are accepted with `node scripts/check-public-api.mjs --write` after reviewing the diff. `npm run guard:public-types` verifies package-root TypeScript symbols against `packages/chart-engine/api-types.json`; intentional type API changes are accepted with `node scripts/check-public-types.mjs --write`. Both guards are package-root SDK checks, not host API, route, persistence, or TradingReviewSystem checks.
 
 `npm run check:package-artifact` verifies the dry-run npm tarball contains only package files (`README.md`, `package.json`, and `dist/`) and includes required runtime and declaration artifacts.
 

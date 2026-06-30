@@ -39,7 +39,7 @@ The package root is backed by the built SDK artifacts:
 - declarations: `packages/chart-engine/dist/index.d.ts`
 - export map: `@simoncharts/chart-engine`
 
-`packages/chart-engine/api-surface.json` is the runtime public API snapshot. `npm run guard:public-api` fails when root exports change without an intentional snapshot update. Use `node scripts/check-public-api.mjs --write` only after reviewing the runtime export diff and deciding the new package-root API is intentional.
+`packages/chart-engine/api-surface.json` is the runtime public API snapshot. It must be a sorted string array of package-root runtime exports. `npm run guard:public-api` fails when root exports change or when the snapshot shape/order is invalid. Use `node scripts/check-public-api.mjs --write` only after reviewing the runtime export diff and deciding the new package-root API is intentional; write mode emits the canonical sorted string array with a trailing newline.
 
 `packages/chart-engine/api-types.json` is the package-root TypeScript symbol snapshot. `npm run guard:public-types` uses the TypeScript checker to resolve exports from `packages/chart-engine/src/index.ts` and fails when public type symbols change without an intentional snapshot update. Use `node scripts/check-public-types.mjs --write` only after reviewing the type symbol diff.
 

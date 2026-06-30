@@ -46,6 +46,54 @@ describe("check-public-api", () => {
     }
   });
 
+  it("fails when the snapshot is not an array", async () => {
+    const root = await createFixture({
+      exports: ["alpha"],
+      snapshot: { exports: ["alpha"] }
+    });
+
+    try {
+      await runGuard(root);
+      throw new Error("Expected public API guard to fail.");
+    } catch (error) {
+      expect(error.code).toBe(1);
+      expect(error.stdout).toBe("");
+      expect(error.stderr).toContain("Public API snapshot must be an array of export names.");
+    }
+  });
+
+  it("fails when the snapshot contains non-string entries", async () => {
+    const root = await createFixture({
+      exports: ["alpha"],
+      snapshot: ["alpha", 1]
+    });
+
+    try {
+      await runGuard(root);
+      throw new Error("Expected public API guard to fail.");
+    } catch (error) {
+      expect(error.code).toBe(1);
+      expect(error.stdout).toBe("");
+      expect(error.stderr).toContain("Public API snapshot must contain only string export names.");
+    }
+  });
+
+  it("fails when the snapshot is not sorted", async () => {
+    const root = await createFixture({
+      exports: ["alpha", "zeta"],
+      snapshot: ["zeta", "alpha"]
+    });
+
+    try {
+      await runGuard(root);
+      throw new Error("Expected public API guard to fail.");
+    } catch (error) {
+      expect(error.code).toBe(1);
+      expect(error.stdout).toBe("");
+      expect(error.stderr).toContain("Public API snapshot must be sorted.");
+    }
+  });
+
   it("writes sorted runtime exports with a trailing newline in write mode", async () => {
     const root = await createFixture({
       exports: ["zeta", "alpha", "middle"],
