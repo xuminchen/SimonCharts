@@ -65,7 +65,13 @@ Hosts own:
 
 ## Release Gate
 
-Run:
+Run the preferred single release gate:
+
+```bash
+npm run check:release-gate
+```
+
+Expanded release gate for auditability:
 
 ```bash
 npm run test
@@ -74,12 +80,12 @@ npm run guard:engine-boundary
 npm run guard:public-api
 npm run guard:public-types
 npm run guard:sdk-imports
+npm run build
 npm run check:host-smoke
 npm run check:package-consumer
 npm run check:package-types
 npm run check:performance
 npm run check:release-readiness
-npm run build
 npm run check:package-artifact
 npm pack --dry-run -w @simoncharts/chart-engine
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e

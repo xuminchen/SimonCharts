@@ -32,18 +32,24 @@ Playwright coverage verifies static canvas rendering, interaction, every v0.1 ch
 Before a release candidate, run:
 
 ```bash
+npm run check:release-gate
+```
+
+Expanded release gate for auditability:
+
+```bash
 npm run test
 npm run typecheck
 npm run guard:engine-boundary
 npm run guard:public-api
 npm run guard:public-types
 npm run guard:sdk-imports
+npm run build
 npm run check:host-smoke
 npm run check:package-consumer
 npm run check:package-types
 npm run check:performance
 npm run check:release-readiness
-npm run build
 npm run check:package-artifact
 npm pack --dry-run -w @simoncharts/chart-engine
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
@@ -74,6 +80,8 @@ Lifecycle install rollback has focused coverage for atomic local registry mutati
 `npm run check:host-smoke` verifies the packed tarball in a temporary non-workspace host project. The smoke script imports only from `@simoncharts/chart-engine` and covers the capability manifest, chart engine state, layout snapshot round-trip, drawing editor commands, MA indicator output, and extension lifecycle install/uninstall.
 
 `npm run check:release-readiness` verifies the RC package version, package metadata, root export map, required docs and API snapshots (`api-surface.json` and `api-types.json`), required root scripts, and workspace lockfile version alignment.
+
+`npm run check:release-gate` is the preferred single local RC command. It runs the expanded release gate in order, builds before dist and tarball-dependent checks, and runs Playwright with `PLAYWRIGHT_CHANNEL=chrome`.
 
 The v1.0 RC gate is intentionally package-focused. It does not add TradingReviewSystem or host application checks because SimonCharts Engine is validated as an independent reusable kernel.
 

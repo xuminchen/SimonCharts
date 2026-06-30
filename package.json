@@ -20,6 +20,7 @@
     "check:host-smoke": "node scripts/check-host-smoke.mjs",
     "check:package-types": "node scripts/check-package-types.mjs",
     "check:performance": "vitest run packages/chart-engine/src/__tests__/performanceBaseline.test.ts --reporter=dot",
+    "check:release-gate": "node scripts/check-release-gate.mjs",
     "check:release-readiness": "node scripts/check-release-readiness.mjs",
     "build": "npm run build -w @simoncharts/chart-engine && npm run build -w @simoncharts/playground",
     "dev": "npm run dev -w @simoncharts/playground",

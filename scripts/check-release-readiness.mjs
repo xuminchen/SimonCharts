@@ -66,6 +66,7 @@ const requiredScripts = [
   "check:host-smoke",
   "check:package-types",
   "check:performance",
+  "check:release-gate",
   "check:release-readiness",
   "build",
   "test:e2e"
