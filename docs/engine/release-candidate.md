@@ -103,7 +103,7 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 Current acceptance evidence refreshed on 2026-07-04:
 
 - `npm run check:release-gate` passed.
-- `npm run test` passed: 45 test files, 511 tests.
+- `npm run test` passed: 46 test files, 517 tests.
 - `npm run typecheck` passed.
 - `npm run guard:engine-boundary` passed: 160 files scanned.
 - `npm run guard:public-api` passed: 148 runtime exports.
