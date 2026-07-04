@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const steps = [
+export const releaseGateSteps = [
   { command: "npm", args: ["run", "test"] },
   { command: "npm", args: ["run", "typecheck"] },
   { command: "npm", args: ["run", "guard:engine-boundary"] },
@@ -22,27 +24,33 @@ const steps = [
   }
 ];
 
-for (const [index, step] of steps.entries()) {
-  const stepNumber = index + 1;
-  const envText = Object.entries(step.env ?? {})
-    .map(([key, value]) => `${key}=${value}`)
-    .join(" ");
-  const commandText = [envText, step.command, ...step.args].filter(Boolean).join(" ");
+export function runReleaseGate() {
+  for (const [index, step] of releaseGateSteps.entries()) {
+    const stepNumber = index + 1;
+    const envText = Object.entries(step.env ?? {})
+      .map(([key, value]) => `${key}=${value}`)
+      .join(" ");
+    const commandText = [envText, step.command, ...step.args].filter(Boolean).join(" ");
 
-  console.log(`\n[release-gate ${stepNumber}/${steps.length}] ${commandText}`);
+    console.log(`\n[release-gate ${stepNumber}/${releaseGateSteps.length}] ${commandText}`);
 
-  const result = spawnSync(step.command, step.args, {
-    cwd: process.cwd(),
-    env: { ...process.env, ...step.env },
-    stdio: "inherit"
-  });
+    const result = spawnSync(step.command, step.args, {
+      cwd: process.cwd(),
+      env: { ...process.env, ...step.env },
+      stdio: "inherit"
+    });
 
-  if (result.status !== 0) {
-    const exitStatus = result.status ?? 1;
+    if (result.status !== 0) {
+      const exitStatus = result.status ?? 1;
 
-    console.error(`[release-gate] failed: ${commandText}`);
-    process.exit(exitStatus);
+      console.error(`[release-gate] failed: ${commandText}`);
+      process.exit(exitStatus);
+    }
   }
+
+  console.log("\n[release-gate] passed.");
 }
 
-console.log("\n[release-gate] passed.");
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  runReleaseGate();
+}
