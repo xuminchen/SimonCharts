@@ -89,6 +89,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   let selectedDrawingIds: string[] = [];
   let activeTool: DrawingEditorTool = "select";
   let pendingAnchors: DrawingAnchor[] = [];
+  let pendingDrawingId: string | undefined;
   let previewDrawing: DrawingObject | undefined;
   let nextDrawingNumber = 1;
   let clipboard: DrawingClipboard = { drawings: [] };
@@ -111,6 +112,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return;
       }
 
+      reservePendingDrawingId();
+
       if (isContinuousTool()) {
         if (pendingAnchors.length > 0) {
           return;
@@ -129,13 +132,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       }
 
       const drawing: DrawingObject = {
-        id: createDrawingId(drawings, nextDrawingNumber),
+        id: requirePendingDrawingId(),
         type: activeTool,
         anchors: pendingAnchors.map((anchor) => ({ ...anchor }))
       };
 
-      nextDrawingNumber += 1;
       pendingAnchors = [];
+      pendingDrawingId = undefined;
       clearPreview();
       commitSnapshot(
         "createDrawing",
@@ -185,13 +188,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       }
 
       const drawing: DrawingObject = {
-        id: createDrawingId(drawings, nextDrawingNumber),
+        id: requirePendingDrawingId(),
         type: activeTool,
         anchors: pendingAnchors.map((anchor) => ({ ...anchor }))
       };
 
-      nextDrawingNumber += 1;
       pendingAnchors = [];
+      pendingDrawingId = undefined;
       clearPreview();
       commitSnapshot(
         "createDrawing",
@@ -466,10 +469,27 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     }
 
     return {
-      id: createDrawingId(drawings, nextDrawingNumber),
+      id: requirePendingDrawingId(),
       type: activeTool,
       anchors: anchors.map((anchor) => ({ ...anchor }))
     };
+  }
+
+  function reservePendingDrawingId(): void {
+    if (pendingDrawingId) {
+      return;
+    }
+
+    pendingDrawingId = createDrawingId(drawings, nextDrawingNumber);
+    nextDrawingNumber = Number(pendingDrawingId.slice("drawing-".length)) + 1;
+  }
+
+  function requirePendingDrawingId(): string {
+    if (!pendingDrawingId) {
+      throw new Error("Active drawing creation has no reserved id");
+    }
+
+    return pendingDrawingId;
   }
 
   function emitPreview(drawing: DrawingObject | undefined): void {
@@ -492,6 +512,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     }
 
     pendingAnchors = [];
+    pendingDrawingId = undefined;
     emitPreview(undefined);
     emit({ type: "creationCanceled" });
   }

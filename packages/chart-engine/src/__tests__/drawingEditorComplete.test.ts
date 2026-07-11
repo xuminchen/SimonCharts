@@ -279,6 +279,154 @@ describe("complete drawing editor", () => {
     expect(editor.getState().drawings[0].anchors[0].x).toBe(10);
   });
 
+  for (const type of ["trendLine", "path"] as const) {
+    it(`keeps one reserved id for ${type} after deleting an existing drawing`, () => {
+      const previewIds: string[] = [];
+      const createdIds: string[] = [];
+      const editor = createDrawingEditor({
+        drawings: [
+          {
+            id: "drawing-1",
+            type: "rectangle",
+            anchors: [{ x: 0, y: 0 }, { x: 5, y: 5 }]
+          }
+        ],
+        onEvent(event) {
+          if (event.type === "drawingPreviewChanged" && event.drawing) {
+            previewIds.push(event.drawing.id);
+          }
+          if (event.type === "drawingCreated") {
+            createdIds.push(event.drawing.id);
+          }
+        }
+      });
+
+      editor.selectDrawing("drawing-1");
+      editor.setTool(type);
+      editor.pointerDown({ x: 10, y: 10 });
+
+      const reservedId = editor.getState().previewDrawing?.id;
+
+      expect(reservedId).toBeDefined();
+      editor.deleteSelected();
+      expectUniqueEditorDrawingIds(editor.getState());
+
+      editor.pointerMove({ x: 20, y: 20 });
+      if (type === "path") {
+        editor.pointerMove({ x: 30, y: 30 });
+        editor.pointerUp({ x: 40, y: 40 });
+      } else {
+        editor.pointerDown({ x: 30, y: 30 });
+      }
+
+      expect(previewIds.every((id) => id === reservedId)).toBe(true);
+      expect(createdIds).toEqual([reservedId]);
+      expect(editor.getState().drawings[0].id).toBe(reservedId);
+      expectUniqueEditorDrawingIds(editor.getState());
+    });
+  }
+
+  it("keeps a pending id reserved across repeated duplication", () => {
+    const previewIds: string[] = [];
+    const editor = createDrawingEditor({
+      drawings: [
+        {
+          id: "source",
+          type: "rectangle",
+          anchors: [{ x: 0, y: 0 }, { x: 5, y: 5 }]
+        }
+      ],
+      onEvent(event) {
+        if (event.type === "drawingPreviewChanged" && event.drawing) {
+          previewIds.push(event.drawing.id);
+        }
+      }
+    });
+
+    editor.selectDrawing("source");
+    editor.setTool("path");
+    editor.pointerDown({ x: 10, y: 10 });
+
+    const reservedId = editor.getState().previewDrawing?.id;
+
+    expect(reservedId).toBeDefined();
+
+    editor.duplicateSelected({ dx: 1, dy: 1 });
+    expect(editor.getState().drawings.map((drawing) => drawing.id)).not.toContain(reservedId);
+    expect(editor.getState().previewDrawing?.id).toBe(reservedId);
+    expectUniqueEditorDrawingIds(editor.getState());
+
+    editor.pointerMove({ x: 20, y: 20 });
+    editor.duplicateSelected({ dx: 2, dy: 2 });
+    expect(editor.getState().drawings.map((drawing) => drawing.id)).not.toContain(reservedId);
+    expect(editor.getState().previewDrawing?.id).toBe(reservedId);
+    expectUniqueEditorDrawingIds(editor.getState());
+
+    editor.pointerMove({ x: 30, y: 30 });
+    editor.pointerUp({ x: 40, y: 40 });
+
+    const finalState = editor.getState();
+    const finalDrawing = finalState.drawings.find((drawing) => drawing.type === "path");
+
+    expect(previewIds.every((id) => id === reservedId)).toBe(true);
+    expect(finalDrawing?.id).toBe(reservedId);
+    expectUniqueEditorDrawingIds(finalState);
+  });
+
+  it("keeps a pending id stable when duplication has no selection", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+
+    editor.setTool("path");
+    editor.pointerDown({ x: 10, y: 10 });
+    const reservedId = editor.getState().previewDrawing?.id;
+
+    editor.duplicateSelected({ dx: 1, dy: 1 });
+    editor.duplicateSelected({ dx: 2, dy: 2 });
+    editor.pointerMove({ x: 20, y: 20 });
+    editor.pointerMove({ x: 30, y: 30 });
+    editor.pointerUp({ x: 40, y: 40 });
+
+    expect(editor.getState().drawings).toMatchObject([{ id: reservedId, type: "path" }]);
+    expectUniqueEditorDrawingIds(editor.getState());
+  });
+
+  for (const operation of ["cancel", "setTool", "undo", "redo"] as const) {
+    it(`${operation} releases the reserved id before the next gesture`, () => {
+      const editor = createDrawingEditor({
+        drawings: [{ id: "drawing-1", type: "text", anchors: [{ x: 0, y: 0 }] }]
+      });
+
+      editor.setTool("trendLine");
+      editor.pointerDown({ x: 10, y: 10 });
+      const abandonedId = editor.getState().previewDrawing?.id;
+
+      if (operation === "cancel") {
+        editor.cancel();
+      } else if (operation === "setTool") {
+        editor.setTool("rectangle");
+      } else {
+        editor[operation]();
+      }
+
+      expect(editor.getState()).toMatchObject({
+        isCreating: false,
+        previewDrawing: undefined
+      });
+
+      editor.setTool("trendLine");
+      editor.pointerDown({ x: 20, y: 20 });
+
+      const nextId = editor.getState().previewDrawing?.id;
+
+      expect(nextId).toBeDefined();
+      expect(nextId).not.toBe(abandonedId);
+      expectUniqueEditorDrawingIds(editor.getState());
+
+      editor.pointerDown({ x: 30, y: 30 });
+      expectUniqueEditorDrawingIds(editor.getState());
+    });
+  }
+
   for (const operation of ["cancel", "setTool"] as const) {
     it(`${operation} clears and cancels an active creation in event order`, () => {
       const events: DrawingEditorEvent[] = [];
@@ -1140,4 +1288,15 @@ function round(value: number): number {
   const rounded = Math.round(value * 1000000) / 1000000;
 
   return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+function expectUniqueEditorDrawingIds(state: {
+  drawings: DrawingObject[];
+  previewDrawing?: DrawingObject;
+}): void {
+  const ids = state.previewDrawing
+    ? [...state.drawings.map((drawing) => drawing.id), state.previewDrawing.id]
+    : state.drawings.map((drawing) => drawing.id);
+
+  expect(new Set(ids).size).toBe(ids.length);
 }

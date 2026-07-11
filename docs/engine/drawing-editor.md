@@ -47,6 +47,11 @@ editor.pointerDown({ x: 260, y: 240 });
 the `drawingPreviewChanged` event return deep-cloned snapshots, so a host cannot mutate editor
 internals through preview payloads.
 
+The first valid `pointerDown()` reserves one drawing id for that creation and advances the internal
+allocator immediately. Every later preview and the final `drawingCreated` payload reuse that id,
+while delete, paste, and duplicate operations allocate around it. Completion or cancellation
+releases the reservation; a canceled creation may therefore leave an unused numeric id.
+
 Step tools append committed anchors on `pointerDown()`. While more anchors are required,
 `pointerMove()` publishes `pending anchors + current hover anchor`; the hover anchor is ephemeral
 and is never committed by itself. The final `pointerDown()` commits one drawing, clears the
