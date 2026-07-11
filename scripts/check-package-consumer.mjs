@@ -15,6 +15,7 @@ import {
   createMainPanelPriceScale,
   createSourceSeriesRenderModel,
   defaultChartTimeFormatter,
+  drawingPointFromPointer,
   beginDrawingHandleDrag,
   beginDrawingMoveDrag,
   beginDrawingSelectionBox,
@@ -33,11 +34,13 @@ import {
   hitTestDrawingEditHandle,
   hitTestSeriesPoint,
   normalizeDrawingSelectionBounds,
+  projectDrawingObject,
   resizeDrawing,
   rotateDrawing,
   updateDrawingHandleDrag,
   updateDrawingMoveDrag,
   updateDrawingSelectionBox,
+  unprojectDrawingObject,
   validateChartExtension,
   deserializeDrawingObject,
   engineApiVersion,
@@ -422,17 +425,19 @@ if (
   throw new Error("Package consumer failed to execute drawing magnet snap state API");
 }
 
+const consumerPlotArea = { x: 0, y: 0, width: 640, height: 320 };
+const consumerPriceScale = createMainPanelPriceScale(
+  fixtureDailyCandleSeries,
+  engine.getState().viewport.visibleRange,
+  engine.getState().viewport.priceScaleMode,
+  [],
+  []
+);
 const ohlcTargets = createOhlcMagnetTargetsFromSeries({
   series: fixtureDailyCandleSeries,
   viewport: engine.getState().viewport,
-  plotArea: { x: 0, y: 0, width: 640, height: 320 },
-  priceScale: createMainPanelPriceScale(
-    fixtureDailyCandleSeries,
-    engine.getState().viewport.visibleRange,
-    engine.getState().viewport.priceScaleMode,
-    [],
-    []
-  )
+  plotArea: consumerPlotArea,
+  priceScale: consumerPriceScale
 });
 
 if (
@@ -442,6 +447,48 @@ if (
   typeof ohlcTargets[0].dataIndex !== "number"
 ) {
   throw new Error("Package consumer failed to execute OHLC magnet target projection API");
+}
+
+const coordinateCandle = fixtureDailyCandleSeries.candles[10];
+const drawingCoordinateContext = {
+  series: fixtureDailyCandleSeries,
+  viewport: engine.getState().viewport,
+  plotArea: consumerPlotArea,
+  priceScale: consumerPriceScale
+};
+const domainDrawing = {
+  id: "consumer-domain-drawing",
+  type: "trendLine",
+  anchors: [{ time: coordinateCandle.time, price: coordinateCandle.close }]
+};
+const projectedDomainDrawing = projectDrawingObject(domainDrawing, drawingCoordinateContext);
+const projectedAnchor = projectedDomainDrawing.anchors[0];
+const editorPoint = drawingPointFromPointer(
+  { x: projectedAnchor.x, y: projectedAnchor.y },
+  drawingCoordinateContext
+);
+const unprojectedDomainDrawing = unprojectDrawingObject(
+  projectedDomainDrawing,
+  drawingCoordinateContext
+);
+
+if (
+  !Number.isFinite(projectedAnchor.x) ||
+  !Number.isFinite(projectedAnchor.y) ||
+  projectedAnchor.time !== coordinateCandle.time ||
+  projectedAnchor.price !== coordinateCandle.close ||
+  editorPoint.x !== projectedAnchor.x ||
+  editorPoint.y !== projectedAnchor.y ||
+  editorPoint.time !== coordinateCandle.time ||
+  !Number.isFinite(editorPoint.price) ||
+  Math.abs(editorPoint.price - coordinateCandle.close) > 1e-8 ||
+  unprojectedDomainDrawing.anchors[0].time !== coordinateCandle.time ||
+  unprojectedDomainDrawing.anchors[0].price !== coordinateCandle.close ||
+  "x" in unprojectedDomainDrawing.anchors[0] ||
+  "y" in unprojectedDomainDrawing.anchors[0] ||
+  "index" in unprojectedDomainDrawing.anchors[0]
+) {
+  throw new Error("Package consumer failed to execute drawing coordinate projection APIs");
 }
 
 const lifecycleDrawingRenderers = createDrawingRendererRegistry();

@@ -12,6 +12,7 @@ export * from "./drawing/drawingMoveDrag";
 export * from "./drawing/drawingFigures";
 export * from "./drawing/drawingHitTest";
 export * from "./drawing/drawingCommands";
+export * from "./drawing/drawingCoordinates";
 export * from "./drawing/drawingEditState";
 export * from "./drawing/drawingEditor";
 export * from "./drawing/drawingHotkeys";

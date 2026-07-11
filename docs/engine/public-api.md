@@ -16,6 +16,9 @@ import {
   createInteractionSession,
   createRenderScheduler,
   createDrawingEditor,
+  drawingPointFromPointer,
+  projectDrawingObject,
+  unprojectDrawingObject,
   createChartExtension,
   createChartExtensionLifecycle,
   checkChartExtensionCompatibility,
@@ -154,6 +157,7 @@ Drawing platform exports include:
 - property schema: `getDrawingPropertySchema()`, `getDrawingPropertyDefinitionsForDrawing()`, `DrawingPropertySchema`, `DrawingPropertyDefinition`, `DrawingParameterPropertyDefinition`, `isTextDrawingType()`, `isFillDrawingType()`
 - drawing conversion and render: `createFiguresForDrawing()`, `createDefaultDrawingRendererRegistry()`, `createDrawingLayer()`
 - drawing persistence: `currentDrawingSchemaVersion`, `SerializedDrawingObject`, `serializeDrawingObject()`, `deserializeDrawingObject()`, `migrateSerializedDrawing()`
+- drawing coordinates: `DrawingCoordinateContext`, `projectDrawingObject()`, `unprojectDrawingObject()`, `drawingPointFromPointer()`
 - drawing commands: `mergeDrawingStyle()`, `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`
 - magnet helpers: `createOhlcMagnetTargets()`, `createOhlcMagnetTargetsFromSeries()`, `createDrawingAnchorMagnetTargets()`, `createVisualPointMagnetTargets()`, `findNearestMagnetTarget()`, `snapPointToMagnetTargets()`, `getMagnetSnapState()`, `MagnetPlotArea`, `PriceScale`, `MagnetSnapState`, `MagnetSnapStateOptions`, `OhlcMagnetTargetOptions`
 - indicators: `coreIndicatorIds`, `coreIndicatorDefinitions`, `calculateCoreIndicator()`, `calculateCoreIndicatorChunk()`, `CoreIndicatorChunkOptions`
@@ -229,6 +233,8 @@ The schema is command-oriented and host-independent. Style properties point to `
 Advanced drawing parameters use Engine-owned metadata keys such as `fibonacciLevels`, `gannRatios`, `positionLabel`, and `rangeLabel`. Rendering consumes valid Fibonacci level lists, Gann ratio lists, and label metadata, while invalid or missing metadata falls back to Engine defaults.
 
 Drawing interaction primitives include `selectDrawingsInBounds`, `nudgeSelected`, `getSelectedEditHandles`, `getDrawingEditHandles`, `getDrawingSelectionBounds`, `getDrawingIdsInBounds`, and `normalizeDrawingSelectionBounds`. Drawing body hit-test primitives include `hitTestDrawing` and `hitTestDrawingAll`; hosts pass neutral drawings, a point, and a `DrawingRendererRegistry`, then the Engine handles hidden/locked filtering plus distance and z-order sorting. Drawing hover intent uses `getDrawingHoverState`; hosts pass neutral drawings, selected handles, a point, and a renderer registry, then the Engine returns a target, hovered drawing id, and cursor intent while staying DOM-free. OHLC target creation uses `createOhlcMagnetTargetsFromSeries`; hosts pass neutral candle series, viewport, plot area, the required shared main `PriceScale`, and optional fields, then the DOM-free Engine returns visible candle OHLC `MagnetSnapTarget[]`. Drawing magnet snap state uses `getMagnetSnapState`; hosts pass a neutral point, neutral targets, and a radius, then the Engine returns the snapped point, matched target, and neutral magnet session state. Drawing handle drag primitives include `hitTestDrawingEditHandle`, `beginDrawingHandleDrag`, `updateDrawingHandleDrag`, `finishDrawingHandleDrag`, and `getDrawingHandleDragCommand`. Drawing move drag primitives include `beginDrawingMoveDrag`, `updateDrawingMoveDrag`, `finishDrawingMoveDrag`, and `getDrawingMoveDragCommand`; hosts pass neutral drawing snapshots and selected ids, the Engine returns preview drawings from the original operation snapshot, and finish returns one `dragSelected` command. Drawing selection box primitives include `beginDrawingSelectionBox`, `updateDrawingSelectionBox`, `finishDrawingSelectionBox`, and `getDrawingSelectionBoxCommand`. Drawing transform primitives include `resizeDrawing`, `resizeDrawings`, `rotateDrawing`, `rotateDrawings`, `resizeSelected`, and `rotateSelected`. These are DOM-free contracts for selection boxes, keyboard nudging, body hit-testing, hover intent, OHLC target projection, magnet snap state, edit handle metadata, handle drag operation flow, selected drawing move drag flow, and resize/rotate geometry mutation. Hosts still own pointer events, pointer capture, keyboard event routing, magnet toggles, target collection timing, DOM cursor styling, hover and magnet render invalidation, visual handle UI, persistence, collaboration, and UI toggles.
+
+Canonical drawing anchors persist `time` and absolute `price`; screen `x/y` are transient. Hosts call `projectDrawingObject()` before render or hit-test, use `drawingPointFromPointer()` for editor input, and call `unprojectDrawingObject()` only after a screen edit before persistence. The Engine owns exact/nearest candle resolution, current-series index clamping, shared scale conversion, and immutable output; hosts own event routing and persistence timing.
 
 Custom drawing types are allowed only when namespaced, for example `acme.measurement-box`. `drawingTypes` remains the built-in drawing list. Use `isBuiltInDrawingType()`, `isCustomDrawingType()`, and `isDrawingType()` for validation.
 

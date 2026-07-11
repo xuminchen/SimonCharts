@@ -12,6 +12,7 @@ import {
   createDrawingEditor,
   createDrawingToolRegistry,
   createMainPanelPriceScale,
+  drawingPointFromPointer,
   beginDrawingHandleDrag,
   beginDrawingMoveDrag,
   beginDrawingSelectionBox,
@@ -28,11 +29,13 @@ import {
   hitTestDrawingAll,
   hitTestDrawingEditHandle,
   normalizeDrawingSelectionBounds,
+  projectDrawingObject,
   resizeDrawing,
   rotateDrawing,
   updateDrawingHandleDrag,
   updateDrawingMoveDrag,
   updateDrawingSelectionBox,
+  unprojectDrawingObject,
   validateChartExtension,
   createRenderScheduler,
   createVisualRendererRegistry,
@@ -63,11 +66,13 @@ import type {
   ChartExtensionValidationIssueCode,
   ChartExtensionValidationResult,
   CustomDrawingType,
+  DrawingCoordinateContext,
   DrawingEditorCapability,
   DrawingEditor,
   DrawingEditorCapabilities,
   DrawingEditorCommand,
   DrawingEditorEvent,
+  DrawingEditorPoint,
   DrawingEditorState,
   DrawingEditHandle,
   DrawingHandleDragOperation,
@@ -490,6 +495,32 @@ const layout: ChartLayout = {
   priceAxisArea: { x: 736, y: 0, width: 64, height: 452 },
   timeAxisArea: { x: 0, y: 452, width: 736, height: 28 }
 };
+const drawingCoordinateContext: DrawingCoordinateContext = {
+  series,
+  viewport: engine.getState().viewport,
+  plotArea: layout.plotArea,
+  priceScale: mainPriceScale
+};
+const coordinateDomainDrawing: DrawingObject = {
+  id: "consumer-coordinate-drawing",
+  type: "trendLine",
+  anchors: [{ time: series.candles[0].time, price: series.candles[0].close }]
+};
+const projectedCoordinateDrawing: DrawingObject = projectDrawingObject(
+  coordinateDomainDrawing,
+  drawingCoordinateContext
+);
+const coordinateEditorPoint: DrawingEditorPoint = drawingPointFromPointer(
+  {
+    x: projectedCoordinateDrawing.anchors[0].x ?? layout.plotArea.x,
+    y: projectedCoordinateDrawing.anchors[0].y ?? layout.plotArea.y
+  },
+  drawingCoordinateContext
+);
+const unprojectedCoordinateDrawing: DrawingObject = unprojectDrawingObject(
+  projectedCoordinateDrawing,
+  drawingCoordinateContext
+);
 
 const layerContext = {
   context: {} as CanvasRenderingContext2D,
@@ -562,6 +593,11 @@ void magnetSnapStateOptions;
 void magnetSnapState;
 void magnetPlotArea;
 void mainPriceScale;
+void drawingCoordinateContext;
+void coordinateDomainDrawing;
+void projectedCoordinateDrawing;
+void coordinateEditorPoint;
+void unprojectedCoordinateDrawing;
 void formatTime;
 void tooltipFormatting;
 void ohlcMagnetTargetOptions;

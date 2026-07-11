@@ -103,9 +103,16 @@ npm run check:package-types
 
 `guard:sdk-imports` verifies host-facing code imports `@simoncharts/chart-engine` only from the package root.
 
-`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, drawing metadata commands, drawing interaction primitives, drawing transform primitives, drawing property schema APIs, and OHLC magnet target projection from neutral candle series.
+`check:package-consumer` verifies runtime SDK consumption, including chart engine, drawing serialization, indicators, drawing editor command/capability APIs, drawing metadata commands, drawing interaction primitives, drawing coordinate projection, drawing transform primitives, drawing property schema APIs, and OHLC magnet target projection from neutral candle series.
 
-`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including shared `PriceScale`, `ChartTimeFormatter`, tooltip formatting, drawing property schema, drawing interaction, drawing magnet snap state, OHLC magnet target projection, and drawing transform types.
+`check:package-types` compiles `scripts/fixtures/package-consumer-types.ts` against the package root and built declarations, covering type-only contracts that runtime export checks cannot see, including shared `PriceScale`, `ChartTimeFormatter`, tooltip formatting, drawing property schema, drawing interaction, drawing coordinate context, drawing magnet snap state, OHLC magnet target projection, and drawing transform types.
+
+## Drawing Coordinate Projection Verification
+
+`drawingCoordinates.test.ts` covers linear/log/percentage projection, pan and zoom, exact and
+nearest time resolution, cross-timeframe fallback, stale index rejection, pointer conversion,
+domain round-trip, empty and zero-sized layouts, finite geometry, and input/output isolation.
+Runtime and declaration consumers also exercise all three package-root coordinate functions.
 
 ## v1.0 OHLC Magnet Target Projection Verification
 

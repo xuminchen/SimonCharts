@@ -1,14 +1,14 @@
 # Drawing Editor
 
-Drawings use the neutral `DrawingObject` model. Anchors may carry chart coordinates (`time`, `index`, `price`) or screen coordinates (`x`, `y`), and styles use `DrawingStyle` fields:
+Drawings use the neutral `DrawingObject` model. Canonical anchors store candle `time` and absolute `price`; `x` and `y` are transient screen projections for the current series, viewport, plot area, and price scale. Styles use `DrawingStyle` fields:
 
 ```ts
 const drawing: DrawingObject = {
   id: "trend-1",
   type: "trendLine",
   anchors: [
-    { x: 120, y: 180 },
-    { x: 260, y: 240 }
+    { time: 1719792000000, price: 10.25 },
+    { time: 1719878400000, price: 10.8 }
   ],
   style: { color: "#2563eb", lineWidth: 2 }
 };
@@ -66,6 +66,25 @@ preview, emits `creationCanceled`, and creates no drawing or history entry.
 For an active creation, `cancel()`, `setTool()`, `undo()`, and `redo()` emit a preview clear before
 `creationCanceled`; idle calls do not emit either event. Successful creation emits the preview
 clear before `drawingCreated` and `selectionChanged`.
+
+## Coordinate Projection
+
+`DrawingCoordinateContext` combines a `CandleSeries`, `ViewportState`, plot area, and the shared
+`PriceScale`. Call `projectDrawingObject()` before rendering or hit-testing a canonical drawing.
+It returns a deep-isolated drawing with transient finite `x/y` for valid domain anchors while
+preserving `time/price`. Exact candle time wins; otherwise the nearest candle determines only the
+screen x position, equal-distance ties use the first candle, and a persisted `index` is ignored.
+
+Call `drawingPointFromPointer()` before passing a native pointer position to `DrawingEditor`. The
+returned editor point keeps the exact pointer `x/y`, clamps its candle index to the available
+series, chooses the candle time from that cell, and converts y to absolute price through the shared
+scale. Price is not clamped to the plot, so a pointer outside the vertical plot extrapolates; an
+empty series returns no time.
+
+After an actual screen edit, call `unprojectDrawingObject()` to create the next canonical drawing.
+It chooses the current series candle time from the edited x, returns absolute price from the edited
+y, and removes `x`, `y`, and `index`. Projection never selects a locale, timezone, or timeframe,
+and none of the coordinate functions mutate their inputs.
 
 The editor owns neutral operations such as select, box select, drag, anchor edits, keyboard nudging, resize, rotate, style edits, metadata edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
 
