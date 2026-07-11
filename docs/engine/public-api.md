@@ -118,7 +118,7 @@ engine.setViewport({
 const state = engine.getState();
 ```
 
-The facade state is neutral: `CandleSeries`, `SeriesType`, `ViewportState`, `IndicatorVisualOutput[]`, `DrawingObject[]`, `ChartSettings`, `timeframe`, and command state. It does not contain host account, route, persistence, review, strategy, watchlist, AI, or auth fields.
+The facade state is neutral: `CandleSeries`, `SeriesType`, `ViewportState`, `IndicatorVisualOutput[]`, `DrawingObject[]`, `ChartSettings`, and command state. The active timeframe comes from `state.series.timeframe` on `CandleSeries`; only `engine.setSeries(series)` changes the engine data timeframe. The facade does not contain host account, route, persistence, review, strategy, watchlist, AI, or auth fields.
 
 Events use `ChartEngineEvent`:
 

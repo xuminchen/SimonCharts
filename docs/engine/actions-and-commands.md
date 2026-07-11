@@ -27,7 +27,7 @@ Drawing tool selection, selected-drawing actions, undo, and redo belong to `Draw
 
 ```ts
 drawingEditor.executeCommand({ type: "setTool", tool: "trendLine" });
-drawingEditor.executeCommand({ type: "undo" });
+drawingEditor.undo();
 ```
 
 Use `ChartEngine.dispatch(command)` for chart commands. The facade stores neutral command results in fields such as `seriesType`, `viewport`, `settings.gridVisible`, `settings.themeMode`, and `lastCommandType`.
