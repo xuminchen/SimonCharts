@@ -1,7 +1,397 @@
 import { describe, expect, it } from "vitest";
-import { createDrawingEditor, type DrawingObject } from "../index";
+import {
+  createDrawingEditor,
+  createDrawingToolRegistry,
+  type DrawingEditorEvent,
+  type DrawingObject
+} from "../index";
 
 describe("complete drawing editor", () => {
+  it("exposes the exact preview state and orders step creation events", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+    expect(editor.getState()).toEqual({
+      drawings: [],
+      selectedDrawingIds: [],
+      activeTool: "select",
+      isCreating: false,
+      previewDrawing: undefined
+    });
+
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 10, y: 20, time: 1, price: 10 });
+    editor.pointerMove({ x: 30, y: 40, time: 2, price: 12 });
+
+    expect(events).toEqual([
+      { type: "toolChanged", tool: "trendLine" },
+      {
+        type: "drawingPreviewChanged",
+        drawing: {
+          id: "drawing-1",
+          type: "trendLine",
+          anchors: [{ x: 10, y: 20, time: 1, price: 10 }]
+        }
+      },
+      {
+        type: "drawingPreviewChanged",
+        drawing: {
+          id: "drawing-1",
+          type: "trendLine",
+          anchors: [
+            { x: 10, y: 20, time: 1, price: 10 },
+            { x: 30, y: 40, time: 2, price: 12 }
+          ]
+        }
+      }
+    ]);
+
+    editor.pointerDown({ x: 50, y: 60, time: 3, price: 14 });
+
+    expect(events.slice(3)).toEqual([
+      { type: "drawingPreviewChanged", drawing: undefined },
+      {
+        type: "drawingCreated",
+        drawing: {
+          id: "drawing-1",
+          type: "trendLine",
+          anchors: [
+            { x: 10, y: 20, time: 1, price: 10 },
+            { x: 50, y: 60, time: 3, price: 14 }
+          ]
+        }
+      },
+      { type: "selectionChanged", selectedDrawingIds: ["drawing-1"] }
+    ]);
+    expect(editor.getState()).toMatchObject({
+      selectedDrawingIds: ["drawing-1"],
+      isCreating: false,
+      previewDrawing: undefined
+    });
+  });
+
+  it("keeps step hover anchors ephemeral", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 1, y: 2, time: 1, price: 10 });
+    editor.pointerMove({ x: 11, y: 12, time: 2, price: 11 });
+    editor.pointerMove({ x: 21, y: 22, time: 3, price: 12 });
+
+    expect(editor.getState().previewDrawing?.anchors).toEqual([
+      { x: 1, y: 2, time: 1, price: 10 },
+      { x: 21, y: 22, time: 3, price: 12 }
+    ]);
+
+    editor.pointerDown({ x: 31, y: 32, time: 4, price: 13 });
+
+    expect(editor.getState().drawings[0].anchors).toEqual([
+      { x: 1, y: 2, time: 1, price: 10 },
+      { x: 31, y: 32, time: 4, price: 13 }
+    ]);
+  });
+
+  it("keeps step state events and history unchanged on pointer up", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 1, y: 2 });
+    editor.pointerMove({ x: 3, y: 4 });
+
+    const stateBeforePointerUp = editor.getState();
+    const capabilitiesBeforePointerUp = editor.getCapabilities();
+    const eventsBeforePointerUp = [...events];
+
+    editor.pointerUp({ x: 5, y: 6 });
+
+    expect(editor.getState()).toEqual(stateBeforePointerUp);
+    expect(editor.getCapabilities()).toEqual(capabilitiesBeforePointerUp);
+    expect(events).toEqual(eventsBeforePointerUp);
+  });
+
+  it("commits a single-anchor step tool without preview events", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+    editor.setTool("horizontalLine");
+    editor.pointerDown({ x: 1, y: 2 });
+
+    expect(events.map((event) => event.type)).toEqual([
+      "toolChanged",
+      "drawingCreated",
+      "selectionChanged"
+    ]);
+    expect(editor.getState()).toMatchObject({
+      drawings: [{ type: "horizontalLine", anchors: [{ x: 1, y: 2 }] }],
+      isCreating: false,
+      previewDrawing: undefined
+    });
+  });
+
+  it("samples continuous anchors by distinct x and y and appends a distinct final point", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+
+    editor.setTool("path");
+    editor.pointerDown({ x: 10, y: 10, time: 1, price: 10 });
+    editor.pointerMove({ x: 10, y: 10, time: 2, price: 20 });
+    editor.pointerMove({ x: 20, y: 10, time: 3, price: 30 });
+    editor.pointerMove({ x: 20, y: 10, time: 4, price: 40 });
+    editor.pointerUp({ x: 20, y: 30, time: 5, price: 50 });
+
+    expect(editor.getState().drawings[0].anchors).toEqual([
+      { x: 10, y: 10, time: 1, price: 10 },
+      { x: 20, y: 10, time: 3, price: 30 },
+      { x: 20, y: 30, time: 5, price: 50 }
+    ]);
+  });
+
+  it("cancels distinct continuous points below the declared minimum", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+
+    editor.setTool("path");
+    editor.pointerDown({ x: 10, y: 10 });
+    editor.pointerUp({ x: 20, y: 20 });
+
+    expect(editor.getState()).toMatchObject({
+      drawings: [],
+      isCreating: false,
+      previewDrawing: undefined
+    });
+    expect(editor.getCapabilities().canUndo).toBe(false);
+  });
+
+  it("commits at the continuous minimum when pointer up repeats the last sample", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+
+    editor.setTool("path");
+    editor.pointerDown({ x: 10, y: 10 });
+    editor.pointerMove({ x: 20, y: 20 });
+    editor.pointerMove({ x: 30, y: 30 });
+    editor.pointerUp({ x: 30, y: 30 });
+
+    expect(editor.getState().drawings[0].anchors).toEqual([
+      { x: 10, y: 10 },
+      { x: 20, y: 20 },
+      { x: 30, y: 30 }
+    ]);
+  });
+
+  it("uses a custom continuous tool's declared minimum instead of a built-in constant", () => {
+    const registry = createDrawingToolRegistry();
+
+    registry.register({
+      type: "acme.freehand",
+      label: "Freehand",
+      category: "path",
+      totalStep: 5,
+      anchorCount: 4,
+      drawingMode: "continuous",
+      defaultStyle: { color: "#2563eb", lineWidth: 2 },
+      hotkeyId: "drawing.acme.freehand"
+    });
+
+    const editor = createDrawingEditor({ drawings: [], toolRegistry: registry });
+
+    editor.setTool("acme.freehand");
+    editor.pointerDown({ x: 0, y: 0 });
+    editor.pointerMove({ x: 1, y: 1 });
+    editor.pointerUp({ x: 2, y: 2 });
+
+    expect(editor.getState().drawings).toEqual([]);
+    expect(editor.getCapabilities().canUndo).toBe(false);
+
+    editor.pointerDown({ x: 3, y: 3 });
+    editor.pointerMove({ x: 4, y: 4 });
+    editor.pointerMove({ x: 5, y: 5 });
+    editor.pointerUp({ x: 6, y: 6 });
+
+    expect(editor.getState().drawings[0]).toMatchObject({
+      type: "acme.freehand",
+      anchors: { length: 4 }
+    });
+  });
+
+  it("commits one continuous gesture through one history and event entry", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+    editor.setTool("brush");
+    editor.pointerDown({ x: 0, y: 0 });
+    editor.pointerMove({ x: 1, y: 1 });
+    editor.pointerMove({ x: 2, y: 2 });
+    editor.pointerMove({ x: 3, y: 3 });
+    editor.pointerMove({ x: 4, y: 4 });
+    editor.pointerUp({ x: 5, y: 5 });
+
+    expect(events.filter((event) => event.type === "drawingCreated")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "selectionChanged")).toHaveLength(1);
+    expect(events.map((event) => event.type)).toEqual([
+      "toolChanged",
+      "drawingPreviewChanged",
+      "drawingPreviewChanged",
+      "drawingPreviewChanged",
+      "drawingPreviewChanged",
+      "drawingPreviewChanged",
+      "drawingPreviewChanged",
+      "drawingCreated",
+      "selectionChanged"
+    ]);
+    expect(editor.getState().drawings[0].anchors).toHaveLength(6);
+
+    editor.undo();
+    expect(editor.getState().drawings).toEqual([]);
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: true });
+
+    editor.redo();
+    expect(editor.getState().drawings).toHaveLength(1);
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: true, canRedo: false });
+  });
+
+  it("deep clones preview state and preview events", () => {
+    let eventPreview: DrawingObject | undefined;
+    const editor = createDrawingEditor({
+      drawings: [],
+      onEvent(event) {
+        if (event.type === "drawingPreviewChanged" && event.drawing) {
+          eventPreview = event.drawing;
+          event.drawing.anchors[0].x = 999;
+        }
+      }
+    });
+
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 10, y: 20, time: 1, price: 10 });
+
+    expect(eventPreview?.anchors[0].x).toBe(999);
+    expect(editor.getState().previewDrawing?.anchors[0].x).toBe(10);
+
+    const state = editor.getState();
+
+    if (!state.previewDrawing) {
+      throw new Error("Expected a preview drawing");
+    }
+
+    state.previewDrawing.anchors[0].x = 777;
+    expect(editor.getState().previewDrawing?.anchors[0].x).toBe(10);
+
+    editor.pointerDown({ x: 30, y: 40, time: 2, price: 12 });
+    expect(editor.getState().drawings[0].anchors[0].x).toBe(10);
+  });
+
+  for (const operation of ["cancel", "setTool"] as const) {
+    it(`${operation} clears and cancels an active creation in event order`, () => {
+      const events: DrawingEditorEvent[] = [];
+      const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+      editor.setTool("trendLine");
+      editor.pointerDown({ x: 1, y: 2 });
+      editor.pointerMove({ x: 3, y: 4 });
+      events.length = 0;
+
+      if (operation === "cancel") {
+        editor.cancel();
+      } else {
+        editor.setTool("rectangle");
+      }
+
+      expect(events).toEqual([
+        { type: "drawingPreviewChanged", drawing: undefined },
+        { type: "creationCanceled" },
+        ...(operation === "setTool"
+          ? ([{ type: "toolChanged", tool: "rectangle" }] satisfies DrawingEditorEvent[])
+          : [])
+      ]);
+      expect(editor.getState()).toMatchObject({
+        activeTool: operation === "setTool" ? "rectangle" : "trendLine",
+        isCreating: false,
+        previewDrawing: undefined
+      });
+
+      events.length = 0;
+      editor.cancel();
+      expect(events).toEqual([]);
+    });
+  }
+
+  it("undo and redo clear active creation before restoring history", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+    editor.setTool("horizontalLine");
+    editor.pointerDown({ x: 1, y: 2 });
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 3, y: 4 });
+    editor.pointerMove({ x: 5, y: 6 });
+    events.length = 0;
+
+    editor.undo();
+
+    expect(events).toEqual([
+      { type: "drawingPreviewChanged", drawing: undefined },
+      { type: "creationCanceled" },
+      { type: "selectionChanged", selectedDrawingIds: [] }
+    ]);
+    expect(editor.getState()).toMatchObject({
+      drawings: [],
+      isCreating: false,
+      previewDrawing: undefined
+    });
+
+    editor.pointerDown({ x: 7, y: 8 });
+    editor.pointerMove({ x: 9, y: 10 });
+    events.length = 0;
+
+    editor.redo();
+
+    expect(events).toEqual([
+      { type: "drawingPreviewChanged", drawing: undefined },
+      { type: "creationCanceled" },
+      { type: "selectionChanged", selectedDrawingIds: ["drawing-1"] }
+    ]);
+    expect(editor.getState()).toMatchObject({
+      drawings: [{ id: "drawing-1", type: "horizontalLine" }],
+      isCreating: false,
+      previewDrawing: undefined
+    });
+  });
+
+  it("does not emit preview clears or cancellations for idle operations", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+    editor.cancel();
+    editor.undo();
+    editor.redo();
+    editor.setTool("trendLine");
+
+    expect(
+      events.filter(
+        (event) => event.type === "drawingPreviewChanged" || event.type === "creationCanceled"
+      )
+    ).toEqual([]);
+  });
+
+  it("clears and cancels an incomplete continuous gesture on pointer up", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
+
+    editor.setTool("forecastPath");
+    editor.pointerDown({ x: 1, y: 2 });
+    events.length = 0;
+    editor.pointerUp({ x: 1, y: 2 });
+
+    expect(events).toEqual([
+      { type: "drawingPreviewChanged", drawing: undefined },
+      { type: "creationCanceled" }
+    ]);
+    expect(editor.getCapabilities()).toMatchObject({
+      pendingAnchorCount: 0,
+      canCancelCreation: false,
+      canUndo: false
+    });
+  });
+
   it("reports command capabilities from selection clipboard creation and history state", () => {
     const editor = createDrawingEditor({
       drawings: [

@@ -10,6 +10,7 @@ export type DrawingEditorEvent =
   | { type: "drawingCreated"; drawing: DrawingObject }
   | { type: "drawingUpdated"; drawing: DrawingObject }
   | { type: "drawingDeleted"; drawingId: string }
+  | { type: "drawingPreviewChanged"; drawing?: DrawingObject }
   | { type: "creationCanceled" };
 
 export type DrawingEditorCommand =

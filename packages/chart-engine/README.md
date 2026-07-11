@@ -80,10 +80,19 @@ const editor = createDrawingEditor({
 
 editor.executeCommand({ type: "setTool", tool: "trendLine" });
 editor.pointerDown({ x: 120, y: 180 });
+editor.pointerMove({ x: 200, y: 210 });
+const preview = editor.getState().previewDrawing;
 editor.pointerDown({ x: 260, y: 240 });
 ```
 
-The editor supports creation, selection, drag, anchor editing where anchors are editable, style editing, text editing, z-order commands, copy, paste, duplicate, lock, hide, delete, undo, and redo.
+Step tools commit anchors on `pointerDown()` and expose the current anchors plus an ephemeral hover
+anchor through `previewDrawing`. Continuous tools (`path`, `brush`, and `forecastPath`) sample
+distinct `x`/`y` points from `pointerDown()` through `pointerMove()`, then commit once on
+`pointerUp()` after reaching their declared minimum anchor count. `cancel()` discards an active
+creation without adding history. Preview changes are also emitted as `drawingPreviewChanged`.
+
+The editor supports creation, selection, drag, anchor editing where anchors are editable, style
+editing, text editing, z-order commands, copy, paste, duplicate, lock, hide, delete, undo, and redo.
 
 ## Extensions
 

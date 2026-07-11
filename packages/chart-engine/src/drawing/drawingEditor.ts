@@ -34,6 +34,7 @@ export interface DrawingEditorState {
   selectedDrawingIds: string[];
   activeTool: DrawingEditorTool;
   isCreating: boolean;
+  previewDrawing?: DrawingObject;
 }
 
 export interface DrawingEditorOptions {
@@ -88,6 +89,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   let selectedDrawingIds: string[] = [];
   let activeTool: DrawingEditorTool = "select";
   let pendingAnchors: DrawingAnchor[] = [];
+  let previewDrawing: DrawingObject | undefined;
   let nextDrawingNumber = 1;
   let clipboard: DrawingClipboard = { drawings: [] };
   const toolRegistry = options.toolRegistry ?? createBuiltInDrawingToolRegistry();
@@ -100,8 +102,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   const api: DrawingEditor = {
     setTool(tool) {
       assertDrawingTool(tool, toolRegistry);
+      cancelActiveCreation();
       activeTool = tool;
-      pendingAnchors = [];
       emit({ type: "toolChanged", tool });
     },
     pointerDown(point) {
@@ -109,20 +111,32 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return;
       }
 
+      if (isContinuousTool()) {
+        if (pendingAnchors.length > 0) {
+          return;
+        }
+
+        pendingAnchors = [pointToAnchor(point)];
+        emitPreview(createPendingDrawing());
+        return;
+      }
+
       pendingAnchors = [...pendingAnchors, pointToAnchor(point)];
 
       if (pendingAnchors.length < toolRegistry.require(activeTool).anchorCount) {
+        emitPreview(createPendingDrawing());
         return;
       }
 
       const drawing: DrawingObject = {
         id: createDrawingId(drawings, nextDrawingNumber),
         type: activeTool,
-        anchors: pendingAnchors
+        anchors: pendingAnchors.map((anchor) => ({ ...anchor }))
       };
 
       nextDrawingNumber += 1;
       pendingAnchors = [];
+      clearPreview();
       commitSnapshot(
         "createDrawing",
         { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id] },
@@ -132,13 +146,64 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         }
       );
     },
-    pointerMove() {},
-    pointerUp() {},
-    cancel() {
-      if (pendingAnchors.length > 0) {
-        pendingAnchors = [];
-        emit({ type: "creationCanceled" });
+    pointerMove(point) {
+      if (activeTool === "select" || pendingAnchors.length === 0) {
+        return;
       }
+
+      const anchor = pointToAnchor(point);
+
+      if (isContinuousTool()) {
+        const lastAnchor = pendingAnchors.at(-1);
+
+        if (!lastAnchor || hasSameScreenPoint(lastAnchor, anchor)) {
+          return;
+        }
+
+        pendingAnchors = [...pendingAnchors, anchor];
+        emitPreview(createPendingDrawing());
+        return;
+      }
+
+      emitPreview(createPendingDrawing([...pendingAnchors, anchor]));
+    },
+    pointerUp(point) {
+      if (!isContinuousTool() || pendingAnchors.length === 0) {
+        return;
+      }
+
+      const finalAnchor = pointToAnchor(point);
+      const lastAnchor = pendingAnchors.at(-1);
+
+      if (lastAnchor && !hasSameScreenPoint(lastAnchor, finalAnchor)) {
+        pendingAnchors = [...pendingAnchors, finalAnchor];
+      }
+
+      if (pendingAnchors.length < toolRegistry.require(activeTool).anchorCount) {
+        cancelActiveCreation();
+        return;
+      }
+
+      const drawing: DrawingObject = {
+        id: createDrawingId(drawings, nextDrawingNumber),
+        type: activeTool,
+        anchors: pendingAnchors.map((anchor) => ({ ...anchor }))
+      };
+
+      nextDrawingNumber += 1;
+      pendingAnchors = [];
+      clearPreview();
+      commitSnapshot(
+        "createDrawing",
+        { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id] },
+        () => {
+          emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
+          emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
+        }
+      );
+    },
+    cancel() {
+      cancelActiveCreation();
     },
     selectDrawing(id) {
       selectedDrawingIds = drawings.some((drawing) => drawing.id === id) ? [id] : [];
@@ -315,13 +380,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       setSelectedVisible(true);
     },
     undo() {
+      cancelActiveCreation();
       restoreSnapshot(history.undo());
-      pendingAnchors = [];
       emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
     },
     redo() {
+      cancelActiveCreation();
       restoreSnapshot(history.redo());
-      pendingAnchors = [];
       emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
     },
     getCapabilities() {
@@ -332,7 +397,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         drawings: cloneDrawings(drawings),
         selectedDrawingIds: [...selectedDrawingIds],
         activeTool,
-        isCreating: pendingAnchors.length > 0
+        isCreating: pendingAnchors.length > 0,
+        previewDrawing: previewDrawing ? cloneDrawing(previewDrawing) : undefined
       };
     }
   };
@@ -388,6 +454,46 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       case "showSelected":
         return api.showSelected();
     }
+  }
+
+  function isContinuousTool(): boolean {
+    return activeTool !== "select" && toolRegistry.require(activeTool).drawingMode === "continuous";
+  }
+
+  function createPendingDrawing(anchors = pendingAnchors): DrawingObject {
+    if (activeTool === "select") {
+      throw new Error("Cannot preview a drawing while the select tool is active");
+    }
+
+    return {
+      id: createDrawingId(drawings, nextDrawingNumber),
+      type: activeTool,
+      anchors: anchors.map((anchor) => ({ ...anchor }))
+    };
+  }
+
+  function emitPreview(drawing: DrawingObject | undefined): void {
+    previewDrawing = drawing ? cloneDrawing(drawing) : undefined;
+    emit({
+      type: "drawingPreviewChanged",
+      drawing: previewDrawing ? cloneDrawing(previewDrawing) : undefined
+    });
+  }
+
+  function clearPreview(): void {
+    if (previewDrawing) {
+      emitPreview(undefined);
+    }
+  }
+
+  function cancelActiveCreation(): void {
+    if (pendingAnchors.length === 0) {
+      return;
+    }
+
+    pendingAnchors = [];
+    emitPreview(undefined);
+    emit({ type: "creationCanceled" });
   }
 
   function getExistingUniqueIds(ids: string[]): string[] {
@@ -685,6 +791,10 @@ function pointToAnchor(point: DrawingEditorPoint): DrawingAnchor {
     time: point.time,
     price: point.price
   };
+}
+
+function hasSameScreenPoint(left: DrawingAnchor, right: DrawingAnchor): boolean {
+  return left.x === right.x && left.y === right.y;
 }
 
 function moveDrawing(drawing: DrawingObject, dx: number, dy: number): DrawingObject {

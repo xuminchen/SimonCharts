@@ -41,6 +41,27 @@ editor.pointerDown({ x: 120, y: 180 });
 editor.pointerDown({ x: 260, y: 240 });
 ```
 
+## Creation Pointer Lifecycle
+
+`DrawingEditorState.previewDrawing` is the current creation-only drawing. Both `getState()` and
+the `drawingPreviewChanged` event return deep-cloned snapshots, so a host cannot mutate editor
+internals through preview payloads.
+
+Step tools append committed anchors on `pointerDown()`. While more anchors are required,
+`pointerMove()` publishes `pending anchors + current hover anchor`; the hover anchor is ephemeral
+and is never committed by itself. The final `pointerDown()` commits one drawing, clears the
+preview, and adds one undo entry.
+
+Continuous tools start on `pointerDown()`, append only points whose `x` or `y` differs from the
+last sampled point, and finish on `pointerUp()`. Their `anchorCount` is a minimum rather than a
+maximum. A distinct final point is appended before validation; a repeated final point can still
+commit when the minimum was already reached. An incomplete pointer-up or `cancel()` clears the
+preview, emits `creationCanceled`, and creates no drawing or history entry.
+
+For an active creation, `cancel()`, `setTool()`, `undo()`, and `redo()` emit a preview clear before
+`creationCanceled`; idle calls do not emit either event. Successful creation emits the preview
+clear before `drawingCreated` and `selectionChanged`.
+
 The editor owns neutral operations such as select, box select, drag, anchor edits, keyboard nudging, resize, rotate, style edits, metadata edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
 
 Style, metadata, and text commands are exposed as `updateSelectedStyle(style)`, `updateSelectedMetadata(metadata)`, and `updateSelectedText(text)`. Transform commands are exposed as `resizeSelected(options)` and `rotateSelected(options)`. The corresponding command payloads are `DrawingEditorCommand` entries: `selectDrawingsInBounds`, `nudgeSelected`, `resizeSelected`, `rotateSelected`, `updateSelectedStyle`, `updateSelectedMetadata`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, `duplicateSelected`, `lockSelected`, `unlockSelected`, `hideSelected`, and `showSelected`.

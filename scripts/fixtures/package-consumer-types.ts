@@ -67,6 +67,8 @@ import type {
   DrawingEditor,
   DrawingEditorCapabilities,
   DrawingEditorCommand,
+  DrawingEditorEvent,
+  DrawingEditorState,
   DrawingEditHandle,
   DrawingHandleDragOperation,
   DrawingHandleDragPreview,
@@ -192,6 +194,12 @@ const engineCapabilityRequirementGap: EngineCapabilityRequirementGap = {
   values: ["futureSeries"]
 };
 const drawingEditor: DrawingEditor = createDrawingEditor({ drawings: [] });
+const drawingEditorState: DrawingEditorState = drawingEditor.getState();
+const drawingPreview: DrawingObject | undefined = drawingEditorState.previewDrawing;
+const drawingPreviewEvent: DrawingEditorEvent = {
+  type: "drawingPreviewChanged",
+  drawing: drawingPreview
+};
 const customDrawingType: CustomDrawingType = "consumer.measurement-box";
 const drawingPropertySchema: DrawingPropertySchema = getDrawingPropertySchema("trendLine");
 
@@ -506,6 +514,9 @@ const snapshot: ChartLayoutSnapshot = {
 serializeChartLayoutSnapshot(snapshot);
 
 void capabilities;
+void drawingEditorState;
+void drawingPreview;
+void drawingPreviewEvent;
 void packagedTimeframes;
 void engineCapabilityManifest;
 void engineDrawingToolCapability;

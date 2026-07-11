@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createFiguresForDrawing, type DrawingObject, type DrawingType } from "../index";
+import {
+  builtInDrawingToolDefinitions,
+  createDrawingEditor,
+  createFiguresForDrawing,
+  type DrawingObject,
+  type DrawingType
+} from "../index";
 
 const baseAnchors = [
   { x: 20, y: 30 },
@@ -398,3 +404,74 @@ describe("drawing figure coverage", () => {
     ]);
   });
 });
+
+describe("drawing editor lifecycle coverage", () => {
+  it.each(builtInDrawingToolDefinitions)(
+    "creates $type through its declared $drawingMode lifecycle",
+    (definition) => {
+      const editor = createDrawingEditor({ drawings: [] });
+
+      editor.setTool(definition.type);
+
+      if (definition.drawingMode === "continuous") {
+        editor.pointerDown(point(0));
+
+        for (let index = 1; index <= definition.anchorCount + 1; index += 1) {
+          editor.pointerMove(point(index));
+        }
+
+        expect(editor.getState().drawings).toHaveLength(0);
+        expect(editor.getState().previewDrawing?.anchors).toHaveLength(
+          definition.anchorCount + 2
+        );
+
+        editor.pointerUp(point(definition.anchorCount + 2));
+
+        expect(editor.getState().drawings).toHaveLength(1);
+        expect(editor.getState().drawings[0]).toMatchObject({
+          type: definition.type,
+          anchors: { length: definition.anchorCount + 3 }
+        });
+      } else {
+        for (let index = 0; index < definition.anchorCount; index += 1) {
+          editor.pointerDown(point(index));
+
+          if (index < definition.anchorCount - 1) {
+            editor.pointerMove(point(index + 100));
+            expect(editor.getState().drawings).toHaveLength(0);
+            expect(editor.getState().previewDrawing?.anchors).toHaveLength(index + 2);
+          }
+        }
+
+        expect(editor.getState().drawings).toHaveLength(1);
+        expect(editor.getState().drawings[0]).toMatchObject({
+          type: definition.type,
+          anchors: { length: definition.anchorCount }
+        });
+      }
+
+      expect(editor.getState().previewDrawing).toBeUndefined();
+      expect(editor.getCapabilities()).toMatchObject({
+        pendingAnchorCount: 0,
+        canUndo: true
+      });
+
+      editor.undo();
+      expect(editor.getState().drawings).toEqual([]);
+      expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: true });
+
+      editor.redo();
+      expect(editor.getState().drawings).toHaveLength(1);
+      expect(editor.getCapabilities()).toMatchObject({ canUndo: true, canRedo: false });
+    }
+  );
+});
+
+function point(index: number): { x: number; y: number; time: number; price: number } {
+  return {
+    x: index * 10 + 1,
+    y: index * 7 + 2,
+    time: index + 1,
+    price: index + 10
+  };
+}

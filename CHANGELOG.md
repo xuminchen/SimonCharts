@@ -5,6 +5,7 @@
 - Added exact bounded JSON checkpoints for all 16 core indicators and five stateful synthetic series transforms.
 - Added explicit terminal indicator finalization and BASE-characterized golden coverage for every checkpointed formula.
 - Added Point & Figure provisional-tail replacement and precomputed bounded render models with global source-index offsets.
+- Completed step and continuous drawing pointer lifecycles with isolated creation previews and one-entry gesture history.
 - Prepared `@simoncharts/chart-engine` as the first v1.0 release candidate.
 - Documented package usage, root-only SDK imports, release scope, and release validation.
 - Added package metadata for external consumption without adding host app coupling.

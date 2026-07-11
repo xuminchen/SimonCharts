@@ -6,6 +6,54 @@ import {
 } from "../index";
 
 describe("drawing editor", () => {
+  it("previews a step tool before its final anchor", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 10, y: 20, time: 1, price: 10 });
+    editor.pointerMove({ x: 30, y: 40, time: 2, price: 12 });
+    expect(editor.getState().previewDrawing?.anchors).toHaveLength(2);
+    expect(editor.getState().drawings).toHaveLength(0);
+  });
+
+  for (const type of ["path", "brush", "forecastPath"] as const) {
+    it(`commits ${type} on pointer up`, () => {
+      const editor = createDrawingEditor({ drawings: [] });
+      editor.setTool(type);
+      editor.pointerDown({ x: 10, y: 10, time: 1, price: 10 });
+      editor.pointerMove({ x: 20, y: 20, time: 2, price: 11 });
+      editor.pointerMove({ x: 30, y: 25, time: 3, price: 12 });
+      expect(editor.getState().drawings).toHaveLength(0);
+      expect(editor.getState().previewDrawing?.anchors.length).toBeGreaterThanOrEqual(3);
+      editor.pointerUp({ x: 40, y: 30, time: 4, price: 13 });
+      expect(editor.getState().drawings).toHaveLength(1);
+      expect(editor.getState().previewDrawing).toBeUndefined();
+    });
+
+    it(`cancels an active ${type} gesture`, () => {
+      const editor = createDrawingEditor({ drawings: [] });
+      editor.setTool(type);
+      editor.pointerDown({ x: 10, y: 10, time: 1, price: 10 });
+      editor.pointerMove({ x: 20, y: 20, time: 2, price: 11 });
+      editor.cancel();
+
+      expect(editor.getState()).toMatchObject({
+        drawings: [],
+        isCreating: false,
+        previewDrawing: undefined
+      });
+      expect(editor.getCapabilities().canUndo).toBe(false);
+    });
+  }
+
+  it("cancels an incomplete continuous gesture without history", () => {
+    const editor = createDrawingEditor({ drawings: [] });
+    editor.setTool("path");
+    editor.pointerDown({ x: 10, y: 10, time: 1, price: 10 });
+    editor.pointerUp({ x: 10, y: 10, time: 1, price: 10 });
+    expect(editor.getState()).toMatchObject({ drawings: [], previewDrawing: undefined });
+    expect(editor.getCapabilities().canUndo).toBe(false);
+  });
+
   it("creates a drawing by anchors and emits neutral events", () => {
     const events: unknown[] = [];
     const editor = createDrawingEditor({ drawings: [], onEvent: (event) => events.push(event) });
