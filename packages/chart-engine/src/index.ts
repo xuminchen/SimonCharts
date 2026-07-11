@@ -34,6 +34,11 @@ export * from "./engine/chartState";
 export * from "./engine/events";
 export * from "./extensions/chartExtension";
 export * from "./indicators/coreIndicators";
+export {
+  calculateCoreIndicatorChunk,
+  type CoreIndicatorCheckpoint,
+  type CoreIndicatorChunkResult
+} from "./indicators/indicatorChunk";
 export * from "./indicators/indicatorDefinitions";
 export * from "./indicators/movingAverage";
 export * from "./interaction/hitTest";
@@ -85,6 +90,13 @@ export * from "./series/transforms/kagi";
 export * from "./series/transforms/lineBreak";
 export * from "./series/transforms/pointAndFigure";
 export * from "./series/transforms/renko";
+export {
+  transformSeriesChunk,
+  type SeriesTransformCheckpoint,
+  type SeriesTransformChunkResult,
+  type StatefulSeriesTransformOptions,
+  type StatefulSeriesTransformType
+} from "./series/transforms/seriesTransformChunk";
 export * from "./visuals/visualAutoscale";
 export * from "./visuals/visualHitTest";
 export * from "./visuals/visualRegistry";

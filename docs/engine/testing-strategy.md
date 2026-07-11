@@ -345,6 +345,8 @@ Focused unit coverage for the drawing platform includes:
 - `drawingEditorComplete.test.ts` for selection, object manager state, z-order, style, text, copy, paste, duplicate, lock, hide, undo, and redo
 - `drawingHotkeys.test.ts` for `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`, and magnet tie order
 - `coreIndicators.test.ts` for `coreIndicatorDefinitions` and `calculateCoreIndicator()`
+- `indicatorChunk.test.ts` for all 16 indicator partition-equivalence, checkpoint identity, JSON safety, immutability, and bounded state
+- `seriesTransformChunk.test.ts` for all five stateful transform partitions, Point & Figure tail replacement, bounded state, and global source-index offsets
 
 Playground acceptance for the v0.3 workbenches is split across:
 

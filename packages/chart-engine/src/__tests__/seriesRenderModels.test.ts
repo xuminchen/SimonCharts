@@ -30,6 +30,7 @@ describe("source series render model", () => {
     const model = createSourceSeriesRenderModel("candles", createSeries());
 
     expect(model.type).toBe("candles");
+    expect(model.sourceIndexOffset).toBe(0);
     expect(model.points).toEqual([
       { time: 1, open: 10, high: 12, low: 9, close: 11, volume: 100, turnover: 1100, sourceIndex: 0 },
       { time: 2, open: 11, high: 13, low: 10, close: 12, volume: 120, turnover: 1440, sourceIndex: 1 }

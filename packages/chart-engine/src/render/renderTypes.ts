@@ -6,7 +6,7 @@ import type { ChartCrosshairState as CrosshairState, ViewportState } from "../mo
 import type { ChartTheme } from "../model/theme";
 import type { IndicatorVisualOutput } from "../model/visual";
 import type { PanelArea } from "../panels/panelTypes";
-import type { SeriesType } from "../series/seriesTypes";
+import type { SeriesRenderModel, SeriesType } from "../series/seriesTypes";
 import type { PriceScale } from "../viewport/priceScale";
 
 export interface ChartLayout {
@@ -37,6 +37,7 @@ export interface ChartLayout {
 export interface RenderState {
   series: CandleSeries;
   seriesType?: SeriesType;
+  seriesModel?: SeriesRenderModel;
   viewport: ViewportState;
   priceScale: PriceScale;
   formatTime: ChartTimeFormatter;

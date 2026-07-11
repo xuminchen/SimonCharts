@@ -15,7 +15,13 @@ export function createSeriesLayer(registry: SeriesRendererRegistry): ChartLayer 
     render(context) {
       const type = context.state.seriesType ?? "candles";
       const renderer = registry.require(type);
-      const model = createRenderModel(type, context.state.series);
+      const model = isMatchingPrecomputedModel(
+        context.state.seriesModel,
+        type,
+        context.state.series
+      )
+        ? context.state.seriesModel
+        : createRenderModel(type, context.state.series);
 
       renderer.render({
         ...context,
@@ -24,6 +30,21 @@ export function createSeriesLayer(registry: SeriesRendererRegistry): ChartLayer 
       });
     }
   };
+}
+
+function isMatchingPrecomputedModel(
+  model: SeriesRenderModel | undefined,
+  type: SeriesType,
+  series: CandleSeries
+): model is SeriesRenderModel {
+  return (
+    model !== undefined &&
+    model.type === type &&
+    model.source.symbol === series.symbol &&
+    model.source.timeframe === series.timeframe &&
+    model.source.adjustMode === series.adjustMode &&
+    model.source.dataVersion === series.dataVersion
+  );
 }
 
 function createRenderModel(type: SeriesType, series: CandleSeries): SeriesRenderModel {

@@ -1,5 +1,6 @@
 import {
   applyChartExtension,
+  calculateCoreIndicatorChunk,
   checkChartExtensionCompatibility,
   checkEngineApiVersionCompatibility,
   checkEngineCapabilityRequirements,
@@ -39,7 +40,8 @@ import {
   defaultChartTimeFormatter,
   engineApiVersion,
   fixtureDailyCandleSeries,
-  serializeChartLayoutSnapshot
+  serializeChartLayoutSnapshot,
+  transformSeriesChunk
 } from "@simoncharts/chart-engine";
 import type {
   CandleSeries,
@@ -54,6 +56,8 @@ import type {
   ChartExtensionInstallValidationIssueCode,
   ChartExtensionInstallValidationResult,
   ChartExtensionUninstallResult,
+  CoreIndicatorCheckpoint,
+  CoreIndicatorChunkResult,
   ChartExtensionValidationIssue,
   ChartExtensionValidationIssueCode,
   ChartExtensionValidationResult,
@@ -102,6 +106,11 @@ import type {
   RenderFrameDiagnostic,
   RenderInvalidation,
   RenderScheduler,
+  SeriesRenderModel,
+  SeriesTransformCheckpoint,
+  SeriesTransformChunkResult,
+  StatefulSeriesTransformOptions,
+  StatefulSeriesTransformType,
   TooltipFormattingContext,
   VisualRenderer,
   VisualRendererRegistry,
@@ -112,6 +121,28 @@ import type {
 } from "@simoncharts/chart-engine";
 
 const series: CandleSeries = fixtureDailyCandleSeries;
+const checkpointSeries: CandleSeries = {
+  ...series,
+  candles: series.candles.slice(0, 20)
+};
+const coreIndicatorChunkResult: CoreIndicatorChunkResult = calculateCoreIndicatorChunk(
+  "MA",
+  checkpointSeries,
+  { period: 5 }
+);
+const coreIndicatorCheckpoint: CoreIndicatorCheckpoint = coreIndicatorChunkResult.checkpoint;
+const statefulSeriesTransformType: StatefulSeriesTransformType = "heikinAshi";
+const statefulSeriesTransformOptions: StatefulSeriesTransformOptions = {};
+const seriesTransformChunkResult: SeriesTransformChunkResult = transformSeriesChunk(
+  statefulSeriesTransformType,
+  checkpointSeries,
+  statefulSeriesTransformOptions
+);
+const seriesTransformCheckpoint: SeriesTransformCheckpoint = seriesTransformChunkResult.checkpoint;
+const precomputedSeriesModel: SeriesRenderModel = {
+  ...seriesTransformChunkResult.model,
+  sourceIndexOffset: 0
+};
 const packagedTimeframes: Timeframe[] = [
   "1m",
   "5m",
@@ -457,7 +488,8 @@ const layerContext = {
     formatTime,
     theme: defaultChartTheme,
     layout,
-    visualOutputs: [visualOutput]
+    visualOutputs: [visualOutput],
+    seriesModel: precomputedSeriesModel
   }
 } satisfies LayerRenderContext;
 
@@ -534,3 +566,5 @@ void lifecycleInstallValidationIssue;
 void lifecycleInstallResult;
 void lifecycleDuplicatePreflight;
 void lifecycleUninstallResult;
+void coreIndicatorCheckpoint;
+void seriesTransformCheckpoint;

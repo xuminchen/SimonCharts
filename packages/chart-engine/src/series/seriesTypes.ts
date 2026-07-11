@@ -45,6 +45,7 @@ export interface SeriesRenderPoint extends SeriesPointSource {
 export interface SeriesRenderModel {
   type: SeriesType;
   source: CandleSeries;
+  sourceIndexOffset: number;
   points: SeriesRenderPoint[];
 }
 

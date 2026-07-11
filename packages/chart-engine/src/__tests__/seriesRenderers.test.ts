@@ -369,4 +369,103 @@ describe("series renderers", () => {
       expect(capturedModel.points[0]?.close).not.toBe(createSeries().candles[0]?.close);
     }
   });
+
+  it("uses a matching precomputed exact synthetic model", () => {
+    const registry = createSeriesRendererRegistry();
+    let capturedModel: SeriesRenderModel | undefined;
+    const renderer: SeriesRenderer = {
+      type: "heikinAshi",
+      render(context) {
+        capturedModel = context.model;
+      },
+      getAutoscale() {
+        return undefined;
+      },
+      hitTest() {
+        return undefined;
+      },
+      getTooltipRows() {
+        return [];
+      }
+    };
+    const context = createRenderContext("heikinAshi");
+    const precomputed: SeriesRenderModel = {
+      type: "heikinAshi",
+      source: {
+        ...context.state.series,
+        candles: [context.state.series.candles[2]]
+      },
+      sourceIndexOffset: 2,
+      points: [
+        {
+          time: context.state.series.candles[2].time,
+          open: 700,
+          high: 900,
+          low: 600,
+          close: 800,
+          sourceIndex: 2
+        }
+      ]
+    };
+
+    registry.register(renderer);
+    context.state.seriesModel = precomputed;
+
+    createSeriesLayer(registry).render(context);
+
+    expect(capturedModel).toBe(precomputed);
+  });
+
+  it.each(["type", "symbol", "timeframe", "adjustMode", "dataVersion"] as const)(
+    "rejects a precomputed synthetic model with mismatched %s",
+    (field) => {
+      const registry = createSeriesRendererRegistry();
+      let capturedModel: SeriesRenderModel | undefined;
+      const renderer: SeriesRenderer = {
+        type: "heikinAshi",
+        render(context) {
+          capturedModel = context.model;
+        },
+        getAutoscale() {
+          return undefined;
+        },
+        hitTest() {
+          return undefined;
+        },
+        getTooltipRows() {
+          return [];
+        }
+      };
+      const context = createRenderContext("heikinAshi");
+      const precomputed: SeriesRenderModel = {
+        type: field === "type" ? "renko" : "heikinAshi",
+        source: {
+          ...context.state.series,
+          symbol: field === "symbol" ? "OTHER" : context.state.series.symbol,
+          timeframe: field === "timeframe" ? "5m" : context.state.series.timeframe,
+          adjustMode: field === "adjustMode" ? "backward" : context.state.series.adjustMode,
+          dataVersion: field === "dataVersion" ? "other-version" : context.state.series.dataVersion,
+          candles: [context.state.series.candles[2]]
+        },
+        sourceIndexOffset: 2,
+        points: [
+          {
+            time: context.state.series.candles[2].time,
+            close: 800,
+            sourceIndex: 2
+          }
+        ]
+      };
+
+      registry.register(renderer);
+      context.state.seriesModel = precomputed;
+
+      createSeriesLayer(registry).render(context);
+
+      expect(capturedModel).toBeDefined();
+      expect(capturedModel).not.toBe(precomputed);
+      expect(capturedModel?.type).toBe("heikinAshi");
+      expect(capturedModel?.points).toHaveLength(context.state.series.candles.length);
+    }
+  );
 });

@@ -156,7 +156,8 @@ Drawing platform exports include:
 - drawing persistence: `currentDrawingSchemaVersion`, `SerializedDrawingObject`, `serializeDrawingObject()`, `deserializeDrawingObject()`, `migrateSerializedDrawing()`
 - drawing commands: `mergeDrawingStyle()`, `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`
 - magnet helpers: `createOhlcMagnetTargets()`, `createOhlcMagnetTargetsFromSeries()`, `createDrawingAnchorMagnetTargets()`, `createVisualPointMagnetTargets()`, `findNearestMagnetTarget()`, `snapPointToMagnetTargets()`, `getMagnetSnapState()`, `MagnetPlotArea`, `PriceScale`, `MagnetSnapState`, `MagnetSnapStateOptions`, `OhlcMagnetTargetOptions`
-- indicators: `coreIndicatorIds`, `coreIndicatorDefinitions`, `calculateCoreIndicator()`
+- indicators: `coreIndicatorIds`, `coreIndicatorDefinitions`, `calculateCoreIndicator()`, `calculateCoreIndicatorChunk()`
+- stateful series: `transformSeriesChunk()`, `SeriesTransformCheckpoint`, `SeriesRenderModel.sourceIndexOffset`, `RenderState.seriesModel`
 - extensions: `createChartExtension()`, `createChartExtensionRegistry()`, `applyChartExtension()`, `isBuiltInDrawingType()`, `isCustomDrawingType()`, `isDrawingType()`
 
 These APIs use neutral drawing objects, figure primitives, visual outputs, command payloads, and serialized drawing payloads. They do not give the engine ownership of host APIs, stores, schemas, routes, TradingReviewSystem, review, strategy, watchlist, AI, or other product business models.

@@ -1,5 +1,6 @@
 import {
   calculateCoreIndicator,
+  calculateCoreIndicatorChunk,
   applyChartExtension,
   checkChartExtensionCompatibility,
   checkEngineApiVersionCompatibility,
@@ -41,7 +42,8 @@ import {
   deserializeDrawingObject,
   engineApiVersion,
   fixtureDailyCandleSeries,
-  serializeDrawingObject
+  serializeDrawingObject,
+  transformSeriesChunk
 } from "@simoncharts/chart-engine";
 
 const engine = createChartEngine({
@@ -131,6 +133,29 @@ const drawing = deserializeDrawingObject(
 engine.setDrawings([drawing]);
 
 const macd = calculateCoreIndicator("MACD", fixtureDailyCandleSeries);
+const checkpointSplit = Math.floor(fixtureDailyCandleSeries.candles.length / 2);
+const checkpointHead = {
+  ...fixtureDailyCandleSeries,
+  candles: fixtureDailyCandleSeries.candles.slice(0, checkpointSplit)
+};
+const checkpointTail = {
+  ...fixtureDailyCandleSeries,
+  candles: fixtureDailyCandleSeries.candles.slice(checkpointSplit)
+};
+const maHead = calculateCoreIndicatorChunk("MA", checkpointHead, { period: 5 });
+const maTail = calculateCoreIndicatorChunk(
+  "MA",
+  checkpointTail,
+  { period: 5 },
+  JSON.parse(JSON.stringify(maHead.checkpoint))
+);
+const heikinAshiHead = transformSeriesChunk("heikinAshi", checkpointHead, {});
+const heikinAshiTail = transformSeriesChunk(
+  "heikinAshi",
+  checkpointTail,
+  {},
+  JSON.parse(JSON.stringify(heikinAshiHead.checkpoint))
+);
 
 if (engine.getState().viewport.visibleRange.from !== 5) {
   throw new Error("Package consumer failed to update viewport");
@@ -142,6 +167,14 @@ if (engine.getState().drawings.length !== 1) {
 
 if (!macd.outputs.some((output) => output.panelId === "MACD")) {
   throw new Error("Package consumer failed to calculate MACD outputs");
+}
+
+if (
+  maTail.checkpoint.processedCount !== fixtureDailyCandleSeries.candles.length ||
+  heikinAshiTail.checkpoint.processedCount !== fixtureDailyCandleSeries.candles.length ||
+  heikinAshiTail.model.sourceIndexOffset !== checkpointSplit
+) {
+  throw new Error("Package consumer failed to resume JSON checkpoint calculations");
 }
 
 const drawingEditor = createDrawingEditor({ drawings: [drawing] });

@@ -19,6 +19,7 @@ export function createSourceSeriesRenderModel(
   return {
     type,
     source: series,
+    sourceIndexOffset: 0,
     points
   };
 }

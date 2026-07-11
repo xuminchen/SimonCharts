@@ -42,5 +42,5 @@ function getSourceCandle(model: SeriesRenderModel, sourceIndex: number | undefin
     return undefined;
   }
 
-  return model.source.candles[sourceIndex];
+  return model.source.candles[sourceIndex - model.sourceIndexOffset];
 }

@@ -39,4 +39,11 @@ Core indicator metadata is exported as:
 
 `calculateCoreIndicator(id, series, params)` returns an `IndicatorResult` with neutral `outputs`. The current core list is `MA`, `EMA`, `SMA`, `VOL`, `MACD`, `BOLL`, `KDJ`, `RSI`, `BIAS`, `CCI`, `DMI`, `OBV`, `VR`, `WR`, `MTM`, and `SAR`.
 
+For paged data, `calculateCoreIndicatorChunk(id, chunk, params, checkpoint)` returns only newly
+emitted output plus a JSON-safe, deeply frozen `CoreIndicatorCheckpoint`. The full-series and
+chunk APIs use the same state runner. Checkpoints retain recursive accumulators or the exact
+parameter-sized rolling dependency, never prior output or an unbounded candle history. Resume is
+accepted only when indicator id, normalized parameters, symbol, timeframe, adjustment, and data
+version still match.
+
 Visual outputs should carry only neutral chart coordinates, values, styles, labels, and ids. Host-specific indicator configuration, persistence ids, and product workflow state stay outside the engine.

@@ -108,6 +108,13 @@ registry.register(extension);
 
 Custom drawing types must be namespaced, for example `acme.measurement-box`.
 
+## Checkpointed Calculations
+
+Use `calculateCoreIndicatorChunk()` and `transformSeriesChunk()` when source candles arrive in
+pages. Their JSON-safe checkpoints retain bounded algorithm state, and the full-series indicator
+and synthetic transform APIs use the same calculation runners. Apply a transform result's
+`replaceTailCount` before appending its points.
+
 ## Validation
 
 Release candidate validation uses the single release gate:
