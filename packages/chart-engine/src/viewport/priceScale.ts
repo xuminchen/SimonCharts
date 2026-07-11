@@ -15,7 +15,9 @@ export function createPriceScale(
   mode: PriceScaleMode
 ): PriceScale {
   const raw = computeVisiblePriceBounds(series, visibleRange);
-  const first = series.candles[Math.max(0, visibleRange.from)];
+  const first = series.candles[
+    Math.max(0, Math.min(series.candles.length - 1, visibleRange.from))
+  ];
   const basePrice = first?.close ?? 1;
 
   return createPriceScaleFromBounds(raw, basePrice, mode);
@@ -81,6 +83,10 @@ export function yToPrice(
   plotTop: number,
   plotHeight: number
 ): number {
+  if (plotHeight === 0) {
+    return scaleValueToPrice(scale.max, scale);
+  }
+
   const span = scale.max - scale.min;
   const value = span === 0
     ? scale.min

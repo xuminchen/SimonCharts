@@ -29,12 +29,32 @@ describe("price scales", () => {
     }
   });
 
+  for (const mode of ["linear", "log", "percentage"] as const) {
+    it(`maps a zero-height ${mode} plot to the upper scale bound`, () => {
+      const scale = createPriceScale(series, { from: 0, to: 1 }, mode);
+      const price = yToPrice(20, scale, 20, 0);
+
+      expect(Number.isFinite(price)).toBe(true);
+      expect(price).toBeCloseTo(scaleValueToPrice(scale.max, scale), 8);
+    });
+  }
+
   it("uses first visible close as percentage base", () => {
     const scale = createPriceScale(series, { from: 0, to: 1 }, "percentage");
     expect(scale.basePrice).toBe(100);
     expect(priceToScaleValue(110, scale)).toBeCloseTo(10, 8);
     expect(scaleValueToPrice(10, scale)).toBeCloseTo(110, 8);
     expect(formatPriceScaleTick(110, scale)).toBe("10.00%");
+  });
+
+  it("clamps the percentage base index to available candles", () => {
+    const beforeStart = createPriceScale(series, { from: -99, to: 0 }, "percentage");
+    expect(beforeStart.basePrice).toBe(100);
+    expect(priceToScaleValue(100, beforeStart)).toBe(0);
+
+    const afterEnd = createPriceScale(series, { from: 99, to: 100 }, "percentage");
+    expect(afterEnd.basePrice).toBe(200);
+    expect(priceToScaleValue(200, afterEnd)).toBe(0);
   });
 
   it("rejects non-positive values for log mode", () => {
