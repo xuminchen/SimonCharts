@@ -25,6 +25,7 @@ export interface ChartEngine {
   setSeries(series: CandleSeries): void;
   setSeriesType(seriesType: SeriesType): void;
   setViewport(viewport: ViewportState): void;
+  invertPriceScale(): void;
   setVisualOutputs(outputs: IndicatorVisualOutput[]): void;
   setDrawings(drawings: DrawingObject[]): void;
   setInteractionState(interaction: InteractionSessionState): void;
@@ -39,13 +40,11 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
   let state: ChartEngineState = {
     series: initialSeries,
     seriesType: options.seriesType ?? "candles",
-    timeframe: "1d",
     viewport: options.viewport ? cloneViewport(options.viewport) : createDefaultViewport(initialSeries),
     visualOutputs: options.visualOutputs ? cloneVisualOutputs(options.visualOutputs) : [],
     drawings: options.drawings ? cloneDrawings(options.drawings) : [],
     settings: { ...defaultChartSettings, ...options.settings },
-    invertedPriceScale: false,
-    drawingTool: "select"
+    invertedPriceScale: false
   };
   const listeners = new Set<ChartEngineEventListener>();
 
@@ -85,6 +84,9 @@ export function createChartEngine(options: CreateChartEngineOptions): ChartEngin
 
       updateState({ ...state, viewport: nextViewport });
       emit({ type: "viewportChanged", viewport: nextViewport });
+    },
+    invertPriceScale() {
+      updateState({ ...state, invertedPriceScale: !state.invertedPriceScale });
     },
     setVisualOutputs(outputs) {
       const nextOutputs = cloneVisualOutputs(outputs);
@@ -298,12 +300,15 @@ function reduceCommand(state: ChartEngineState, command: ChartEngineCommand): Ch
     return { ...nextState, seriesType: command.seriesType };
   }
 
-  if (command.type === "setTimeframe") {
-    return { ...nextState, timeframe: command.timeframe };
-  }
-
   if (command.type === "setViewport") {
     return { ...nextState, viewport: cloneViewport(command.viewport) };
+  }
+
+  if (command.type === "setPriceScaleMode") {
+    return {
+      ...nextState,
+      viewport: { ...state.viewport, priceScaleMode: command.mode }
+    };
   }
 
   if (command.type === "toggleGrid") {
@@ -313,19 +318,11 @@ function reduceCommand(state: ChartEngineState, command: ChartEngineCommand): Ch
     };
   }
 
-  if (command.type === "invertPriceScale") {
-    return { ...nextState, invertedPriceScale: !state.invertedPriceScale };
-  }
-
   if (command.type === "setThemeMode") {
     return {
       ...nextState,
       settings: { ...state.settings, themeMode: command.themeMode }
     };
-  }
-
-  if (command.type === "setDrawingTool") {
-    return { ...nextState, drawingTool: command.drawingTool };
   }
 
   return nextState;

@@ -23,6 +23,32 @@ describe("chart engine facade", () => {
     expect(engine.getState().viewport.visibleRange).toEqual({ from: 1, to: 10 });
   });
 
+  it("owns price scale commands while timeframe follows the series", () => {
+    const engine = createChartEngine({ series: fixtureDailyCandleSeries });
+    const intradaySeries: CandleSeries = {
+      ...fixtureDailyCandleSeries,
+      timeframe: "1m"
+    };
+
+    engine.setSeries(intradaySeries);
+    engine.dispatch({ type: "setPriceScaleMode", mode: "percentage" });
+
+    const state = engine.getState();
+
+    expect(state.series.timeframe).toBe("1m");
+    expect(state.viewport.priceScaleMode).toBe("percentage");
+    expect("timeframe" in state).toBe(false);
+    expect("drawingTool" in state).toBe(false);
+  });
+
+  it("preserves price scale inversion through the direct facade API", () => {
+    const engine = createChartEngine({ series: fixtureDailyCandleSeries });
+
+    engine.invertPriceScale();
+
+    expect(engine.getState().invertedPriceScale).toBe(true);
+  });
+
   it("emits neutral events", () => {
     const engine = createChartEngine({ series: fixtureDailyCandleSeries });
     const events: unknown[] = [];

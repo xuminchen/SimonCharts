@@ -1,8 +1,10 @@
-import type { Timeframe } from "./market";
+import type { ChartEngineCommand } from "../commands/chartCommands";
 import type { DrawingObject } from "../drawing/drawingTypes";
 import type { ChartMark } from "./visual";
 
-export type PriceScaleMode = "linear" | "log" | "percent";
+export const supportedPriceScaleModes = ["linear", "log", "percentage"] as const;
+
+export type PriceScaleMode = (typeof supportedPriceScaleModes)[number];
 
 export interface VisibleRange {
   from: number;
@@ -28,18 +30,9 @@ export interface ChartCrosshairState {
   turnover: number;
 }
 
-export type ChartCommand =
-  | { type: "resetViewport" }
-  | { type: "setSymbol"; symbol: string }
-  | { type: "setTimeframe"; timeframe: Timeframe }
-  | { type: "setPriceScaleMode"; mode: PriceScaleMode }
-  | { type: "toggleIndicator"; indicatorId: string }
-  | { type: "selectDrawing"; drawingId: string }
-  | { type: "deleteDrawing"; drawingId: string };
-
 export type ChartEvent =
   | { type: "viewportChanged"; viewport: ViewportState; visibleRange: VisibleRange }
   | { type: "crosshairMoved"; crosshair: ChartCrosshairState | undefined }
   | { type: "markClicked"; mark: ChartMark }
   | { type: "drawingChanged"; drawing: DrawingObject }
-  | { type: "command"; command: ChartCommand };
+  | { type: "command"; command: ChartEngineCommand };

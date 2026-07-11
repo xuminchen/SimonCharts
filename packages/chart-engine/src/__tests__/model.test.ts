@@ -7,11 +7,56 @@ import {
   fixtureDailyCandleSeries,
   getCandleAtIndex,
   isValidCandle,
-  mergeChartSettings
+  mergeChartSettings,
+  supportedTimeframes
 } from "../index";
-import type { CandleSeries, HostAdapter, ViewportState } from "../index";
+import type { CandleSeries, HostAdapter, Timeframe, ViewportState } from "../index";
 
 describe("neutral engine model contracts", () => {
+  it("publishes the canonical timeframe values", () => {
+    expect(supportedTimeframes).toEqual([
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "60m",
+      "1d",
+      "1w",
+      "1mo"
+    ]);
+
+    const intradaySeries: CandleSeries = {
+      symbol: "SSE:600000",
+      timeframe: "1m",
+      adjustMode: "forward",
+      dataVersion: "v1",
+      candles: [
+        {
+          time: 1,
+          open: 10,
+          high: 11,
+          low: 9,
+          close: 10.5,
+          volume: 100,
+          turnover: 1050
+        }
+      ]
+    };
+    const packagedTimeframes: Timeframe[] = [
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "60m",
+      "1d",
+      "1w",
+      "1mo"
+    ];
+
+    expect(intradaySeries.timeframe).toBe("1m");
+    expect(packagedTimeframes).toEqual(supportedTimeframes);
+  });
+
   it("creates a candle series without host business types", () => {
     const series: CandleSeries = {
       symbol: "TEST",

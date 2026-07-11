@@ -104,10 +104,21 @@ import type {
   VisualRendererRegistry,
   EngineReleaseChannel,
   InteractionCapability,
+  Timeframe,
   VisualOutputType
 } from "@simoncharts/chart-engine";
 
 const series: CandleSeries = fixtureDailyCandleSeries;
+const packagedTimeframes: Timeframe[] = [
+  "1m",
+  "5m",
+  "15m",
+  "30m",
+  "60m",
+  "1d",
+  "1w",
+  "1mo"
+];
 const engine: ChartEngine = createChartEngine({ series, seriesType: "candles" });
 const engineCapabilityManifest: EngineCapabilityManifest = createEngineCapabilityManifest();
 const engineDrawingToolCapability: EngineDrawingToolCapability =
@@ -443,6 +454,7 @@ const snapshot: ChartLayoutSnapshot = {
 serializeChartLayoutSnapshot(snapshot);
 
 void capabilities;
+void packagedTimeframes;
 void engineCapabilityManifest;
 void engineDrawingToolCapability;
 void drawingEditorCapability;

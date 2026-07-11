@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
-  createChartCommandDispatcher,
   createCommandHistory,
-  type ChartCommandState
+  supportedPriceScaleModes,
+  type ChartEngineCommand
 } from "../index";
+
+describe("chart engine command contract", () => {
+  it("publishes canonical price scale modes", () => {
+    expect(supportedPriceScaleModes).toEqual(["linear", "log", "percentage"]);
+
+    const scaleCommand: ChartEngineCommand = {
+      type: "setPriceScaleMode",
+      mode: "percentage"
+    };
+
+    expect(scaleCommand.mode).toBe("percentage");
+  });
+});
 
 describe("command history", () => {
   it("applies undo and redo for drawing commands", () => {
@@ -34,46 +47,5 @@ describe("command history", () => {
 
     expect(history.canRedo()).toBe(false);
     expect(history.redo()).toBe(2);
-  });
-});
-
-describe("chart command dispatcher", () => {
-  it("dispatches neutral chart commands", () => {
-    const initial: ChartCommandState = {
-      seriesType: "candles",
-      timeframe: "1d",
-      gridVisible: true,
-      invertedPriceScale: false,
-      themeMode: "light",
-      drawingTool: "select"
-    };
-    const dispatcher = createChartCommandDispatcher(initial);
-
-    expect(dispatcher.dispatch({ type: "setSeriesType", seriesType: "line" }).seriesType).toBe(
-      "line"
-    );
-    expect(dispatcher.dispatch({ type: "toggleGrid" }).gridVisible).toBe(false);
-    expect(dispatcher.dispatch({ type: "invertPriceScale" }).invertedPriceScale).toBe(true);
-    expect(
-      dispatcher.dispatch({ type: "setDrawingTool", drawingTool: "trendLine" }).drawingTool
-    ).toBe("trendLine");
-    expect(dispatcher.dispatch({ type: "undo" }).lastCommandType).toBe("undo");
-  });
-
-  it("keeps dispatcher state immutable to callers", () => {
-    const initial: ChartCommandState = {
-      seriesType: "candles",
-      timeframe: "1d",
-      gridVisible: true,
-      invertedPriceScale: false,
-      themeMode: "light",
-      drawingTool: "select"
-    };
-    const dispatcher = createChartCommandDispatcher(initial);
-    const state = dispatcher.getState();
-
-    state.gridVisible = false;
-
-    expect(dispatcher.getState().gridVisible).toBe(true);
   });
 });

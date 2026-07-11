@@ -1,6 +1,7 @@
+import type { ChartEngineCommand } from "../commands/chartCommands";
 import type { DrawingObject } from "../drawing/drawingTypes";
 import type { AdjustMode, CandleSeries, Timeframe } from "./market";
-import type { ChartCommand, ViewportState, VisibleRange } from "./runtime";
+import type { ViewportState, VisibleRange } from "./runtime";
 import type { ChartMark } from "./visual";
 
 export interface DataRequest {
@@ -23,7 +24,7 @@ export interface HostAdapter {
   onRangeNeedMoreData?: (range: VisibleRange) => void;
   onViewportChange?: (viewport: ViewportState) => void;
   onDrawingChange?: (drawing: DrawingObject) => void;
-  onCommand?: (command: ChartCommand) => void;
+  onCommand?: (command: ChartEngineCommand) => void;
   onMarkClick?: (mark: ChartMark) => void;
   persistLayout?: (layout: LayoutSnapshot) => void | Promise<void>;
 }

@@ -1530,7 +1530,7 @@ toggleGridButton.addEventListener("click", () => {
 });
 
 invertPriceScaleButton.addEventListener("click", () => {
-  chartEngine.dispatch({ type: "invertPriceScale" });
+  chartEngine.invertPriceScale();
   syncEngineStatus();
   render();
 });
