@@ -1195,6 +1195,7 @@ function handleInteractionEvent(event: InteractionEvent): void {
     viewport = event.viewport;
     updateMainPriceScale();
     chartEngine.setViewport(viewport);
+    syncEngineStatus();
     invalidateRender({
       layers: ["axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair"],
       reason: "viewportChanged",

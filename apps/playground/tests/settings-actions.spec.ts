@@ -41,6 +41,10 @@ test("canonical viewport and scale controls update owned render state", async ({
     .poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL()))
     .not.toBe(linearPixels);
 
+  await page.getByTestId("zoom-in").click();
+  await page.getByTestId("zoom-in").click();
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBe(10);
+
   await page.evaluate(() => {
     (window as Window & { __SIMON_CHART_EVENTS__?: unknown[] }).__SIMON_CHART_EVENTS__ = [];
   });
@@ -62,4 +66,5 @@ test("canonical viewport and scale controls update owned render state", async ({
       )
     )
     .toBe(1);
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBe(12.5);
 });
