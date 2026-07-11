@@ -1,4 +1,4 @@
-import type { PriceScaleMode, ViewportState, VisibleRange } from "../model/runtime";
+import type { ViewportState, VisibleRange } from "../model/runtime";
 
 const defaultCandleWidth = 8;
 const minCandleWidth = 2;
@@ -53,42 +53,6 @@ export function xToIndex(x: number, viewport: ViewportState, plotLeft: number): 
   const candleWidth = normalizeCandleWidth(viewport);
 
   return viewport.visibleRange.from + Math.floor((x - plotLeft) / candleWidth);
-}
-
-export function priceToY(
-  price: number,
-  priceRange: { min: number; max: number },
-  plotTop: number,
-  plotHeight: number,
-  scaleMode: PriceScaleMode
-): number {
-  assertLinearScale(scaleMode);
-
-  const span = priceRange.max - priceRange.min;
-
-  if (span === 0) {
-    return plotTop + plotHeight / 2;
-  }
-
-  return plotTop + ((priceRange.max - price) / span) * plotHeight;
-}
-
-export function yToPrice(
-  y: number,
-  priceRange: { min: number; max: number },
-  plotTop: number,
-  plotHeight: number,
-  scaleMode: PriceScaleMode
-): number {
-  assertLinearScale(scaleMode);
-
-  const span = priceRange.max - priceRange.min;
-
-  if (span === 0) {
-    return priceRange.min;
-  }
-
-  return priceRange.max - ((y - plotTop) / plotHeight) * span;
 }
 
 export function zoomViewportAtIndex(
@@ -161,12 +125,6 @@ export function panViewportByPixels(
 
 export function resetViewportToLatest(candleCount: number, width: number): ViewportState {
   return createInitialViewport(candleCount, width);
-}
-
-function assertLinearScale(scaleMode: PriceScaleMode): void {
-  if (scaleMode !== "linear") {
-    throw new Error(`Price scale mode is not implemented: ${scaleMode}`);
-  }
 }
 
 function normalizeCandleWidth(viewport: ViewportState): number {

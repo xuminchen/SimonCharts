@@ -89,4 +89,5 @@ export * from "./visuals/visualRegistry";
 export * from "./visuals/visualTooltip";
 export * from "./visuals/visualTypes";
 export * from "./viewport/priceRange";
+export * from "./viewport/priceScale";
 export * from "./viewport/viewport";

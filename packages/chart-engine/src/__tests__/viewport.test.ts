@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeVisiblePriceBounds,
   computeVisiblePriceRange,
   computeVisibleRange,
   createInitialViewport,
+  createPriceScale,
   indexToX,
   panViewportByPixels,
   priceToY,
@@ -96,12 +98,12 @@ describe("viewport coordinate mapping", () => {
   });
 
   it("maps max price to top plot area and min price to bottom plot area", () => {
-    const priceRange = { min: 100, max: 200 };
+    const priceScale = { mode: "linear", basePrice: 100, min: 100, max: 200 } as const;
 
-    expect(priceToY(200, priceRange, 20, 400, "linear")).toBe(20);
-    expect(priceToY(100, priceRange, 20, 400, "linear")).toBe(420);
-    expect(yToPrice(20, priceRange, 20, 400, "linear")).toBe(200);
-    expect(yToPrice(420, priceRange, 20, 400, "linear")).toBe(100);
+    expect(priceToY(200, priceScale, 20, 400)).toBe(20);
+    expect(priceToY(100, priceScale, 20, 400)).toBe(420);
+    expect(yToPrice(20, priceScale, 20, 400)).toBe(200);
+    expect(yToPrice(420, priceScale, 20, 400)).toBe(100);
   });
 
   it("computes visible price range from visible candles with deterministic padding", () => {
@@ -117,6 +119,10 @@ describe("viewport coordinate mapping", () => {
       min: 76,
       max: 164
     });
+    expect(computeVisiblePriceBounds(series, { from: 1, to: 3 })).toEqual({
+      min: 80,
+      max: 160
+    });
   });
 
   it("clamps visible indexes and keeps flat data non-zero", () => {
@@ -131,15 +137,25 @@ describe("viewport coordinate mapping", () => {
     });
   });
 
-  it("accepts log and percentage scale modes in types but rejects them for coordinate mapping in M1", () => {
-    const priceRange = { min: 100, max: 200 };
+  it("preserves the empty price range fallback", () => {
+    const series = createSeries([]);
 
-    expect(() => priceToY(150, priceRange, 20, 400, "log")).toThrow(
-      new Error("Price scale mode is not implemented: log")
-    );
-    expect(() => yToPrice(220, priceRange, 20, 400, "percentage")).toThrow(
-      new Error("Price scale mode is not implemented: percentage")
-    );
+    expect(computeVisiblePriceBounds(series, { from: 0, to: -1 })).toEqual({ min: 0, max: 1 });
+    expect(computeVisiblePriceRange(series, { from: 0, to: -1 })).toEqual({ min: 0, max: 1 });
+  });
+
+  it("round-trips log and percentage price coordinates", () => {
+    const series = createSeries([
+      [110, 100],
+      [130, 90]
+    ]);
+
+    for (const mode of ["log", "percentage"] as const) {
+      const scale = createPriceScale(series, { from: 0, to: 1 }, mode);
+      const y = priceToY(105, scale, 20, 400);
+
+      expect(yToPrice(y, scale, 20, 400)).toBeCloseTo(105, 8);
+    }
   });
 
   it("zooms around an anchor index and keeps the anchor visible", () => {

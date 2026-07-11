@@ -5,6 +5,27 @@ export function computeVisiblePriceRange(
   series: CandleSeries,
   visibleRange: VisibleRange
 ): { min: number; max: number } {
+  const bounds = computeVisiblePriceBounds(series, visibleRange);
+
+  if (series.candles.length === 0) {
+    return bounds;
+  }
+
+  const span = bounds.max - bounds.min;
+  const padding = span === 0
+    ? Math.max(Math.abs(bounds.max), 1) * 0.05
+    : span * 0.05;
+
+  return {
+    min: bounds.min - padding,
+    max: bounds.max + padding
+  };
+}
+
+export function computeVisiblePriceBounds(
+  series: CandleSeries,
+  visibleRange: VisibleRange
+): { min: number; max: number } {
   const lastIndex = series.candles.length - 1;
 
   if (lastIndex < 0) {
@@ -23,11 +44,5 @@ export function computeVisiblePriceRange(
     max = Math.max(max, candle.high);
   }
 
-  const span = max - min;
-  const padding = span === 0 ? Math.max(Math.abs(max), 1) * 0.05 : span * 0.05;
-
-  return {
-    min: min - padding,
-    max: max + padding
-  };
+  return { min, max };
 }
