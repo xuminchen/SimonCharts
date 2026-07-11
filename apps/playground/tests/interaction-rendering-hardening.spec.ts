@@ -37,17 +37,51 @@ test("pointer movement updates overlay diagnostics without static redraw spam", 
   expect(overlayAfter).toBeGreaterThan(0);
 });
 
-test("keyboard zoom commands use neutral interaction events", async ({ page }) => {
+test("keyboard zoom commands update the viewport and clear stale crosshair state", async ({ page }) => {
   await page.goto("/");
+  const canvas = page.getByTestId("chart-canvas");
+  const candleWidth = page.getByTestId("viewport-candle-width");
+  const initialWidth = Number(await candleWidth.textContent());
+  const initialPixels = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3);
+  await expect(page.getByTestId("cursor-state")).toHaveText("crosshair");
+  await page.evaluate(() => {
+    (window as Window & { __SIMON_CHART_EVENTS__?: unknown[] }).__SIMON_CHART_EVENTS__ = [];
+  });
 
   await page.keyboard.press("+");
   await expect(page.getByTestId("last-keyboard-command")).toHaveText("zoomIn");
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBeGreaterThan(initialWidth);
+  await expect
+    .poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL()))
+    .not.toBe(initialPixels);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        ((window as unknown as { __SIMON_CHART_EVENTS__?: Array<Record<string, unknown>> })
+          .__SIMON_CHART_EVENTS__ ?? []).some(
+          (event) => event.type === "crosshairMoved" && event.crosshair === undefined
+        )
+      )
+    )
+    .toBe(true);
 
+  const zoomedInWidth = Number(await candleWidth.textContent());
   await page.keyboard.press("-");
   await expect(page.getByTestId("last-keyboard-command")).toHaveText("zoomOut");
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBeLessThan(zoomedInWidth);
 
+  await page.keyboard.press("+");
   await page.keyboard.press("0");
   await expect(page.getByTestId("last-keyboard-command")).toHaveText("resetZoom");
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBe(initialWidth);
 });
 
 test("pointer leave clears cursor and keyboard diagnostics", async ({ page }) => {

@@ -5,7 +5,41 @@ import {
   type ChartEngineCommand
 } from "../index";
 
+const canonicalChartCommandTypes = [
+  "setSeriesType",
+  "setViewport",
+  "setPriceScaleMode",
+  "zoomIn",
+  "zoomOut",
+  "resetZoom",
+  "pan",
+  "toggleGrid",
+  "setThemeMode"
+] as const satisfies readonly ChartEngineCommand["type"][];
+
+const includesEveryChartCommand: Exclude<
+  ChartEngineCommand["type"],
+  (typeof canonicalChartCommandTypes)[number]
+> extends never
+  ? true
+  : false = true;
+
 describe("chart engine command contract", () => {
+  it("contains only the canonical chart-owned command types", () => {
+    expect(includesEveryChartCommand).toBe(true);
+    expect(canonicalChartCommandTypes).toEqual([
+      "setSeriesType",
+      "setViewport",
+      "setPriceScaleMode",
+      "zoomIn",
+      "zoomOut",
+      "resetZoom",
+      "pan",
+      "toggleGrid",
+      "setThemeMode"
+    ]);
+  });
+
   it("publishes canonical price scale modes", () => {
     expect(supportedPriceScaleModes).toEqual(["linear", "log", "percentage"]);
 

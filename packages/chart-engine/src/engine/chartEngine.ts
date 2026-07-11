@@ -8,6 +8,11 @@ import type { RenderSchedulerState } from "../render/scheduler/renderSchedulerTy
 import { defaultChartSettings } from "../settings/chartSettings";
 import type { ChartSettings } from "../settings/chartSettings";
 import type { SeriesType } from "../series/seriesTypes";
+import {
+  panViewportByPixels,
+  resetViewportToLatest,
+  zoomViewportAtIndex
+} from "../viewport/viewport";
 import type { ChartEngineState } from "./chartState";
 import type { ChartEngineEvent, ChartEngineEventListener } from "./events";
 
@@ -296,36 +301,68 @@ function cloneRenderState(render: RenderSchedulerState): RenderSchedulerState {
 function reduceCommand(state: ChartEngineState, command: ChartEngineCommand): ChartEngineState {
   const nextState = { ...state, lastCommandType: command.type };
 
-  if (command.type === "setSeriesType") {
-    return { ...nextState, seriesType: command.seriesType };
-  }
+  switch (command.type) {
+    case "setSeriesType":
+      return { ...nextState, seriesType: command.seriesType };
+    case "setViewport":
+      return { ...nextState, viewport: cloneViewport(command.viewport) };
+    case "setPriceScaleMode":
+      return { ...nextState, viewport: { ...state.viewport, priceScaleMode: command.mode } };
+    case "zoomIn":
+    case "zoomOut": {
+      const anchorIndex = Math.floor(
+        (state.viewport.visibleRange.from + state.viewport.visibleRange.to) / 2
+      );
+      const deltaY = command.type === "zoomIn" ? -1 : 1;
 
-  if (command.type === "setViewport") {
-    return { ...nextState, viewport: cloneViewport(command.viewport) };
-  }
+      return {
+        ...nextState,
+        viewport: zoomViewportAtIndex(
+          state.viewport,
+          anchorIndex,
+          deltaY,
+          state.series.candles.length
+        )
+      };
+    }
+    case "resetZoom": {
+      const visibleCount = Math.max(
+        1,
+        state.viewport.visibleRange.to - state.viewport.visibleRange.from + 1
+      );
+      const plotWidth = visibleCount * state.viewport.candleWidth;
 
-  if (command.type === "setPriceScaleMode") {
-    return {
-      ...nextState,
-      viewport: { ...state.viewport, priceScaleMode: command.mode }
-    };
+      return {
+        ...nextState,
+        viewport: resetViewportToLatest(state.series.candles.length, plotWidth)
+      };
+    }
+    case "pan":
+      return {
+        ...nextState,
+        viewport: panViewportByPixels(
+          state.viewport,
+          command.deltaX,
+          state.series.candles.length
+        )
+      };
+    case "toggleGrid":
+      return {
+        ...nextState,
+        settings: { ...state.settings, gridVisible: !state.settings.gridVisible }
+      };
+    case "setThemeMode":
+      return {
+        ...nextState,
+        settings: { ...state.settings, themeMode: command.themeMode }
+      };
+    default:
+      return assertNever(command);
   }
+}
 
-  if (command.type === "toggleGrid") {
-    return {
-      ...nextState,
-      settings: { ...state.settings, gridVisible: !state.settings.gridVisible }
-    };
-  }
-
-  if (command.type === "setThemeMode") {
-    return {
-      ...nextState,
-      settings: { ...state.settings, themeMode: command.themeMode }
-    };
-  }
-
-  return nextState;
+function assertNever(value: never): never {
+  throw new Error(`Unhandled chart command: ${JSON.stringify(value)}`);
 }
 
 function createDefaultViewport(series: CandleSeries): ViewportState {

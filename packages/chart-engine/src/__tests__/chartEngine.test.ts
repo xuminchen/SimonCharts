@@ -1,13 +1,106 @@
 import { describe, expect, it } from "vitest";
 import type { DrawingObject } from "../drawing/drawingTypes";
 import type { InteractionSessionState } from "../interaction/sessionTypes";
-import { createChartEngine, fixtureDailyCandleSeries } from "../index";
+import {
+  createChartEngine,
+  fixtureDailyCandleSeries,
+  type ChartEngine,
+  type ChartEngineCommand,
+  type ChartEngineState
+} from "../index";
 import type { CandleSeries } from "../model/market";
 import type { ViewportState } from "../model/runtime";
 import type { IndicatorVisualOutput } from "../model/visual";
 import type { RenderSchedulerState } from "../render/scheduler/renderSchedulerTypes";
 
 describe("chart engine facade", () => {
+  const commandEffectCases: Array<{
+    command: ChartEngineCommand;
+    read: (state: ChartEngineState) => unknown;
+    arrange?: (engine: ChartEngine) => void;
+  }> = [
+    { command: { type: "setSeriesType", seriesType: "line" }, read: (state) => state.seriesType },
+    {
+      command: { type: "setPriceScaleMode", mode: "log" },
+      read: (state) => state.viewport.priceScaleMode
+    },
+    { command: { type: "zoomIn" }, read: (state) => state.viewport.candleWidth },
+    { command: { type: "zoomOut" }, read: (state) => state.viewport.candleWidth },
+    {
+      command: { type: "resetZoom" },
+      read: (state) => state.viewport,
+      arrange: (engine) => engine.dispatch({ type: "zoomIn" })
+    },
+    { command: { type: "pan", deltaX: 24 }, read: (state) => state.viewport.scrollOffset },
+    { command: { type: "toggleGrid" }, read: (state) => state.settings.gridVisible },
+    {
+      command: { type: "setThemeMode", themeMode: "dark" },
+      read: (state) => state.settings.themeMode
+    }
+  ];
+
+  it.each(commandEffectCases)("makes $command.type change its owned state", ({ command, read, arrange }) => {
+    const engine = createChartEngine({ series: fixtureCandleSeries(200) });
+
+    arrange?.(engine);
+    const before = structuredClone(read(engine.getState()));
+
+    engine.dispatch(command);
+
+    expect(read(engine.getState())).not.toEqual(before);
+  });
+
+  it("sets the exact supplied viewport target", () => {
+    const engine = createChartEngine({ series: fixtureCandleSeries(200) });
+    const target: ViewportState = {
+      visibleRange: { from: 40, to: 79 },
+      candleWidth: 12,
+      scrollOffset: 120,
+      priceScaleMode: "percentage"
+    };
+
+    engine.dispatch({ type: "setViewport", viewport: target });
+
+    expect(engine.getState().viewport).toEqual(target);
+  });
+
+  it("zooms around the center visible candle", () => {
+    const engine = createChartEngine({ series: fixtureCandleSeries(200) });
+    const before = engine.getState().viewport;
+    const centerIndex = Math.floor((before.visibleRange.from + before.visibleRange.to) / 2);
+
+    engine.dispatch({ type: "zoomIn" });
+
+    const after = engine.getState().viewport;
+    expect(after.visibleRange).toEqual({ from: 127, to: 191 });
+    expect(Math.floor((after.visibleRange.from + after.visibleRange.to) / 2)).toBe(centerIndex);
+  });
+
+  it("clamps command navigation to the 200-candle series bounds", () => {
+    const engine = createChartEngine({ series: fixtureCandleSeries(200) });
+
+    engine.dispatch({ type: "pan", deltaX: 10_000 });
+    expect(engine.getState().viewport).toMatchObject({
+      visibleRange: { from: 0, to: 80 },
+      scrollOffset: 119
+    });
+
+    engine.dispatch({ type: "pan", deltaX: -10_000 });
+    expect(engine.getState().viewport).toMatchObject({
+      visibleRange: { from: 119, to: 199 },
+      scrollOffset: 0
+    });
+  });
+
+  it("rejects unknown chart commands instead of silently falling through", () => {
+    const engine = createChartEngine({ series: fixtureCandleSeries(200) });
+    const unknownCommand = { type: "unsupported" } as unknown as ChartEngineCommand;
+
+    expect(() => engine.dispatch(unknownCommand)).toThrowError(
+      'Unhandled chart command: {"type":"unsupported"}'
+    );
+  });
+
   it("updates neutral state through public API", () => {
     const engine = createChartEngine({ series: fixtureDailyCandleSeries });
 
@@ -321,6 +414,24 @@ function createSeriesSnapshot(): CandleSeries {
         turnover: 112200
       }
     ]
+  };
+}
+
+function fixtureCandleSeries(candleCount: number): CandleSeries {
+  return {
+    symbol: "SIMON",
+    timeframe: "1d",
+    adjustMode: "none",
+    dataVersion: `command-fixture-${candleCount}`,
+    candles: Array.from({ length: candleCount }, (_, index) => ({
+      time: index,
+      open: index + 100,
+      high: index + 102,
+      low: index + 99,
+      close: index + 101,
+      volume: index + 1,
+      turnover: (index + 1) * (index + 101)
+    }))
   };
 }
 

@@ -112,10 +112,15 @@ const indicatorSelector = document.createElement("select");
 const activeSeriesType = document.createElement("span");
 const panelCount = document.createElement("span");
 const visualOutputCount = document.createElement("span");
+const zoomInButton = document.createElement("button");
+const zoomOutButton = document.createElement("button");
 const toggleGridButton = document.createElement("button");
 const gridState = document.createElement("span");
 const invertPriceScaleButton = document.createElement("button");
 const scaleState = document.createElement("span");
+const percentagePriceScaleButton = document.createElement("button");
+const priceScaleModeState = document.createElement("span");
+const viewportCandleWidthState = document.createElement("span");
 const themeModeLabel = document.createElement("label");
 const themeModeSelect = document.createElement("select");
 const themeState = document.createElement("span");
@@ -153,6 +158,12 @@ panelCount.className = "status-item";
 panelCount.dataset.testid = "panel-count";
 visualOutputCount.className = "status-item";
 visualOutputCount.dataset.testid = "visual-output-count";
+zoomInButton.type = "button";
+zoomInButton.dataset.testid = "zoom-in";
+zoomInButton.textContent = "+";
+zoomOutButton.type = "button";
+zoomOutButton.dataset.testid = "zoom-out";
+zoomOutButton.textContent = "−";
 toggleGridButton.type = "button";
 toggleGridButton.dataset.testid = "toggle-grid";
 toggleGridButton.textContent = "Grid";
@@ -163,6 +174,13 @@ invertPriceScaleButton.dataset.testid = "invert-price-scale";
 invertPriceScaleButton.textContent = "Invert";
 scaleState.className = "status-item";
 scaleState.dataset.testid = "scale-state";
+percentagePriceScaleButton.type = "button";
+percentagePriceScaleButton.dataset.testid = "percentage-price-scale";
+percentagePriceScaleButton.textContent = "%";
+priceScaleModeState.className = "status-item diagnostics-item";
+priceScaleModeState.dataset.testid = "price-scale-mode";
+viewportCandleWidthState.className = "status-item diagnostics-item";
+viewportCandleWidthState.dataset.testid = "viewport-candle-width";
 themeModeLabel.textContent = "Theme";
 themeModeSelect.dataset.testid = "theme-mode";
 for (const mode of ["light", "dark"] as const) {
@@ -256,10 +274,15 @@ topControls.append(
   seriesTypeLabel,
   indicatorLabel,
   activeSeriesType,
+  zoomInButton,
+  zoomOutButton,
   toggleGridButton,
   gridState,
   invertPriceScaleButton,
   scaleState,
+  percentagePriceScaleButton,
+  priceScaleModeState,
+  viewportCandleWidthState,
   themeModeLabel,
   themeState,
   panelCount,
@@ -469,6 +492,9 @@ function syncLayout(): void {
     updateMainPriceScale();
   }
   chartEngine.setViewport(viewport);
+  if (layoutChanged) {
+    syncEngineStatus();
+  }
 
   if (layoutChanged || !interactionEngine) {
     crosshair = undefined;
@@ -1049,8 +1075,25 @@ function syncEngineStatus(): void {
 
   gridState.textContent = engineState.settings.gridVisible ? "grid on" : "grid off";
   scaleState.textContent = engineState.invertedPriceScale ? "inverted" : "normal";
+  priceScaleModeState.textContent = priceScale?.mode ?? engineState.viewport.priceScaleMode;
+  viewportCandleWidthState.textContent = String(engineState.viewport.candleWidth);
   themeModeSelect.value = engineState.settings.themeMode;
   themeState.textContent = engineState.settings.themeMode;
+}
+
+function syncViewportCommandState(): void {
+  const nextViewport = chartEngine.getState().viewport;
+
+  handleInteractionEvent({
+    type: "viewportChanged",
+    viewport: nextViewport,
+    visibleRange: nextViewport.visibleRange
+  });
+  if (crosshair) {
+    handleInteractionEvent({ type: "crosshairMoved", crosshair: undefined });
+  }
+  interactionEngine = createCurrentInteractionEngine();
+  syncEngineStatus();
 }
 
 function getActiveTheme(): ChartTheme {
@@ -1094,6 +1137,7 @@ function handleInteractionSessionEvent(event: InteractionSessionEvent): void {
   if (event.type === "keyboardCommand") {
     lastKeyboardCommandText = event.command;
     chartEngine.dispatch({ type: event.command });
+    syncViewportCommandState();
     invalidateRender({
       layers: ["axis", "series", "crosshair"],
       reason: "keyboardCommand",
@@ -1524,8 +1568,24 @@ function getNudgeDelta(key: string, step: number): { dx: number; dy: number } {
   }
 }
 
+zoomInButton.addEventListener("click", () => {
+  chartEngine.dispatch({ type: "zoomIn" });
+  syncViewportCommandState();
+});
+
+zoomOutButton.addEventListener("click", () => {
+  chartEngine.dispatch({ type: "zoomOut" });
+  syncViewportCommandState();
+});
+
 resetButton.addEventListener("click", () => {
-  interactionEngine?.resetView();
+  chartEngine.dispatch({ type: "resetZoom" });
+  syncViewportCommandState();
+});
+
+percentagePriceScaleButton.addEventListener("click", () => {
+  chartEngine.dispatch({ type: "setPriceScaleMode", mode: "percentage" });
+  syncViewportCommandState();
 });
 
 seriesTypeSelect.addEventListener("change", () => {
