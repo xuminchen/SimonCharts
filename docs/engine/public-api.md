@@ -156,7 +156,7 @@ Drawing platform exports include:
 - drawing persistence: `currentDrawingSchemaVersion`, `SerializedDrawingObject`, `serializeDrawingObject()`, `deserializeDrawingObject()`, `migrateSerializedDrawing()`
 - drawing commands: `mergeDrawingStyle()`, `defaultDrawingHotkeyBindings`, `getDrawingCommandForHotkey()`
 - magnet helpers: `createOhlcMagnetTargets()`, `createOhlcMagnetTargetsFromSeries()`, `createDrawingAnchorMagnetTargets()`, `createVisualPointMagnetTargets()`, `findNearestMagnetTarget()`, `snapPointToMagnetTargets()`, `getMagnetSnapState()`, `MagnetPlotArea`, `PriceScale`, `MagnetSnapState`, `MagnetSnapStateOptions`, `OhlcMagnetTargetOptions`
-- indicators: `coreIndicatorIds`, `coreIndicatorDefinitions`, `calculateCoreIndicator()`, `calculateCoreIndicatorChunk()`
+- indicators: `coreIndicatorIds`, `coreIndicatorDefinitions`, `calculateCoreIndicator()`, `calculateCoreIndicatorChunk()`, `CoreIndicatorChunkOptions`
 - stateful series: `transformSeriesChunk()`, `SeriesTransformCheckpoint`, `SeriesRenderModel.sourceIndexOffset`, `RenderState.seriesModel`
 - extensions: `createChartExtension()`, `createChartExtensionRegistry()`, `applyChartExtension()`, `isBuiltInDrawingType()`, `isCustomDrawingType()`, `isDrawingType()`
 

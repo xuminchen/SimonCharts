@@ -347,6 +347,7 @@ Focused unit coverage for the drawing platform includes:
 - `coreIndicators.test.ts` for `coreIndicatorDefinitions` and `calculateCoreIndicator()`
 - `indicatorChunk.test.ts` for all 16 indicator partition-equivalence, checkpoint identity, JSON safety, immutability, and bounded state
 - `seriesTransformChunk.test.ts` for all five stateful transform partitions, Point & Figure tail replacement, bounded state, and global source-index offsets
+- `calculationGolden.test.ts` for static BASE-characterized full/chunk results across all 16 indicators and five stateful transforms, including SAR end-of-stream finalization
 
 Playground acceptance for the v0.3 workbenches is split across:
 

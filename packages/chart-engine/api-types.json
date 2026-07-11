@@ -39,6 +39,7 @@
   "ChartTimeFormatter",
   "CommandHistory",
   "CoreIndicatorCheckpoint",
+  "CoreIndicatorChunkOptions",
   "CoreIndicatorChunkResult",
   "CoreIndicatorDefinition",
   "CoreIndicatorId",

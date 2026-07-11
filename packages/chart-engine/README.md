@@ -113,7 +113,9 @@ Custom drawing types must be namespaced, for example `acme.measurement-box`.
 Use `calculateCoreIndicatorChunk()` and `transformSeriesChunk()` when source candles arrive in
 pages. Their JSON-safe checkpoints retain bounded algorithm state, and the full-series indicator
 and synthetic transform APIs use the same calculation runners. Apply a transform result's
-`replaceTailCount` before appending its points.
+`replaceTailCount` before appending its points. Pass `{ finalize: true }` as the fifth indicator
+chunk argument at end-of-stream; this flushes any pending SAR first point and makes the checkpoint
+terminal. Repeated empty finalization is idempotent, while later non-empty input is rejected.
 
 ## Validation
 

@@ -57,6 +57,7 @@ import type {
   ChartExtensionInstallValidationResult,
   ChartExtensionUninstallResult,
   CoreIndicatorCheckpoint,
+  CoreIndicatorChunkOptions,
   CoreIndicatorChunkResult,
   ChartExtensionValidationIssue,
   ChartExtensionValidationIssueCode,
@@ -125,10 +126,13 @@ const checkpointSeries: CandleSeries = {
   ...series,
   candles: series.candles.slice(0, 20)
 };
+const coreIndicatorChunkOptions: CoreIndicatorChunkOptions = { finalize: true };
 const coreIndicatorChunkResult: CoreIndicatorChunkResult = calculateCoreIndicatorChunk(
   "MA",
   checkpointSeries,
-  { period: 5 }
+  { period: 5 },
+  undefined,
+  coreIndicatorChunkOptions
 );
 const coreIndicatorCheckpoint: CoreIndicatorCheckpoint = coreIndicatorChunkResult.checkpoint;
 const statefulSeriesTransformType: StatefulSeriesTransformType = "heikinAshi";
@@ -567,4 +571,5 @@ void lifecycleInstallResult;
 void lifecycleDuplicatePreflight;
 void lifecycleUninstallResult;
 void coreIndicatorCheckpoint;
+void coreIndicatorChunkOptions;
 void seriesTransformCheckpoint;

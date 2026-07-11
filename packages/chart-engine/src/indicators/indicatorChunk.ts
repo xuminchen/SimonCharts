@@ -23,7 +23,12 @@ export interface CoreIndicatorCheckpoint {
   readonly adjustMode: AdjustMode;
   readonly dataVersion: string;
   readonly processedCount: number;
+  readonly finalized: boolean;
   readonly state: unknown;
+}
+
+export interface CoreIndicatorChunkOptions {
+  finalize?: boolean;
 }
 
 export interface CoreIndicatorChunkResult {
@@ -136,9 +141,10 @@ export function calculateCoreIndicatorChunk(
   id: CoreIndicatorId,
   chunk: CandleSeries,
   params: CoreIndicatorParams = {},
-  checkpoint?: CoreIndicatorCheckpoint
+  checkpoint?: CoreIndicatorCheckpoint,
+  options: CoreIndicatorChunkOptions = {}
 ): CoreIndicatorChunkResult {
-  return runCoreIndicatorChunk(id, chunk, params, checkpoint, false);
+  return runCoreIndicatorChunk(id, chunk, params, checkpoint, options.finalize ?? false);
 }
 
 export function runCoreIndicatorChunk(
@@ -158,6 +164,10 @@ export function runCoreIndicatorChunk(
 
   if (checkpoint) {
     validateCheckpoint(checkpoint, definition.id, normalizedParams, chunk);
+
+    if (checkpoint.finalized === true && chunk.candles.length > 0) {
+      throw new Error("Core indicator checkpoint is finalized");
+    }
   }
 
   const processedCount = checkpoint?.processedCount ?? 0;
@@ -181,6 +191,7 @@ export function runCoreIndicatorChunk(
     adjustMode: chunk.adjustMode,
     dataVersion: chunk.dataVersion,
     processedCount: processedCount + chunk.candles.length,
+    finalized: checkpoint?.finalized === true || finalize,
     state: cloneJson(state)
   });
 

@@ -37,6 +37,7 @@ export * from "./indicators/coreIndicators";
 export {
   calculateCoreIndicatorChunk,
   type CoreIndicatorCheckpoint,
+  type CoreIndicatorChunkOptions,
   type CoreIndicatorChunkResult
 } from "./indicators/indicatorChunk";
 export * from "./indicators/indicatorDefinitions";

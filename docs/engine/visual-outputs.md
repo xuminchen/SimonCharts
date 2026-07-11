@@ -46,4 +46,9 @@ parameter-sized rolling dependency, never prior output or an unbounded candle hi
 accepted only when indicator id, normalized parameters, symbol, timeframe, adjustment, and data
 version still match.
 
+The optional fifth argument is `CoreIndicatorChunkOptions`. A host passes `{ finalize: true }` on
+the final descriptor, or on an empty chunk after the last descriptor, to flush SAR's pending first
+point. Finalization is terminal: repeating it with an empty chunk emits nothing, and a later
+non-empty chunk is rejected before calculation.
+
 Visual outputs should carry only neutral chart coordinates, values, styles, labels, and ids. Host-specific indicator configuration, persistence ids, and product workflow state stay outside the engine.

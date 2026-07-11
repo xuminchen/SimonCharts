@@ -147,7 +147,8 @@ const maTail = calculateCoreIndicatorChunk(
   "MA",
   checkpointTail,
   { period: 5 },
-  JSON.parse(JSON.stringify(maHead.checkpoint))
+  JSON.parse(JSON.stringify(maHead.checkpoint)),
+  { finalize: true }
 );
 const heikinAshiHead = transformSeriesChunk("heikinAshi", checkpointHead, {});
 const heikinAshiTail = transformSeriesChunk(
@@ -171,6 +172,7 @@ if (!macd.outputs.some((output) => output.panelId === "MACD")) {
 
 if (
   maTail.checkpoint.processedCount !== fixtureDailyCandleSeries.candles.length ||
+  !maTail.checkpoint.finalized ||
   heikinAshiTail.checkpoint.processedCount !== fixtureDailyCandleSeries.candles.length ||
   heikinAshiTail.model.sourceIndexOffset !== checkpointSplit
 ) {

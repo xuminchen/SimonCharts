@@ -139,6 +139,115 @@ function maxArrayLength(value: unknown): number {
 }
 
 describe("core indicator chunks", () => {
+  it("finalizes a single-candle SAR chunk to the exact full-series result", () => {
+    const series = createLongSeries(1);
+    const finalized = calculateCoreIndicatorChunk(
+      "SAR",
+      series,
+      undefined,
+      undefined,
+      { finalize: true }
+    );
+
+    expect(finalized.result).toEqual(calculateCoreIndicator("SAR", series));
+    expect(finalized.checkpoint.finalized).toBe(true);
+  });
+
+  it("flushes a pending SAR point from a JSON checkpoint with an empty final chunk", () => {
+    const series = createLongSeries(1);
+    const pending = calculateCoreIndicatorChunk("SAR", series);
+    const roundTripped = JSON.parse(JSON.stringify(pending.checkpoint)) as CoreIndicatorCheckpoint;
+    const finalized = calculateCoreIndicatorChunk(
+      "SAR",
+      sliceSeries(series, 1, 1),
+      undefined,
+      roundTripped,
+      { finalize: true }
+    );
+
+    expect(finalized.result).toEqual(calculateCoreIndicator("SAR", series));
+    expect(finalized.checkpoint.processedCount).toBe(1);
+    expect(finalized.checkpoint.finalized).toBe(true);
+  });
+
+  it("keeps a two-candle SAR partition exact when the second chunk finalizes", () => {
+    const series = createLongSeries(2);
+    const first = calculateCoreIndicatorChunk("SAR", sliceSeries(series, 0, 1));
+    const second = calculateCoreIndicatorChunk(
+      "SAR",
+      sliceSeries(series, 1, 2),
+      undefined,
+      JSON.parse(JSON.stringify(first.checkpoint)) as CoreIndicatorCheckpoint,
+      { finalize: true }
+    );
+
+    expect(mergeIndicatorChunks([first.result, second.result])).toEqual(
+      calculateCoreIndicator("SAR", series)
+    );
+    expect(second.checkpoint.finalized).toBe(true);
+  });
+
+  it("treats repeated empty finalization as idempotent without duplicate SAR output", () => {
+    const series = createLongSeries(1);
+    const first = calculateCoreIndicatorChunk(
+      "SAR",
+      series,
+      undefined,
+      undefined,
+      { finalize: true }
+    );
+    const repeated = calculateCoreIndicatorChunk(
+      "SAR",
+      sliceSeries(series, 1, 1),
+      undefined,
+      JSON.parse(JSON.stringify(first.checkpoint)) as CoreIndicatorCheckpoint,
+      { finalize: true }
+    );
+
+    expect(first.result.outputs[0]).toMatchObject({ type: "marker", marks: [{ id: "SAR-0" }] });
+    expect(repeated.result.outputs[0]).toMatchObject({ type: "marker", marks: [] });
+    expect(repeated.checkpoint).toEqual(first.checkpoint);
+  });
+
+  it("rejects later source candles after a checkpoint is finalized", () => {
+    const series = createLongSeries(2);
+    const first = calculateCoreIndicatorChunk(
+      "SAR",
+      sliceSeries(series, 0, 1),
+      undefined,
+      undefined,
+      { finalize: true }
+    );
+    const checkpointBefore = JSON.stringify(first.checkpoint);
+    const laterChunk = sliceSeries(series, 1, 2);
+    const laterBefore = structuredClone(laterChunk);
+
+    expect(() =>
+      calculateCoreIndicatorChunk("SAR", laterChunk, undefined, first.checkpoint)
+    ).toThrow(/finalized/i);
+    expect(JSON.stringify(first.checkpoint)).toBe(checkpointBefore);
+    expect(laterChunk).toEqual(laterBefore);
+  });
+
+  it("keeps a finalized SAR checkpoint deeply frozen, JSON-safe, and bounded", () => {
+    const series = createLongSeries(1);
+    const finalized = calculateCoreIndicatorChunk(
+      "SAR",
+      series,
+      undefined,
+      undefined,
+      { finalize: true }
+    );
+    const serialized = JSON.stringify(finalized.checkpoint);
+
+    expect(finalized.checkpoint.finalized).toBe(true);
+    expectDeepFrozen(finalized.checkpoint);
+    expect(JSON.parse(serialized)).toEqual(finalized.checkpoint);
+    expect(maxArrayLength(finalized.checkpoint)).toBeLessThanOrEqual(2);
+    expect(serialized.length).toBeLessThan(1_000);
+    expect(serialized).not.toContain('"outputs"');
+  });
+
   it.each(coreIndicatorIds)("matches the full-series %s result across exact partitions", (id) => {
     const series = createLongSeries();
     const full = calculateCoreIndicator(id, series);
