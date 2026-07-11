@@ -131,14 +131,14 @@ describe("viewport coordinate mapping", () => {
     });
   });
 
-  it("accepts log and percent scale modes in types but rejects them for coordinate mapping in M1", () => {
+  it("accepts log and percentage scale modes in types but rejects them for coordinate mapping in M1", () => {
     const priceRange = { min: 100, max: 200 };
 
     expect(() => priceToY(150, priceRange, 20, 400, "log")).toThrow(
       new Error("Price scale mode is not implemented: log")
     );
-    expect(() => yToPrice(220, priceRange, 20, 400, "percent")).toThrow(
-      new Error("Price scale mode is not implemented: percent")
+    expect(() => yToPrice(220, priceRange, 20, 400, "percentage")).toThrow(
+      new Error("Price scale mode is not implemented: percentage")
     );
   });
 
