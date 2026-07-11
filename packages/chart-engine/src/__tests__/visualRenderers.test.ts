@@ -154,6 +154,7 @@ function createState(override: Partial<RenderState> = {}): RenderState {
   const series = override.series ?? createSeries();
   const viewport = override.viewport ?? createViewport();
   const visualOutputs = override.visualOutputs ?? [];
+  const movingAverages = override.movingAverages ?? [];
 
   return {
     series,
@@ -164,7 +165,8 @@ function createState(override: Partial<RenderState> = {}): RenderState {
         series,
         viewport.visibleRange,
         viewport.priceScaleMode,
-        visualOutputs
+        visualOutputs,
+        movingAverages
       ),
     formatTime: defaultChartTimeFormatter,
     theme: defaultChartTheme,
@@ -246,6 +248,62 @@ function createRenderableOutput(type: IndicatorVisualOutput["type"]): IndicatorV
     id: "marker",
     label: "Marker",
     marks: [{ id: "m1", time: 1, price: 10, color: "#ff00ff", metadata: { ignored: true } }]
+  };
+}
+
+function createMixedSignOutput(type: IndicatorVisualOutput["type"]): IndicatorVisualOutput {
+  if (type === "line") {
+    return {
+      type,
+      id: "line-log",
+      label: "Line log",
+      panelId: "main",
+      values: [
+        { time: 1, value: -1 },
+        { time: 2, value: 12 }
+      ]
+    };
+  }
+
+  if (type === "histogram") {
+    return {
+      type,
+      id: "histogram-log",
+      label: "Histogram log",
+      panelId: "main",
+      values: [
+        { time: 1, value: -1 },
+        { time: 2, value: 12 }
+      ]
+    };
+  }
+
+  if (type === "band") {
+    return {
+      type,
+      id: "band-log",
+      label: "Band log",
+      panelId: "main",
+      upper: [
+        { time: 1, value: -1 },
+        { time: 2, value: 12 }
+      ],
+      lower: [
+        { time: 1, value: -2 },
+        { time: 2, value: 10 }
+      ]
+    };
+  }
+
+  return {
+    type,
+    id: "marker-log",
+    label: "Marker log",
+    panelId: "main",
+    marks: [
+      { id: "negative", time: 1, price: -1 },
+      { id: "positive", time: 2, price: 12 }
+    ]
   };
 }
 
@@ -475,14 +533,22 @@ describe("visual renderers", () => {
     ).toEqual([{ label: "Time", value: "SH:5:1m" }]);
   });
 
-  it.each([
-    ["line", createLineVisualRenderer()],
-    ["histogram", createHistogramVisualRenderer()],
-    ["band", createBandVisualRenderer()],
-    ["marker", createMarkerVisualRenderer()]
-  ] as const)("returns a hit-test contribution for %s output", (_type, renderer) => {
+  it.each(
+    (["linear", "log", "percentage"] as const).flatMap((priceScaleMode) => [
+      ["line", createLineVisualRenderer(), priceScaleMode] as const,
+      ["histogram", createHistogramVisualRenderer(), priceScaleMode] as const,
+      ["band", createBandVisualRenderer(), priceScaleMode] as const,
+      ["marker", createMarkerVisualRenderer(), priceScaleMode] as const
+    ])
+  )("returns a hit-test contribution for %s output on a shared %s scale", (
+    _type,
+    renderer,
+    priceScaleMode
+  ) => {
     const output = createRenderableOutput(renderer.type);
-    const renderContext = createVisualContext(output);
+    const viewport = { ...createViewport(), priceScaleMode };
+    const state = createState({ viewport, visualOutputs: [output] });
+    const renderContext = createVisualContext(output, state);
 
     const hit = renderer.hitTest(renderContext, 15, 50);
 
@@ -490,7 +556,29 @@ describe("visual renderers", () => {
       outputId: output.id,
       outputType: output.type
     });
+    expect(Number.isFinite(hit?.time)).toBe(true);
+    expect(hit?.value === undefined || Number.isFinite(hit.value)).toBe(true);
     expect(hit?.distance).toBeGreaterThanOrEqual(0);
+  });
+
+  it.each([
+    ["line", createLineVisualRenderer()],
+    ["histogram", createHistogramVisualRenderer()],
+    ["band", createBandVisualRenderer()],
+    ["marker", createMarkerVisualRenderer()]
+  ] as const)("skips non-positive %s hit-test candidates on a log scale", (_type, renderer) => {
+    const output = createMixedSignOutput(renderer.type);
+    const viewport = { ...createViewport(), priceScaleMode: "log" as const };
+    const state = createState({ viewport, visualOutputs: [output] });
+
+    const hit = renderer.hitTest(createVisualContext(output, state), 15, 50);
+
+    expect(hit).toMatchObject({
+      outputId: output.id,
+      outputType: output.type,
+      time: 2
+    });
+    expect(hit?.value).toBeGreaterThan(0);
   });
 });
 
@@ -500,7 +588,7 @@ describe("visual layer", () => {
     const registry = createRangeProbeRegistry(
       {
         macd: { min: -5, max: 4 },
-        signal: { min: -2, max: 3 }
+        signal: { min: -2, max: 5 }
       },
       (context) => {
         valueScales.push(context.valueScale);
@@ -520,6 +608,7 @@ describe("visual layer", () => {
     expect(valueScales).toHaveLength(2);
     expect(valueScales[0]).toBe(valueScales[1]);
     expect(valueScales[0].mode).toBe("linear");
+    expect(valueScales[0].min).toBeCloseTo(-valueScales[0].max);
   });
 
   it.each(["log", "percentage"] as const)(

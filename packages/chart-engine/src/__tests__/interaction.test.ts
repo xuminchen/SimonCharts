@@ -31,6 +31,7 @@ function createEngine(
       fixtureDailyCandleSeries,
       viewport.visibleRange,
       priceScaleMode,
+      [],
       []
     ),
     width,

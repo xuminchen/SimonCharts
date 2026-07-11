@@ -227,6 +227,7 @@ function createRenderState(series: CandleSeries, viewport: ViewportState): Rende
       series,
       viewport.visibleRange,
       viewport.priceScaleMode,
+      [],
       []
     ),
     formatTime: defaultChartTimeFormatter,

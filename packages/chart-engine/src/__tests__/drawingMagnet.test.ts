@@ -141,7 +141,8 @@ describe("OHLC magnet target projection", () => {
             upper: [{ time: 2, value: 30 }],
             lower: [{ time: 2, value: 5 }]
           }
-        ]
+        ],
+        []
       );
       const plotArea = { x: 100, y: 20, width: 200, height: 100 };
       const targets = createOhlcMagnetTargetsFromSeries({

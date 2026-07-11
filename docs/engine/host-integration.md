@@ -27,8 +27,10 @@ Minimum v0.4 integration sequence:
 
 1. Normalize host market data into `CandleSeries`.
 2. Create a chart engine from the package root with `createChartEngine({ series })`.
-3. Create the current main `PriceScale` with `createMainPanelPriceScale()` and reuse that exact
-   object in `RenderState`, `InteractionEngine`, and OHLC magnet projection.
+3. Create the current main `PriceScale` with
+   `createMainPanelPriceScale(series, visibleRange, mode, visualOutputs, movingAverages)` and reuse
+   that exact object in `RenderState`, `InteractionEngine`, and OHLC magnet projection. Pass every
+   main-panel visual input explicitly so the shared scale owns the complete rendered value range.
 4. Supply an explicit `ChartTimeFormatter` in every `RenderState` and tooltip formatting context.
 5. Translate browser or native input into neutral viewport, interaction, drawing, and command calls.
 6. Persist layout snapshots with `serializeChartLayoutSnapshot()` and restore them with `deserializeChartLayoutSnapshot()`.

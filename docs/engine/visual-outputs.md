@@ -22,8 +22,8 @@ panel uses log or percentage mode. In log mode, non-positive main-panel values a
 
 The visual subsystem includes:
 
-- `getVisualAutoscaleRange(output)` for panel scale calculation
-- `hitTestVisualOutput(context, x, y)` for pointer interaction
+- `renderer.getAutoscale(output)` for panel scale calculation
+- `renderer.hitTest(context, x, y)` for pointer interaction
 - `renderer.getTooltipRows(hit, { formatTime, timeframe })` for host-formatted neutral tooltip rows
 
 ## Core Indicators

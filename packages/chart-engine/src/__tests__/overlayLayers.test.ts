@@ -137,6 +137,7 @@ function createState(override: Partial<RenderState> = {}): RenderState {
   const series = override.series ?? createSeries();
   const viewport = override.viewport ?? createViewport();
   const visualOutputs = override.visualOutputs ?? [];
+  const movingAverages = override.movingAverages ?? [];
 
   return {
     series,
@@ -147,7 +148,8 @@ function createState(override: Partial<RenderState> = {}): RenderState {
         series,
         viewport.visibleRange,
         viewport.priceScaleMode,
-        visualOutputs
+        visualOutputs,
+        movingAverages
       ),
     formatTime: defaultChartTimeFormatter,
     theme: {

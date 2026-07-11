@@ -421,7 +421,8 @@ const mainPriceScale = createMainPanelPriceScale(
   series,
   engine.getState().viewport.visibleRange,
   engine.getState().viewport.priceScaleMode,
-  [visualOutput]
+  [visualOutput],
+  []
 );
 const formatTime: ChartTimeFormatter = defaultChartTimeFormatter;
 const tooltipFormatting: TooltipFormattingContext = {

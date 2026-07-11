@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import {
+  calculateDefaultMovingAverages,
   createChartLayout,
   createInitialViewport,
   createMainPanelPriceScale,
@@ -58,7 +59,8 @@ function getVisibleHighTarget(width: number, height: number): Point {
       fixtureDailyCandleSeries,
       viewport.visibleRange,
       viewport.priceScaleMode,
-      playgroundVisualOutputs
+      playgroundVisualOutputs,
+      Object.values(calculateDefaultMovingAverages(fixtureDailyCandleSeries))
     ),
     fields: ["high"]
   });

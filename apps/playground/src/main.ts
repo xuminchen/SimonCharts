@@ -401,7 +401,8 @@ function updateMainPriceScale(): void {
     fixtureDailyCandleSeries,
     viewport.visibleRange,
     viewport.priceScaleMode,
-    activeVisualOutputs
+    activeVisualOutputs,
+    movingAverages
   );
   interactionEngine?.setPriceScale(priceScale);
 }

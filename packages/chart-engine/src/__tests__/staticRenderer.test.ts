@@ -131,6 +131,7 @@ function createState(override: Partial<RenderState> = {}): RenderState {
   const series = override.series ?? createSeries();
   const viewport = override.viewport ?? createViewport();
   const visualOutputs = override.visualOutputs ?? [];
+  const movingAverages = override.movingAverages ?? [];
 
   return {
     series,
@@ -141,7 +142,8 @@ function createState(override: Partial<RenderState> = {}): RenderState {
         series,
         viewport.visibleRange,
         viewport.priceScaleMode,
-        visualOutputs
+        visualOutputs,
+        movingAverages
       ),
     formatTime: defaultChartTimeFormatter,
     theme: {
@@ -233,7 +235,8 @@ describe("static renderer", () => {
         series,
         visibleRange,
         priceScaleMode,
-        visualOutputs
+        visualOutputs,
+        []
       );
 
       expect(priceToY(30, scale, 0, 80)).toBeGreaterThanOrEqual(0);
@@ -260,7 +263,7 @@ describe("static renderer", () => {
     ];
 
     expect(() =>
-      createMainPanelPriceScale(series, { from: 1, to: 3 }, "log", visualOutputs)
+      createMainPanelPriceScale(series, { from: 1, to: 3 }, "log", visualOutputs, [])
     ).not.toThrow();
   });
 
@@ -447,4 +450,56 @@ describe("static renderer", () => {
     expect(() => createMovingAverageLayer().render(renderContext)).not.toThrow();
     expect(callsNamed(renderContext, "lineTo")).toHaveLength(1);
   });
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "includes cross-boundary moving-average extrema in the shared %s scale",
+    (priceScaleMode) => {
+      const series: CandleSeries = {
+        ...createSeries(),
+        candles: [
+          { time: 1, open: 100, high: 100, low: 100, close: 100, volume: 1, turnover: 100 },
+          { time: 2, open: 10, high: 10, low: 10, close: 10, volume: 1, turnover: 10 },
+          { time: 3, open: 10, high: 10, low: 10, close: 10, volume: 1, turnover: 10 }
+        ]
+      };
+      const viewport = {
+        ...createViewport({ from: 1, to: 2 }),
+        priceScaleMode
+      };
+      const movingAverages = [
+        [
+          { time: 1, value: undefined },
+          { time: 2, value: 55 },
+          { time: 3, value: 10 }
+        ]
+      ];
+      const priceScale = createMainPanelPriceScale(
+        series,
+        viewport.visibleRange,
+        priceScaleMode,
+        [],
+        movingAverages
+      );
+      const renderContext = createRenderContext(
+        createState({ series, viewport, priceScale, movingAverages })
+      );
+
+      createMovingAverageLayer().render(renderContext);
+
+      const yCoordinates = (renderContext.context as unknown as FakeCanvasContext).calls
+        .filter((call) => call.name === "moveTo" || call.name === "lineTo")
+        .map((call) => Number(call.args[1]));
+      const { plotArea } = renderContext.state.layout;
+
+      expect(yCoordinates[0]).toBeCloseTo(
+        priceToY(55, priceScale, plotArea.y, plotArea.height)
+      );
+      expect(yCoordinates).toHaveLength(2);
+      expect(
+        yCoordinates.every(
+          (y) => Number.isFinite(y) && y >= plotArea.y && y <= plotArea.y + plotArea.height
+        )
+      ).toBe(true);
+    }
+  );
 });

@@ -284,7 +284,8 @@ function createLayerContext(
           series,
           viewport.visibleRange,
           viewport.priceScaleMode,
-          override.visualOutputs ?? []
+          override.visualOutputs ?? [],
+          override.movingAverages ?? []
         ),
       formatTime: defaultChartTimeFormatter,
       theme: defaultChartTheme,

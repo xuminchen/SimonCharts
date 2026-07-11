@@ -1,4 +1,5 @@
 import type { CandleSeries } from "../model/market";
+import type { MovingAveragePoint } from "../indicators/movingAverage";
 import type { PriceScaleMode, VisibleRange } from "../model/runtime";
 import type { IndicatorVisualOutput } from "../model/visual";
 import { computeVisiblePriceBounds } from "../viewport/priceRange";
@@ -11,7 +12,8 @@ export function createMainPanelPriceScale(
   series: CandleSeries,
   visibleRange: VisibleRange,
   mode: PriceScaleMode,
-  visualOutputs: readonly IndicatorVisualOutput[] = []
+  visualOutputs: readonly IndicatorVisualOutput[],
+  movingAverages: readonly (readonly MovingAveragePoint[])[]
 ): PriceScale {
   const rawBounds = computeVisiblePriceBounds(series, visibleRange);
   const indexByTime = new Map(series.candles.map((candle, index) => [candle.time, index]));
@@ -39,6 +41,23 @@ export function createMainPanelPriceScale(
 
       rawBounds.min = Math.min(rawBounds.min, point.value);
       rawBounds.max = Math.max(rawBounds.max, point.value);
+    }
+  }
+
+  for (const points of movingAverages) {
+    for (let index = from; index <= to; index += 1) {
+      const value = points[index]?.value;
+
+      if (
+        value === undefined ||
+        !Number.isFinite(value) ||
+        (mode === "log" && value <= 0)
+      ) {
+        continue;
+      }
+
+      rawBounds.min = Math.min(rawBounds.min, value);
+      rawBounds.max = Math.max(rawBounds.max, value);
     }
   }
 

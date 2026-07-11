@@ -12,6 +12,8 @@ import {
   createDrawingEditor,
   createDrawingToolRegistry,
   createMainPanelPriceScale,
+  createSourceSeriesRenderModel,
+  defaultChartTimeFormatter,
   beginDrawingHandleDrag,
   beginDrawingMoveDrag,
   beginDrawingSelectionBox,
@@ -24,9 +26,11 @@ import {
   getMagnetSnapState,
   createOhlcMagnetTargetsFromSeries,
   getDrawingPropertySchema,
+  getDefaultSeriesTooltipRows,
   hitTestDrawing,
   hitTestDrawingAll,
   hitTestDrawingEditHandle,
+  hitTestSeriesPoint,
   normalizeDrawingSelectionBounds,
   resizeDrawing,
   rotateDrawing,
@@ -44,6 +48,35 @@ const engine = createChartEngine({
   series: fixtureDailyCandleSeries,
   seriesType: "candles"
 });
+const consumerSeriesModel = createSourceSeriesRenderModel(
+  "candles",
+  fixtureDailyCandleSeries
+);
+const consumerSeriesHit = hitTestSeriesPoint(consumerSeriesModel, 4, {
+  plotLeft: 0,
+  candleWidth: 8,
+  visibleRange: { from: 0, to: 0 }
+});
+
+if (!consumerSeriesHit) {
+  throw new Error("Package consumer failed to execute series hit-test API");
+}
+
+const consumerTime = fixtureDailyCandleSeries.candles[0].time;
+const consumerTooltipRows = getDefaultSeriesTooltipRows(consumerSeriesHit, {
+  formatTime: (time, timeframe) => `consumer:${time}:${timeframe}`,
+  timeframe: fixtureDailyCandleSeries.timeframe
+});
+
+if (
+  consumerTooltipRows[0]?.value !==
+    `consumer:${consumerTime}:${fixtureDailyCandleSeries.timeframe}` ||
+  defaultChartTimeFormatter(consumerTime, fixtureDailyCandleSeries.timeframe) !==
+    String(consumerTime)
+) {
+  throw new Error("Package consumer failed to execute formatter and tooltip contracts");
+}
+
 const engineCapabilities = createEngineCapabilityManifest();
 const engineApiCompatibility = checkEngineApiVersionCompatibility(engineCapabilities, {
   packageName: "@simoncharts/chart-engine",
@@ -362,6 +395,7 @@ const ohlcTargets = createOhlcMagnetTargetsFromSeries({
     fixtureDailyCandleSeries,
     engine.getState().viewport.visibleRange,
     engine.getState().viewport.priceScaleMode,
+    [],
     []
   )
 });

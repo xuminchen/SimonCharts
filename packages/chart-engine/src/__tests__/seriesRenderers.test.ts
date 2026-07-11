@@ -169,6 +169,7 @@ function createState(
       series,
       viewport.visibleRange,
       viewport.priceScaleMode,
+      [],
       []
     ),
     formatTime: defaultChartTimeFormatter,
@@ -209,7 +210,14 @@ describe("series renderers", () => {
     };
     const context = createRenderContext(seriesType, priceScaleMode, series);
 
-    expect(() => createSeriesLayer(registry).render(context)).not.toThrow();
+    createSeriesLayer(registry).render(context);
+
+    const numericArguments = (context.context as unknown as FakeCanvasContext).calls.flatMap(
+      (call) => call.args.filter((value): value is number => typeof value === "number")
+    );
+
+    expect(numericArguments.length).toBeGreaterThan(0);
+    expect(numericArguments.every(Number.isFinite)).toBe(true);
   });
 
   it("registers default renderers in deterministic order", () => {
