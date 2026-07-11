@@ -267,6 +267,68 @@ describe("static renderer", () => {
     ).not.toThrow();
   });
 
+  it.each(
+    (["linear", "log", "percentage"] as const).flatMap((priceScaleMode) => [
+      [priceScaleMode, Number.NaN] as const,
+      [priceScaleMode, Number.POSITIVE_INFINITY] as const
+    ])
+  )(
+    "resolves marker time on the shared %s scale when index is %s",
+    (priceScaleMode, invalidIndex) => {
+      const series: CandleSeries = {
+        ...createSeries(),
+        candles: [
+          { time: 1, open: 50, high: 51, low: 49, close: 50, volume: 1, turnover: 50 },
+          { time: 2, open: 10, high: 11, low: 9, close: 10, volume: 1, turnover: 10 },
+          { time: 3, open: 50, high: 51, low: 49, close: 50, volume: 1, turnover: 50 }
+        ]
+      };
+      const visibleRange = { from: 1, to: 1 };
+      const baselineScale = createMainPanelPriceScale(
+        series,
+        visibleRange,
+        priceScaleMode,
+        [],
+        []
+      );
+      const offscreenScale = createMainPanelPriceScale(
+        series,
+        visibleRange,
+        priceScaleMode,
+        [
+          {
+            id: "offscreen-marker",
+            label: "Offscreen marker",
+            type: "marker",
+            panelId: "main",
+            marks: [{ id: "offscreen", time: 1, index: invalidIndex, price: 1_000 }]
+          }
+        ],
+        []
+      );
+      const visibleScale = createMainPanelPriceScale(
+        series,
+        visibleRange,
+        priceScaleMode,
+        [
+          {
+            id: "visible-marker",
+            label: "Visible marker",
+            type: "marker",
+            panelId: "main",
+            marks: [{ id: "visible", time: 2, index: invalidIndex, price: 1_000 }]
+          }
+        ],
+        []
+      );
+      const visibleMarkerY = priceToY(1_000, visibleScale, 0, 80);
+
+      expect(offscreenScale).toEqual(baselineScale);
+      expect(visibleMarkerY).toBeGreaterThanOrEqual(0);
+      expect(visibleMarkerY).toBeLessThanOrEqual(80);
+    }
+  );
+
   it("uses the shared percentage scale and host formatter for axis labels", () => {
     const series = { ...createSeries(), timeframe: "1m" as const };
     const viewport = { ...createViewport(), priceScaleMode: "percentage" as const };
@@ -450,6 +512,63 @@ describe("static renderer", () => {
     expect(() => createMovingAverageLayer().render(renderContext)).not.toThrow();
     expect(callsNamed(renderContext, "lineTo")).toHaveLength(1);
   });
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "breaks the %s moving-average path at non-finite values",
+    (priceScaleMode) => {
+      const series: CandleSeries = {
+        ...createSeries(),
+        candles: Array.from({ length: 8 }, (_, index) => ({
+          time: index + 1,
+          open: 12,
+          high: 16,
+          low: 9,
+          close: 12,
+          volume: 1,
+          turnover: 12
+        }))
+      };
+      const viewport = {
+        ...createViewport({ from: 0, to: 7 }),
+        priceScaleMode
+      };
+      const movingAverages = [
+        [
+          { time: 1, value: 10 },
+          { time: 2, value: 11 },
+          { time: 3, value: Number.NaN },
+          { time: 4, value: 12 },
+          { time: 5, value: 13 },
+          { time: 6, value: Number.POSITIVE_INFINITY },
+          { time: 7, value: 14 },
+          { time: 8, value: 15 }
+        ]
+      ];
+      const renderContext = createRenderContext(
+        createState({ series, viewport, movingAverages })
+      );
+
+      createMovingAverageLayer().render(renderContext);
+
+      const calls = (renderContext.context as unknown as FakeCanvasContext).calls;
+      const numericArguments = calls.flatMap((call) =>
+        call.args.filter((value): value is number => typeof value === "number")
+      );
+      const pathCallNames = calls
+        .filter((call) => call.name === "moveTo" || call.name === "lineTo")
+        .map((call) => call.name);
+
+      expect(numericArguments.every(Number.isFinite)).toBe(true);
+      expect(pathCallNames).toEqual([
+        "moveTo",
+        "lineTo",
+        "moveTo",
+        "lineTo",
+        "moveTo",
+        "lineTo"
+      ]);
+    }
+  );
 
   it.each(["linear", "log", "percentage"] as const)(
     "includes cross-boundary moving-average extrema in the shared %s scale",

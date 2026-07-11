@@ -50,6 +50,7 @@ function drawMovingAveragePath(
     if (
       !point ||
       point.value === undefined ||
+      !Number.isFinite(point.value) ||
       (priceScale.mode === "log" && point.value <= 0)
     ) {
       if (hasSegment) {

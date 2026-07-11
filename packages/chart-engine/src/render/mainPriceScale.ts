@@ -27,7 +27,10 @@ export function createMainPanelPriceScale(
     }
 
     for (const point of getOutputValues(output)) {
-      const index = point.index ?? indexByTime.get(point.time);
+      const index =
+        typeof point.index === "number" && Number.isFinite(point.index)
+          ? point.index
+          : indexByTime.get(point.time);
 
       if (
         index === undefined ||
