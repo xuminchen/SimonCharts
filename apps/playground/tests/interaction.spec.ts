@@ -1,4 +1,14 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  calculateDefaultMovingAverages,
+  createChartLayout,
+  createInitialViewport,
+  createMainPanelPriceScale,
+  createOhlcMagnetTargetsFromSeries,
+  createPanelLayout,
+  fixtureDailyCandleSeries
+} from "@simoncharts/chart-engine";
+import { playgroundVisualOutputs } from "../src/fixtures/visualFixtures";
 
 interface RecordedViewportEvent {
   type: "viewportChanged";
@@ -29,6 +39,11 @@ interface RecordedCrosshairEvent {
     volume: number;
     turnover: number;
   };
+}
+
+interface OverlayCanvasCall {
+  name: "moveTo" | "lineTo" | "fillRect";
+  args: number[];
 }
 
 test.beforeEach(async ({ page }) => {
@@ -113,6 +128,109 @@ test("mouse move renders canvas crosshair tooltip and records OHLCV payload", as
     Math.max(crosshair?.open ?? 0, crosshair?.close ?? 0)
   );
   expect(crosshair?.low).toBeLessThanOrEqual(Math.min(crosshair?.open ?? 0, crosshair?.close ?? 0));
+});
+
+test("projects interaction price through the main-panel overlay geometry", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.addInitScript(() => {
+    type CapturedCall = {
+      name: "moveTo" | "lineTo" | "fillRect";
+      args: number[];
+    };
+    const calls: CapturedCall[] = [];
+    const targetWindow = window as typeof window & {
+      __SIMON_OVERLAY_CANVAS_CALLS__?: CapturedCall[];
+    };
+    const originalMoveTo = CanvasRenderingContext2D.prototype.moveTo;
+    const originalLineTo = CanvasRenderingContext2D.prototype.lineTo;
+    const originalFillRect = CanvasRenderingContext2D.prototype.fillRect;
+
+    targetWindow.__SIMON_OVERLAY_CANVAS_CALLS__ = calls;
+    CanvasRenderingContext2D.prototype.moveTo = function moveTo(x, y) {
+      if (this.canvas.dataset.testid === "chart-overlay") {
+        calls.push({ name: "moveTo", args: [x, y] });
+      }
+      originalMoveTo.call(this, x, y);
+    };
+    CanvasRenderingContext2D.prototype.lineTo = function lineTo(x, y) {
+      if (this.canvas.dataset.testid === "chart-overlay") {
+        calls.push({ name: "lineTo", args: [x, y] });
+      }
+      originalLineTo.call(this, x, y);
+    };
+    CanvasRenderingContext2D.prototype.fillRect = function fillRect(x, y, width, height) {
+      if (this.canvas.dataset.testid === "chart-overlay") {
+        calls.push({ name: "fillRect", args: [x, y, width, height] });
+      }
+      originalFillRect.call(this, x, y, width, height);
+    };
+  });
+  await page.reload();
+  await expect(page.getByTestId("panel-count")).toHaveText("2 panels");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  const geometry = getMainPanelOhlcGeometry(box.width, box.height);
+
+  await clearRecordedEvents(page);
+  await page.evaluate(() => {
+    const targetWindow = window as typeof window & {
+      __SIMON_OVERLAY_CANVAS_CALLS__?: unknown[];
+    };
+
+    targetWindow.__SIMON_OVERLAY_CANVAS_CALLS__?.splice(0);
+  });
+  await page.mouse.move(box.x + geometry.target.x, box.y + geometry.target.y);
+  await expect
+    .poll(async () => (await getCrosshairEvents(page)).filter((event) => event.crosshair).length)
+    .toBeGreaterThanOrEqual(1);
+  await expect
+    .poll(
+      async () =>
+        (await getOverlayCanvasCalls(page)).filter((call) => call.name === "lineTo").length
+    )
+    .toBeGreaterThanOrEqual(2);
+
+  const crosshair = findLastCrosshair(await getCrosshairEvents(page));
+  const candle = fixtureDailyCandleSeries.candles[geometry.target.dataIndex];
+  const calls = await getOverlayCanvasCalls(page);
+  const pathCalls = calls
+    .filter((call) => call.name === "moveTo" || call.name === "lineTo")
+    .slice(-4);
+  const tooltipRect = calls.filter((call) => call.name === "fillRect").at(-1);
+  const plotRight = geometry.plotArea.x + geometry.plotArea.width;
+  const plotBottom = geometry.plotArea.y + geometry.plotArea.height;
+
+  expect(crosshair?.index).toBe(geometry.target.dataIndex);
+  expect(crosshair?.price).toBeCloseTo(candle.high, 5);
+  expect(pathCalls).toHaveLength(4);
+  expect(pathCalls.map((call) => call.name)).toEqual(["moveTo", "lineTo", "moveTo", "lineTo"]);
+  expect(pathCalls[2].args[0]).toBeCloseTo(geometry.plotArea.x, 5);
+  expect(pathCalls[2].args[1]).toBeCloseTo(geometry.target.y, 5);
+  expect(pathCalls[3].args[0]).toBeCloseTo(plotRight, 5);
+  expect(pathCalls[3].args[1]).toBeCloseTo(geometry.target.y, 5);
+  expect(pathCalls[0].args[0]).toBeCloseTo(geometry.target.x, 5);
+  expect(pathCalls[0].args[1]).toBeCloseTo(geometry.plotArea.y, 5);
+  expect(pathCalls[1].args[0]).toBeCloseTo(geometry.target.x, 5);
+  expect(pathCalls[1].args[1]).toBeCloseTo(plotBottom, 5);
+  expect(tooltipRect).toBeDefined();
+
+  const [tooltipX, tooltipY, tooltipWidth, tooltipHeight] = tooltipRect?.args ?? [];
+  const expectedTooltipX =
+    geometry.target.x + 8 + tooltipWidth <= plotRight
+      ? geometry.target.x + 8
+      : Math.max(geometry.plotArea.x, geometry.target.x - 8 - tooltipWidth);
+  const expectedTooltipY =
+    geometry.target.y + 8 + tooltipHeight <= plotBottom
+      ? geometry.target.y + 8
+      : Math.max(geometry.plotArea.y, geometry.target.y - 8 - tooltipHeight);
+
+  expect(tooltipX).toBeCloseTo(expectedTooltipX, 5);
+  expect(tooltipY).toBeCloseTo(expectedTooltipY, 5);
 });
 
 test("crosshair stays aligned after repeated zooms near the left edge", async ({ page }) => {
@@ -248,6 +366,15 @@ async function getRecordedEvents(page: Page): Promise<unknown[]> {
   );
 }
 
+async function getOverlayCanvasCalls(page: Page): Promise<OverlayCanvasCall[]> {
+  return page.evaluate(
+    () =>
+      (window as typeof window & {
+        __SIMON_OVERLAY_CANVAS_CALLS__?: OverlayCanvasCall[];
+      }).__SIMON_OVERLAY_CANVAS_CALLS__ ?? []
+  );
+}
+
 async function wheelAtCenter(page: Page, locator: Locator, deltaY: number): Promise<void> {
   const point = await centerPoint(locator);
 
@@ -337,4 +464,61 @@ function isRange(value: unknown): value is { from: number; to: number } {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function getMainPanelOhlcGeometry(width: number, height: number): {
+  plotArea: { x: number; y: number; width: number; height: number };
+  target: { x: number; y: number; dataIndex: number };
+} {
+  const layout = createChartLayout(Math.floor(width), Math.floor(height));
+  const panels = createPanelLayout({
+    width: layout.width,
+    height: layout.height,
+    rightAxisWidth: layout.rightAxisWidth,
+    bottomAxisHeight: layout.bottomAxisHeight,
+    panels: [
+      { id: "main", kind: "main", label: "Main", heightRatio: 3 },
+      { id: "sub", kind: "sub", label: "Sub", heightRatio: 1 }
+    ]
+  });
+  const mainPanel = panels.find((panel) => panel.kind === "main") ?? panels[0];
+
+  if (!mainPanel) {
+    throw new Error("main panel missing");
+  }
+
+  const viewport = createInitialViewport(
+    fixtureDailyCandleSeries.candles.length,
+    layout.plotArea.width
+  );
+  const targets = createOhlcMagnetTargetsFromSeries({
+    series: fixtureDailyCandleSeries,
+    viewport,
+    plotArea: mainPanel.plotArea,
+    priceScale: createMainPanelPriceScale(
+      fixtureDailyCandleSeries,
+      viewport.visibleRange,
+      viewport.priceScaleMode,
+      playgroundVisualOutputs,
+      Object.values(calculateDefaultMovingAverages(fixtureDailyCandleSeries))
+    ),
+    fields: ["high"]
+  });
+  const target = targets.find(
+    (candidate) =>
+      candidate.dataIndex !== undefined &&
+      candidate.x > 500 &&
+      candidate.x < mainPanel.plotArea.width - 360 &&
+      candidate.y > 180 &&
+      candidate.y < mainPanel.plotArea.height - 40
+  );
+
+  if (!target || target.dataIndex === undefined) {
+    throw new Error("visible OHLC high target missing");
+  }
+
+  return {
+    plotArea: mainPanel.plotArea,
+    target: { x: target.x, y: target.y, dataIndex: target.dataIndex }
+  };
 }

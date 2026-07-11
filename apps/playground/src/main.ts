@@ -507,7 +507,7 @@ function renderOverlayCanvas(): void {
     window.devicePixelRatio
   );
 
-  renderOverlay(createRenderContext(context));
+  renderOverlay(createRenderContext(context, getMainPanelLayout()));
   overlayCanvasRenderCount += 1;
 }
 
