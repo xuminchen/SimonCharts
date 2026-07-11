@@ -166,6 +166,46 @@ describe("drawing coordinates", () => {
     expect(anchors.every((anchor) => !("index" in anchor))).toBe(true);
   });
 
+  it("preserves sorted-time resolver semantics for bounds, ties, and non-finite times", () => {
+    const context = createContext(series);
+    const drawing: DrawingObject = {
+      id: "resolver-edges",
+      type: "trendLine",
+      anchors: [
+        { time: 100, price: 180, index: 2 },
+        { time: 300, price: 180, index: 0 },
+        { time: 140, price: 180, index: 2 },
+        { time: 160, price: 180, index: 0 },
+        { time: 150, price: 180, index: 2 },
+        { time: -100, price: 180, index: 2 },
+        { time: 999, price: 180, index: 0 },
+        { time: undefined, price: 180, index: 2 },
+        { time: Number.NaN, price: 180, index: 2 },
+        { time: Number.POSITIVE_INFINITY, price: 180, index: 2 },
+        { time: Number.NEGATIVE_INFINITY, price: 180, index: 2 }
+      ]
+    };
+
+    const anchors = projectDrawingObject(drawing, context).anchors;
+
+    expect(anchors.map((anchor) => anchor.x)).toEqual(
+      [0, 2, 0, 1, 0, 0, 2, 0, 0, 0, 0].map((index) =>
+        indexToX(index, context.viewport, context.plotArea.x)
+      )
+    );
+    expect(anchors[0].time).toBe(100);
+    expect(anchors[1].time).toBe(300);
+    expect(anchors[2].time).toBe(140);
+    expect(anchors[3].time).toBe(160);
+    expect(anchors[4].time).toBe(150);
+    expect(anchors[5].time).toBe(-100);
+    expect(anchors[6].time).toBe(999);
+    expect(anchors[7].time).toBeUndefined();
+    expect(Number.isNaN(anchors[8].time)).toBe(true);
+    expect(anchors[9].time).toBe(Number.POSITIVE_INFINITY);
+    expect(anchors[10].time).toBe(Number.NEGATIVE_INFINITY);
+  });
+
   it("reprojects by time across timeframes without trusting the prior candle index", () => {
     const weeklySeries: CandleSeries = {
       ...series,

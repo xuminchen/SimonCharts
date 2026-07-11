@@ -69,28 +69,44 @@ function projectAnchor(
 }
 
 function resolveAnchorIndex(anchor: DrawingAnchor, series: CandleSeries): number {
-  if (series.candles.length === 0 || typeof anchor.time !== "number") {
+  const { candles } = series;
+  const time = anchor.time;
+
+  if (candles.length === 0 || typeof time !== "number" || !Number.isFinite(time)) {
     return 0;
   }
 
-  let nearestIndex = 0;
-  let nearestDistance = Math.abs(series.candles[0].time - anchor.time);
+  let lower = 0;
+  let upper = candles.length;
 
-  for (let index = 0; index < series.candles.length; index += 1) {
-    const candleTime = series.candles[index].time;
+  while (lower < upper) {
+    const middle = lower + Math.floor((upper - lower) / 2);
 
-    if (candleTime === anchor.time) {
-      return index;
-    }
-
-    const distance = Math.abs(candleTime - anchor.time);
-    if (distance < nearestDistance) {
-      nearestIndex = index;
-      nearestDistance = distance;
+    if (candles[middle].time < time) {
+      lower = middle + 1;
+    } else {
+      upper = middle;
     }
   }
 
-  return nearestIndex;
+  if (lower === 0) {
+    return 0;
+  }
+
+  if (lower === candles.length) {
+    return candles.length - 1;
+  }
+
+  const nextTime = candles[lower].time;
+
+  if (nextTime === time) {
+    return lower;
+  }
+
+  const previousIndex = lower - 1;
+  const previousTime = candles[previousIndex].time;
+
+  return time - previousTime <= nextTime - time ? previousIndex : lower;
 }
 
 function unprojectAnchor(

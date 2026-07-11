@@ -112,7 +112,11 @@ npm run check:package-types
 `drawingCoordinates.test.ts` covers linear/log/percentage projection, pan and zoom, exact and
 nearest time resolution, cross-timeframe fallback, stale index rejection, pointer conversion,
 domain round-trip, empty and zero-sized layouts, finite geometry, and input/output isolation.
-Runtime and declaration consumers also exercise all three package-root coordinate functions.
+`performanceBaseline.test.ts` instruments candle `time` reads and bounds 500 missing-time anchors
+over 50,000 strictly increasing candles to the lower-bound binary-search read ceiling. The hot path
+trusts the finite, strictly increasing `CandleSeries` time contract; it does not rescan, sort, copy,
+or cache candles. Runtime and declaration consumers also exercise all three package-root coordinate
+functions.
 
 ## v1.0 OHLC Magnet Target Projection Verification
 

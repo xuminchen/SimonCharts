@@ -10,11 +10,13 @@ import {
   defaultChartTheme,
   defaultChartTimeFormatter,
   drawingTypes,
+  projectDrawingObject,
   renderStaticChart
 } from "../index";
 import type {
   CandleSeries,
   ChartLayout,
+  DrawingCoordinateContext,
   DrawingObject,
   DrawingType,
   LayerRenderContext,
@@ -161,6 +163,70 @@ describe("performance baseline", () => {
     expect(indicatorsMs).toBeLessThan(8_000);
     expect(staticRendererMs).toBeLessThan(3_000);
     expect(schedulerMs).toBeLessThan(1_000);
+  });
+
+  it("resolves 500 missing drawing times in 50k candles with logarithmic reads", () => {
+    const anchorCount = 500;
+    const firstTime = 1_700_000_000;
+    let timeReads = 0;
+    const candles: CandleSeries["candles"] = Array.from(
+      { length: largeCandleCount },
+      (_, index) =>
+        new Proxy(
+          {
+            time: firstTime + index * 2,
+            open: 100,
+            high: 101,
+            low: 99,
+            close: 100,
+            volume: 1,
+            turnover: 100
+          },
+          {
+            get(target, property, receiver) {
+              if (property === "time") {
+                timeReads += 1;
+              }
+
+              return Reflect.get(target, property, receiver);
+            }
+          }
+        )
+    );
+    const series: CandleSeries = {
+      symbol: "PERF",
+      timeframe: "1m",
+      adjustMode: "none",
+      dataVersion: "strictly-increasing-50k",
+      candles
+    };
+    const context: DrawingCoordinateContext = {
+      series,
+      viewport: {
+        visibleRange: { from: 0, to: largeCandleCount - 1 },
+        candleWidth: 2,
+        scrollOffset: 0,
+        priceScaleMode: "linear"
+      },
+      plotArea: { x: 0, y: 0, width: 1_000, height: 500 },
+      priceScale: { mode: "linear", basePrice: 100, min: 90, max: 110 }
+    };
+    const drawing: DrawingObject = {
+      id: "large-missing-times",
+      type: "brush",
+      anchors: Array.from({ length: anchorCount }, (_, index) => ({
+        time: firstTime + (((index * 97) % (largeCandleCount - 1)) * 2 + 1),
+        price: 100
+      }))
+    };
+
+    timeReads = 0;
+    const projected = projectDrawingObject(drawing, context);
+
+    expect(projected.anchors).toHaveLength(anchorCount);
+    expect(projected.anchors.every((anchor) => Number.isFinite(anchor.x))).toBe(true);
+    const maximumReadsPerAnchor = Math.ceil(Math.log2(largeCandleCount + 1)) + 2;
+    expect(timeReads).toBeLessThanOrEqual(anchorCount * maximumReadsPerAnchor);
   });
 });
 
