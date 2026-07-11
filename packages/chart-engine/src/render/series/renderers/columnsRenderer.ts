@@ -1,3 +1,4 @@
+import { scaleValueToPrice } from "../../../viewport/priceScale";
 import {
   bodyWidth,
   createRenderer,
@@ -18,7 +19,10 @@ export function createColumnsRenderer() {
     }
 
     const range = getVisiblePriceRange(renderContext.model, bounds);
-    const baseline = range.min <= 0 && range.max >= 0 ? 0 : range.min;
+    const scale = renderContext.state.priceScale;
+    const scaleMinPrice = scaleValueToPrice(scale.min, scale);
+    const scaleMaxPrice = scaleValueToPrice(scale.max, scale);
+    const baseline = scaleMinPrice <= 0 && scaleMaxPrice >= 0 ? 0 : scaleMinPrice;
     const baselineY = yForPrice(renderContext, range, baseline);
     const width = bodyWidth(renderContext);
     const { context } = renderContext;

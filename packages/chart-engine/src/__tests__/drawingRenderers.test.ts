@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultDrawingRendererRegistry,
   createDrawingLayer,
+  createMainPanelPriceScale,
   defaultChartTheme,
+  defaultChartTimeFormatter,
   type CandleSeries,
   type ChartLayout,
   type DrawingObject,
@@ -268,11 +270,23 @@ function createLayerContext(
   drawings: DrawingObject[],
   override: Partial<RenderState> = {}
 ): LayerRenderContext {
+  const series = override.series ?? createSeries();
+  const viewport = override.viewport ?? createViewport();
+
   return {
     context: new FakeCanvasContext() as unknown as CanvasRenderingContext2D,
     state: {
-      series: createSeries(),
-      viewport: createViewport(),
+      series,
+      viewport,
+      priceScale:
+        override.priceScale ??
+        createMainPanelPriceScale(
+          series,
+          viewport.visibleRange,
+          viewport.priceScaleMode,
+          override.visualOutputs ?? []
+        ),
+      formatTime: defaultChartTimeFormatter,
       theme: defaultChartTheme,
       layout: createLayout(),
       drawings,

@@ -1,6 +1,6 @@
 import type { Candle, CandleSeries } from "../model/market";
-import type { PriceScaleMode, ViewportState } from "../model/runtime";
-import { yToPrice } from "../viewport/viewport";
+import type { ViewportState } from "../model/runtime";
+import { yToPrice, type PriceScale } from "../viewport/priceScale";
 
 export function hitTestCandleAtX(
   series: CandleSeries,
@@ -47,10 +47,9 @@ export function hitTestCandleAtX(
 
 export function priceAtY(
   y: number,
-  priceRange: { min: number; max: number },
+  priceScale: PriceScale,
   plotTop: number,
-  plotHeight: number,
-  scaleMode: PriceScaleMode
+  plotHeight: number
 ): number {
-  return yToPrice(y, priceRange, plotTop, plotHeight, scaleMode);
+  return yToPrice(y, priceScale, plotTop, plotHeight);
 }

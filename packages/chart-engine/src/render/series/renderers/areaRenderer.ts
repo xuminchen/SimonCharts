@@ -17,7 +17,7 @@ export function createAreaRenderer() {
 
     const range = getVisiblePriceRange(renderContext.model, bounds);
     const { context, state } = renderContext;
-    const baselineY = yForPrice(renderContext, range, range.min);
+    const baselineY = renderContext.layout.plotArea.y + renderContext.layout.plotArea.height;
 
     withPlotClip(renderContext, () => {
       context.strokeStyle = state.theme.colors.text;

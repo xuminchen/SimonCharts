@@ -6,6 +6,7 @@ import {
   getNearestVisualHit,
   getVisualRenderRange,
   isFiniteNumber,
+  isRenderableVisualValue,
   isVisibleIndex,
   withPanelPlotClip,
   xForVisualIndex,
@@ -36,7 +37,7 @@ export function createMarkerVisualRenderer() {
 
       withPanelPlotClip(renderContext, () => {
         for (const mark of output.marks) {
-          if (!isFiniteNumber(mark.price)) {
+          if (!isRenderableVisualValue(renderContext, mark.price)) {
             continue;
           }
 
@@ -79,7 +80,7 @@ export function createMarkerVisualRenderer() {
       const renderRange = getVisualRenderRange(hitContext, range);
       const indexByTime = createTimeIndex(hitContext.state.series);
       const candidates = output.marks.flatMap((mark) => {
-        if (!isFiniteNumber(mark.price)) {
+        if (!isRenderableVisualValue(hitContext, mark.price)) {
           return [];
         }
 

@@ -32,6 +32,9 @@ export interface ChartTheme {
     crosshair: number;
     indicator: number;
   };
+  lineDashes: {
+    grid: number[];
+  };
 }
 
 export const defaultChartTheme: ChartTheme = {
@@ -67,5 +70,8 @@ export const defaultChartTheme: ChartTheme = {
     candleWick: 1,
     crosshair: 1,
     indicator: 2
+  },
+  lineDashes: {
+    grid: []
   }
 };

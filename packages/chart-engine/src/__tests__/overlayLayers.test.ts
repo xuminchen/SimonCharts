@@ -3,8 +3,11 @@ import {
   createCrosshairLayer,
   createOverlayLayers,
   createTooltipLayer,
+  defaultChartTimeFormatter,
+  priceToY,
   renderOverlay
 } from "../index";
+import { createMainPanelPriceScale } from "../render/mainPriceScale";
 import type {
   CandleSeries,
   ChartCrosshairState,
@@ -131,9 +134,22 @@ function createCrosshair(override: Partial<ChartCrosshairState> = {}): ChartCros
 }
 
 function createState(override: Partial<RenderState> = {}): RenderState {
+  const series = override.series ?? createSeries();
+  const viewport = override.viewport ?? createViewport();
+  const visualOutputs = override.visualOutputs ?? [];
+
   return {
-    series: createSeries(),
-    viewport: createViewport(),
+    series,
+    viewport,
+    priceScale:
+      override.priceScale ??
+      createMainPanelPriceScale(
+        series,
+        viewport.visibleRange,
+        viewport.priceScaleMode,
+        visualOutputs
+      ),
+    formatTime: defaultChartTimeFormatter,
     theme: {
       colors: {
         background: "#ffffff",
@@ -167,9 +183,13 @@ function createState(override: Partial<RenderState> = {}): RenderState {
         candleWick: 1,
         crosshair: 1,
         indicator: 2
+      },
+      lineDashes: {
+        grid: []
       }
     },
     layout: createLayout(),
+    visualOutputs,
     ...override
   };
 }
@@ -266,6 +286,31 @@ describe("overlay layers", () => {
     ]);
   });
 
+  it.each(["linear", "log", "percentage"] as const)(
+    "uses the shared %s scale for the crosshair",
+    (priceScaleMode) => {
+      const viewport = { ...createViewport(), priceScaleMode };
+      const state = createState({ viewport, crosshair: createCrosshair() });
+      const renderContext = createRenderContext(state);
+
+      expect(() => createCrosshairLayer().render(renderContext)).not.toThrow();
+
+      const horizontalLine = callsNamed(renderContext, "moveTo")[1];
+      const expectedY = priceToY(
+        state.crosshair?.price ?? 0,
+        state.priceScale,
+        state.layout.plotArea.y,
+        state.layout.plotArea.height
+      );
+
+      expect(horizontalLine.args[1]).toBeCloseTo(expectedY);
+      expect(expectedY).toBeGreaterThanOrEqual(state.layout.plotArea.y);
+      expect(expectedY).toBeLessThanOrEqual(
+        state.layout.plotArea.y + state.layout.plotArea.height
+      );
+    }
+  );
+
   it("draws nothing when crosshair is absent", () => {
     const renderContext = createRenderContext();
 
@@ -302,6 +347,19 @@ describe("overlay layers", () => {
       "Turnover: 1350"
     ]);
     expect(text).not.toContain("Open: 999");
+  });
+
+  it("uses the host time formatter for the candle tooltip", () => {
+    const renderContext = createRenderContext(
+      createState({
+        crosshair: createCrosshair(),
+        formatTime: (time, timeframe) => `SH:${time}:${timeframe}`
+      })
+    );
+
+    createTooltipLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "fillText")[0]?.args[0]).toBe("Time: SH:3:1d");
   });
 
   it("does not require host metadata to render the tooltip", () => {

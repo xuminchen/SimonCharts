@@ -1,6 +1,7 @@
-import { computeVisiblePriceRange } from "../../viewport/priceRange";
-import { indexToX, priceToY } from "../../viewport/viewport";
+import { priceToY } from "../../viewport/priceScale";
+import { indexToX } from "../../viewport/viewport";
 import type { Candle } from "../../model/market";
+import type { TooltipFormattingContext } from "../../series/seriesTypes";
 import type { ChartLayer, ChartLayout } from "../renderTypes";
 
 const tooltipPadding = 8;
@@ -27,15 +28,16 @@ export function createTooltipLayer(): ChartLayer {
       }
 
       const candle = series.candles[crosshair.index];
-      const lines = createTooltipLines(candle);
-      const priceRange = computeVisiblePriceRange(series, viewport.visibleRange);
+      const lines = createTooltipLines(candle, {
+        formatTime: state.formatTime,
+        timeframe: series.timeframe
+      });
       const x = indexToX(crosshair.index, viewport, plotArea.x);
       const y = priceToY(
         crosshair.price,
-        priceRange,
+        state.priceScale,
         plotArea.y,
-        plotArea.height,
-        viewport.priceScaleMode
+        plotArea.height
       );
 
       context.save();
@@ -68,9 +70,12 @@ export function createTooltipLayer(): ChartLayer {
   };
 }
 
-function createTooltipLines(candle: Candle): string[] {
+function createTooltipLines(
+  candle: Candle,
+  formatting: TooltipFormattingContext
+): string[] {
   return [
-    `Time: ${candle.time}`,
+    `Time: ${formatting.formatTime(candle.time, formatting.timeframe)}`,
     `Open: ${formatNumber(candle.open)}`,
     `High: ${formatNumber(candle.high)}`,
     `Low: ${formatNumber(candle.low)}`,

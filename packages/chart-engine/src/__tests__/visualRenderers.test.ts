@@ -5,7 +5,9 @@ import {
   createLineVisualRenderer,
   createMarkerVisualRenderer,
   createVisualLayer,
+  createVisualRendererRegistry,
   defaultChartTheme,
+  defaultChartTimeFormatter,
   type CandleSeries,
   type ChartLayout,
   type IndicatorVisualOutput,
@@ -17,6 +19,7 @@ import {
   type VisualRenderer,
   type VisualRendererRegistry
 } from "../index";
+import { createMainPanelPriceScale } from "../render/mainPriceScale";
 
 interface DrawCall {
   name: string;
@@ -148,12 +151,26 @@ function createPanel(id = "main", kind: PanelArea["kind"] = "main"): PanelArea {
 }
 
 function createState(override: Partial<RenderState> = {}): RenderState {
+  const series = override.series ?? createSeries();
+  const viewport = override.viewport ?? createViewport();
+  const visualOutputs = override.visualOutputs ?? [];
+
   return {
-    series: createSeries(),
-    viewport: createViewport(),
+    series,
+    viewport,
+    priceScale:
+      override.priceScale ??
+      createMainPanelPriceScale(
+        series,
+        viewport.visibleRange,
+        viewport.priceScaleMode,
+        visualOutputs
+      ),
+    formatTime: defaultChartTimeFormatter,
     theme: defaultChartTheme,
     layout: createLayout(),
     panels: [createPanel()],
+    visualOutputs,
     ...override
   };
 }
@@ -163,6 +180,7 @@ function createVisualContext(output: IndicatorVisualOutput, state = createState(
     context: new FakeCanvasContext() as unknown as CanvasRenderingContext2D,
     output,
     panel: state.panels?.[0] ?? createPanel(),
+    valueScale: state.priceScale,
     state
   };
 }
@@ -428,6 +446,12 @@ describe("visual renderers", () => {
   });
 
   it("returns neutral tooltip rows from hit results", () => {
+    const formatting = {
+      formatTime: (time: number, timeframe: CandleSeries["timeframe"]) =>
+        `SH:${time}:${timeframe}`,
+      timeframe: "1m" as const
+    };
+
     expect(
       createLineVisualRenderer().getTooltipRows({
         outputId: "line",
@@ -435,9 +459,9 @@ describe("visual renderers", () => {
         time: 4,
         value: 12.345,
         distance: 0
-      })
+      }, formatting)
     ).toEqual([
-      { label: "Time", value: "4" },
+      { label: "Time", value: "SH:4:1m" },
       { label: "Value", value: "12.35" }
     ]);
 
@@ -447,8 +471,8 @@ describe("visual renderers", () => {
         outputType: "marker",
         time: 5,
         distance: 0
-      })
-    ).toEqual([{ label: "Time", value: "5" }]);
+      }, formatting)
+    ).toEqual([{ label: "Time", value: "SH:5:1m" }]);
   });
 
   it.each([
@@ -471,6 +495,212 @@ describe("visual renderers", () => {
 });
 
 describe("visual layer", () => {
+  it("shares one linear value scale across outputs in the same sub panel", () => {
+    const valueScales: Parameters<VisualRenderer["render"]>[0]["valueScale"][] = [];
+    const registry = createRangeProbeRegistry(
+      {
+        macd: { min: -5, max: 4 },
+        signal: { min: -2, max: 3 }
+      },
+      (context) => {
+        valueScales.push(context.valueScale);
+      }
+    );
+    const visualOutputs: IndicatorVisualOutput[] = [
+      { ...createRenderableOutput("histogram"), id: "macd", panelId: "macd" },
+      { ...createRenderableOutput("line"), id: "signal", panelId: "macd" }
+    ];
+    const state = createState({
+      visualOutputs,
+      panels: [createPanel("main", "main"), createPanel("macd", "sub")]
+    });
+
+    createVisualLayer(registry).render(createLayerContext(state));
+
+    expect(valueScales).toHaveLength(2);
+    expect(valueScales[0]).toBe(valueScales[1]);
+    expect(valueScales[0].mode).toBe("linear");
+  });
+
+  it.each(["log", "percentage"] as const)(
+    "shares the main %s scale while keeping sub-panel values linear",
+    (priceScaleMode) => {
+      const captured: Array<{
+        outputId: string;
+        valueScale: Parameters<VisualRenderer["render"]>[0]["valueScale"];
+      }> = [];
+      const registry = createRangeProbeRegistry(
+        {
+          mainLine: { min: 8, max: 20 },
+          macd: { min: -5, max: 4 }
+        },
+        (context) => {
+          captured.push({ outputId: context.output.id, valueScale: context.valueScale });
+        }
+      );
+      const viewport = { ...createViewport(), priceScaleMode };
+      const visualOutputs: IndicatorVisualOutput[] = [
+        { ...createRenderableOutput("line"), id: "mainLine", panelId: "main" },
+        { ...createRenderableOutput("histogram"), id: "macd", panelId: "macd" }
+      ];
+      const state = createState({
+        viewport,
+        visualOutputs,
+        panels: [createPanel("main", "main"), createPanel("macd", "sub")]
+      });
+
+      createVisualLayer(registry).render(createLayerContext(state));
+
+      expect(captured[0].valueScale).toBe(state.priceScale);
+      expect(captured[1].valueScale).not.toBe(state.priceScale);
+      expect(captured[1].valueScale).toMatchObject({ mode: "linear", basePrice: 1 });
+      expect(captured[1].valueScale.min).toBeLessThan(-5);
+      expect(captured[1].valueScale.max).toBeGreaterThan(4);
+    }
+  );
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "keeps BOLL output inside the main plot on the shared %s scale",
+    (priceScaleMode) => {
+      const registry = createVisualRendererRegistry();
+      registry.register(createBandVisualRenderer());
+      const viewport = { ...createViewport(), priceScaleMode };
+      const visualOutputs: IndicatorVisualOutput[] = [
+        {
+          id: "boll",
+          label: "BOLL",
+          type: "band",
+          panelId: "main",
+          upper: [
+            { time: 1, value: 30 },
+            { time: 2, value: 28 }
+          ],
+          lower: [
+            { time: 1, value: 5 },
+            { time: 2, value: 6 }
+          ]
+        }
+      ];
+      const state = createState({ viewport, visualOutputs });
+      const layerContext = createLayerContext(state);
+
+      expect(() => createVisualLayer(registry).render(layerContext)).not.toThrow();
+
+      const coordinates = (layerContext.context as unknown as FakeCanvasContext).calls
+        .filter((call) => call.name === "moveTo" || call.name === "lineTo")
+        .map((call) => Number(call.args[1]));
+
+      expect(coordinates.length).toBeGreaterThan(0);
+      expect(
+        coordinates.every(
+          (y) =>
+            Number.isFinite(y) &&
+            y >= state.layout.plotArea.y &&
+            y <= state.layout.plotArea.y + state.layout.plotArea.height
+        )
+      ).toBe(true);
+    }
+  );
+
+  it("skips non-positive main-panel points on a log scale", () => {
+    const registry = createVisualRendererRegistry();
+    registry.register(createLineVisualRenderer());
+    const viewport = { ...createViewport(), priceScaleMode: "log" as const };
+    const visualOutputs: IndicatorVisualOutput[] = [
+      {
+        id: "main-line",
+        label: "Main line",
+        type: "line",
+        panelId: "main",
+        values: [
+          { time: 1, value: -1 },
+          { time: 2, value: 12 }
+        ]
+      }
+    ];
+    const state = createState({ viewport, visualOutputs });
+    const layerContext = createLayerContext(state);
+
+    expect(() => createVisualLayer(registry).render(layerContext)).not.toThrow();
+    expect(callsNamed(layerContext.context as unknown as FakeCanvasContext, "arc")).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      "histogram",
+      {
+        id: "main-histogram",
+        label: "Main histogram",
+        type: "histogram",
+        panelId: "main",
+        values: [
+          { time: 1, value: -1 },
+          { time: 2, value: 12 }
+        ]
+      } satisfies IndicatorVisualOutput,
+      "fillRect"
+    ],
+    [
+      "marker",
+      {
+        id: "main-marker",
+        label: "Main marker",
+        type: "marker",
+        panelId: "main",
+        marks: [
+          { id: "negative", time: 1, price: -1 },
+          { id: "positive", time: 2, price: 12 }
+        ]
+      } satisfies IndicatorVisualOutput,
+      "arc"
+    ]
+  ] as const)("skips non-positive main-panel %s points on a log scale", (type, output, drawCall) => {
+    const registry = createVisualRendererRegistry();
+    registry.register(
+      type === "histogram" ? createHistogramVisualRenderer() : createMarkerVisualRenderer()
+    );
+    const viewport = { ...createViewport(), priceScaleMode: "log" as const };
+    const state = createState({ viewport, visualOutputs: [output] });
+    const layerContext = createLayerContext(state);
+
+    expect(() => createVisualLayer(registry).render(layerContext)).not.toThrow();
+    expect(callsNamed(layerContext.context as unknown as FakeCanvasContext, drawCall)).toHaveLength(1);
+  });
+
+  it.each(["log", "percentage"] as const)(
+    "renders finite MACD geometry when the main scale is %s",
+    (priceScaleMode) => {
+      const registry = createVisualRendererRegistry();
+      registry.register(createHistogramVisualRenderer());
+      const viewport = { ...createViewport(), priceScaleMode };
+      const visualOutputs: IndicatorVisualOutput[] = [
+        {
+          id: "macd",
+          label: "MACD",
+          type: "histogram",
+          panelId: "macd",
+          values: [
+            { time: 1, value: -2 },
+            { time: 2, value: 3 }
+          ]
+        }
+      ];
+      const state = createState({
+        viewport,
+        visualOutputs,
+        panels: [createPanel("main", "main"), createPanel("macd", "sub")]
+      });
+      const layerContext = createLayerContext(state);
+
+      expect(() => createVisualLayer(registry).render(layerContext)).not.toThrow();
+      expect(
+        callsNamed(layerContext.context as unknown as FakeCanvasContext, "fillRect").every((call) =>
+          call.args.slice(0, 4).every((value) => Number.isFinite(value))
+        )
+      ).toBe(true);
+    }
+  );
+
   it("routes visual outputs through registry.require and panel ids", () => {
     const received: Array<{ type: IndicatorVisualOutput["type"]; panelId: string }> = [];
     const registry = createProbeRegistry((context) => {

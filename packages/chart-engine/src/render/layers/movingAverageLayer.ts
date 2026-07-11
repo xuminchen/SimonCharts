@@ -1,5 +1,5 @@
-import { computeVisiblePriceRange } from "../../viewport/priceRange";
-import { indexToX, priceToY } from "../../viewport/viewport";
+import { priceToY, type PriceScale } from "../../viewport/priceScale";
+import { indexToX } from "../../viewport/viewport";
 import type { MovingAveragePoint } from "../../indicators/movingAverage";
 import type { ViewportState } from "../../model/runtime";
 import type { ChartLayer, ChartLayout } from "../renderTypes";
@@ -21,15 +21,13 @@ export function createMovingAverageLayer(): ChartLayer {
         return;
       }
 
-      const priceRange = computeVisiblePriceRange(series, bounds);
-
       movingAverages.forEach((points, seriesIndex) => {
         const color =
           theme.colors.maLines[seriesIndex % theme.colors.maLines.length] ?? theme.colors.text;
 
         context.strokeStyle = color;
         context.lineWidth = theme.lineWidths.indicator;
-        drawMovingAveragePath(context, points, bounds, viewport, layout, priceRange);
+        drawMovingAveragePath(context, points, bounds, viewport, layout, state.priceScale);
       });
     }
   };
@@ -41,7 +39,7 @@ function drawMovingAveragePath(
   bounds: { from: number; to: number },
   viewport: ViewportState,
   layout: ChartLayout,
-  priceRange: { min: number; max: number }
+  priceScale: PriceScale
 ): void {
   let hasOpenPath = false;
   let hasSegment = false;
@@ -49,7 +47,11 @@ function drawMovingAveragePath(
   for (let index = bounds.from; index <= bounds.to; index += 1) {
     const point = points[index];
 
-    if (!point || point.value === undefined) {
+    if (
+      !point ||
+      point.value === undefined ||
+      (priceScale.mode === "log" && point.value <= 0)
+    ) {
       if (hasSegment) {
         context.stroke();
       }
@@ -62,10 +64,9 @@ function drawMovingAveragePath(
     const x = indexToX(index, viewport, layout.plotArea.x);
     const y = priceToY(
       point.value,
-      priceRange,
+      priceScale,
       layout.plotArea.y,
-      layout.plotArea.height,
-      viewport.priceScaleMode
+      layout.plotArea.height
     );
 
     if (!hasOpenPath) {

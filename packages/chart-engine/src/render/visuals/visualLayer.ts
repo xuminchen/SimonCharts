@@ -3,6 +3,7 @@ import type { PanelArea } from "../../panels/panelTypes";
 import { mergeVisualAutoscaleRanges } from "../../visuals/visualAutoscale";
 import type { VisualAutoscaleRange, VisualRenderer } from "../../visuals/visualTypes";
 import type { VisualRendererRegistry } from "../../visuals/visualRegistry";
+import { createPriceScaleFromBounds, type PriceScale } from "../../viewport/priceScale";
 import type { ChartLayer, LayerRenderContext } from "../renderTypes";
 
 interface RoutedVisualOutput {
@@ -17,17 +18,53 @@ export function createVisualLayer(registry: VisualRendererRegistry): ChartLayer 
     render(context) {
       const routedOutputs = routeVisualOutputs(context, registry);
       const rangeByPanelId = createPanelValueRanges(routedOutputs);
+      const valueScaleByPanelId = createPanelValueScales(
+        routedOutputs,
+        rangeByPanelId,
+        context.state.priceScale
+      );
 
       for (const routedOutput of routedOutputs) {
+        const valueRange = rangeByPanelId.get(routedOutput.panel.id);
+        const valueScale = valueScaleByPanelId.get(routedOutput.panel.id)!;
+
         routedOutput.renderer.render({
           ...context,
           output: routedOutput.output,
           panel: routedOutput.panel,
-          valueRange: rangeByPanelId.get(routedOutput.panel.id)
+          valueScale,
+          valueRange
         });
       }
     }
   };
+}
+
+function createPanelValueScales(
+  routedOutputs: RoutedVisualOutput[],
+  rangeByPanelId: Map<string, VisualAutoscaleRange | undefined>,
+  mainPriceScale: PriceScale
+): Map<string, PriceScale> {
+  const valueScaleByPanelId = new Map<string, PriceScale>();
+
+  for (const routedOutput of routedOutputs) {
+    if (valueScaleByPanelId.has(routedOutput.panel.id)) {
+      continue;
+    }
+
+    valueScaleByPanelId.set(
+      routedOutput.panel.id,
+      routedOutput.panel.kind === "main"
+        ? mainPriceScale
+        : createLinearValueScale(rangeByPanelId.get(routedOutput.panel.id))
+    );
+  }
+
+  return valueScaleByPanelId;
+}
+
+function createLinearValueScale(range: VisualAutoscaleRange | undefined): PriceScale {
+  return createPriceScaleFromBounds(range ?? { min: 0, max: 1 }, 1, "linear");
 }
 
 function routeVisualOutputs(

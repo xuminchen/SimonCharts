@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  createMainPanelPriceScale,
   createOhlcMagnetTargetsFromSeries,
   getMagnetSnapState,
+  priceToY,
   type CandleSeries,
   type ViewportState
 } from "../index";
@@ -27,6 +29,8 @@ const viewport: ViewportState = {
   priceScaleMode: "linear"
 };
 
+const linearPriceScale = { mode: "linear", basePrice: 1, min: 10, max: 20 } as const;
+
 describe("OHLC magnet target projection", () => {
   it("creates targets for visible candle OHLC values", () => {
     expect(
@@ -34,7 +38,7 @@ describe("OHLC magnet target projection", () => {
         series: createSeries(),
         viewport,
         plotArea: { x: 100, y: 20, width: 200, height: 100 },
-        priceRange: { min: 10, max: 20 },
+        priceScale: linearPriceScale,
         fields: ["high", "low"]
       })
     ).toEqual([
@@ -45,11 +49,12 @@ describe("OHLC magnet target projection", () => {
     ]);
   });
 
-  it("uses visible price range when priceRange is omitted", () => {
+  it("uses the supplied shared price scale", () => {
     const targets = createOhlcMagnetTargetsFromSeries({
       series: createSeries(),
       viewport,
       plotArea: { x: 0, y: 0, width: 200, height: 100 },
+      priceScale: linearPriceScale,
       fields: ["close"]
     });
 
@@ -63,7 +68,7 @@ describe("OHLC magnet target projection", () => {
       series: createSeries(),
       viewport: { ...viewport, visibleRange: { from: 2, to: 2 } },
       plotArea: { x: 0, y: 0, width: 200, height: 100 },
-      priceRange: { min: 10, max: 20 }
+      priceScale: linearPriceScale
     });
 
     expect(targets.map((target) => target.field)).toEqual(["open", "high", "low", "close"]);
@@ -75,7 +80,7 @@ describe("OHLC magnet target projection", () => {
       series: createSeries(),
       viewport: { ...viewport, visibleRange: { from: -5, to: 20 } },
       plotArea: { x: 0, y: 0, width: 200, height: 100 },
-      priceRange: { min: 0, max: 20 },
+      priceScale: { mode: "linear", basePrice: 1, min: 0, max: 20 },
       fields: ["open"]
     });
 
@@ -90,7 +95,8 @@ describe("OHLC magnet target projection", () => {
       createOhlcMagnetTargetsFromSeries({
         series: { ...createSeries(), candles: [] },
         viewport,
-        plotArea: { x: 0, y: 0, width: 100, height: 100 }
+        plotArea: { x: 0, y: 0, width: 100, height: 100 },
+        priceScale: linearPriceScale
       })
     ).toEqual([]);
 
@@ -98,7 +104,8 @@ describe("OHLC magnet target projection", () => {
       createOhlcMagnetTargetsFromSeries({
         series: createSeries(),
         viewport: { ...viewport, visibleRange: { from: 4, to: 2 } },
-        plotArea: { x: 0, y: 0, width: 100, height: 100 }
+        plotArea: { x: 0, y: 0, width: 100, height: 100 },
+        priceScale: linearPriceScale
       })
     ).toEqual([]);
   });
@@ -108,7 +115,7 @@ describe("OHLC magnet target projection", () => {
       series: createSeries(),
       viewport,
       plotArea: { x: 100, y: 20, width: 200, height: 100 },
-      priceRange: { min: 10, max: 20 },
+      priceScale: linearPriceScale,
       fields: ["high"]
     });
 
@@ -116,4 +123,40 @@ describe("OHLC magnet target projection", () => {
       "ohlc"
     );
   });
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "projects drawing targets with the shared %s scale",
+    (priceScaleMode) => {
+      const series = createSeries();
+      const priceScale = createMainPanelPriceScale(
+        series,
+        viewport.visibleRange,
+        priceScaleMode,
+        [
+          {
+            id: "boll",
+            label: "BOLL",
+            type: "band",
+            panelId: "main",
+            upper: [{ time: 2, value: 30 }],
+            lower: [{ time: 2, value: 5 }]
+          }
+        ]
+      );
+      const plotArea = { x: 100, y: 20, width: 200, height: 100 };
+      const targets = createOhlcMagnetTargetsFromSeries({
+        series,
+        viewport,
+        plotArea,
+        priceScale,
+        fields: ["high"]
+      });
+
+      expect(targets).toHaveLength(2);
+      expect(targets[0].y).toBeCloseTo(
+        priceToY(series.candles[1].high, priceScale, plotArea.y, plotArea.height)
+      );
+      expect(targets.every((target) => target.y >= 20 && target.y <= 120)).toBe(true);
+    }
+  );
 });

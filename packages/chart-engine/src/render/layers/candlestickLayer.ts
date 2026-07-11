@@ -1,5 +1,5 @@
-import { computeVisiblePriceRange } from "../../viewport/priceRange";
-import { indexToX, priceToY } from "../../viewport/viewport";
+import { priceToY, type PriceScale } from "../../viewport/priceScale";
+import { indexToX } from "../../viewport/viewport";
 import type { Candle } from "../../model/market";
 import type { ViewportState } from "../../model/runtime";
 import type { ChartLayer, ChartLayout } from "../renderTypes";
@@ -15,8 +15,6 @@ export function createCandlestickLayer(): ChartLayer {
         return;
       }
 
-      const priceRange = computeVisiblePriceRange(series, bounds);
-
       for (let index = bounds.from; index <= bounds.to; index += 1) {
         const candle = series.candles[index];
         const color =
@@ -25,8 +23,8 @@ export function createCandlestickLayer(): ChartLayer {
         context.strokeStyle = color;
         context.fillStyle = color;
         context.lineWidth = theme.lineWidths.candleWick;
-        drawWick(context, candle, index, viewport, layout, priceRange);
-        drawBody(context, candle, index, viewport, layout, priceRange);
+        drawWick(context, candle, index, viewport, layout, state.priceScale);
+        drawBody(context, candle, index, viewport, layout, state.priceScale);
       }
     }
   };
@@ -38,22 +36,20 @@ function drawWick(
   index: number,
   viewport: ViewportState,
   layout: ChartLayout,
-  priceRange: { min: number; max: number }
+  priceScale: PriceScale
 ): void {
   const x = indexToX(index, viewport, layout.plotArea.x);
   const highY = priceToY(
     candle.high,
-    priceRange,
+    priceScale,
     layout.plotArea.y,
-    layout.plotArea.height,
-    viewport.priceScaleMode
+    layout.plotArea.height
   );
   const lowY = priceToY(
     candle.low,
-    priceRange,
+    priceScale,
     layout.plotArea.y,
-    layout.plotArea.height,
-    viewport.priceScaleMode
+    layout.plotArea.height
   );
 
   context.beginPath();
@@ -68,22 +64,20 @@ function drawBody(
   index: number,
   viewport: ViewportState,
   layout: ChartLayout,
-  priceRange: { min: number; max: number }
+  priceScale: PriceScale
 ): void {
   const x = indexToX(index, viewport, layout.plotArea.x);
   const openY = priceToY(
     candle.open,
-    priceRange,
+    priceScale,
     layout.plotArea.y,
-    layout.plotArea.height,
-    viewport.priceScaleMode
+    layout.plotArea.height
   );
   const closeY = priceToY(
     candle.close,
-    priceRange,
+    priceScale,
     layout.plotArea.y,
-    layout.plotArea.height,
-    viewport.priceScaleMode
+    layout.plotArea.height
   );
   const bodyWidth = Math.max(1, viewport.candleWidth * 0.7);
   const bodyTop = Math.min(openY, closeY);

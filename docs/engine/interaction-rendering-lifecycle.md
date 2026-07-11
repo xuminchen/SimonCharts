@@ -21,6 +21,13 @@ Typical flow:
 
 Canvas rendering keeps clear behavior explicit. `renderStaticChart()` does not clear by default, because some hosts paint or compose the static surface themselves. It can clear and paint `theme.colors.background` through options. `renderOverlay()` clears by default, because crosshair and tooltip surfaces are typically transient, and can opt out when a host owns overlay clearing.
 
+Every `RenderState` supplies a required shared `priceScale` and `formatTime`. The host creates the
+main scale from the current series, visible range, scale mode, and visible main-panel outputs, then
+passes that same object to rendering, `InteractionEngine.setPriceScale()`, and OHLC magnet target
+projection. Time labels and tooltip rows always receive the series timeframe and the host formatter;
+the Engine does not select a locale or timezone. Grid rendering applies `theme.lineDashes.grid`
+inside `save()`/`restore()` so later layers do not inherit the dash pattern.
+
 The host owns native or browser event handling and canvas drawing calls. The engine owns only neutral chart input, interaction state, invalidation, pass scheduling, and metrics.
 
 The engine must stay independent from TradingReviewSystem and other host applications. It does not import DOM events, host APIs, stores, schemas, routes, review, strategy, watchlist, AI, or other product business models.

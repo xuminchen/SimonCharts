@@ -1,4 +1,5 @@
-import type { Candle, CandleSeries } from "../model/market";
+import type { Candle, CandleSeries, Timeframe } from "../model/market";
+import type { ChartTimeFormatter } from "../model/formatters";
 import type { ChartLayout, LayerRenderContext } from "../render/renderTypes";
 
 export const supportedSeriesTypes = [
@@ -64,6 +65,11 @@ export interface SeriesTooltipRow {
   value: string;
 }
 
+export interface TooltipFormattingContext {
+  formatTime: ChartTimeFormatter;
+  timeframe: Timeframe;
+}
+
 export interface SeriesRendererContext extends LayerRenderContext {
   model: SeriesRenderModel;
   layout: ChartLayout;
@@ -74,5 +80,8 @@ export interface SeriesRenderer {
   render(context: SeriesRendererContext): void;
   getAutoscale(model: SeriesRenderModel): SeriesAutoscaleRange | undefined;
   hitTest(model: SeriesRenderModel, x: number, y: number): SeriesHitTestResult | undefined;
-  getTooltipRows(hit: SeriesHitTestResult): SeriesTooltipRow[];
+  getTooltipRows(
+    hit: SeriesHitTestResult,
+    formatting: TooltipFormattingContext
+  ): SeriesTooltipRow[];
 }

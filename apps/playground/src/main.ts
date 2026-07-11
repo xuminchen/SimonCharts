@@ -12,6 +12,7 @@ import {
   createInteractionSession,
   createLineVisualRenderer,
   createMarkerVisualRenderer,
+  createMainPanelPriceScale,
   createDefaultDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingLayer,
@@ -26,6 +27,7 @@ import {
   coreIndicatorDefinitions,
   createDrawingAnchorMagnetTargets,
   defaultChartTheme,
+  defaultChartTimeFormatter,
   builtInDrawingToolDefinitions,
   createOhlcMagnetTargetsFromSeries,
   deserializeDrawingObject,
@@ -73,6 +75,7 @@ import type {
   MagnetSnapTarget,
   SeriesType,
   ThemeMode,
+  PriceScale,
   ViewportState
 } from "@simoncharts/chart-engine";
 import { createDrawingToolbar } from "./drawingToolbar";
@@ -362,9 +365,13 @@ const darkChartTheme: ChartTheme = {
       text: "#f8fafc",
       border: "#475569"
     }
+  },
+  lineDashes: {
+    grid: [1, 3]
   }
 };
 let viewport: ViewportState | undefined;
+let priceScale: PriceScale | undefined;
 let crosshair: ChartCrosshairState | undefined;
 let layout: ChartLayout | undefined;
 let panels: PanelArea[] = [];
@@ -384,6 +391,20 @@ let staticCanvasRenderCount = 0;
 let overlayCanvasRenderCount = 0;
 let activeIndicatorDefinition: CoreIndicatorDefinition | undefined;
 let activeVisualOutputs: IndicatorVisualOutput[] = playgroundVisualOutputs;
+
+function updateMainPriceScale(): void {
+  if (!viewport) {
+    throw new Error("Chart viewport is not ready");
+  }
+
+  priceScale = createMainPanelPriceScale(
+    fixtureDailyCandleSeries,
+    viewport.visibleRange,
+    viewport.priceScaleMode,
+    activeVisualOutputs
+  );
+  interactionEngine?.setPriceScale(priceScale);
+}
 
 const interactionSession = createInteractionSession({
   onEvent(event) {
@@ -443,6 +464,9 @@ function syncLayout(): void {
       visibleRange
     };
   }
+  if (!priceScale || layoutChanged) {
+    updateMainPriceScale();
+  }
   chartEngine.setViewport(viewport);
 
   if (layoutChanged || !interactionEngine) {
@@ -490,7 +514,7 @@ function createRenderContext(
   context: CanvasRenderingContext2D,
   renderLayout: ChartLayout = layout as ChartLayout
 ): LayerRenderContext {
-  if (!layout || !viewport) {
+  if (!layout || !viewport || !priceScale) {
     throw new Error("Chart layout is not ready");
   }
 
@@ -499,6 +523,8 @@ function createRenderContext(
     state: {
       series: fixtureDailyCandleSeries,
       viewport,
+      priceScale,
+      formatTime: defaultChartTimeFormatter,
       theme: getActiveTheme(),
       layout: renderLayout,
       movingAverages,
@@ -1122,6 +1148,7 @@ function handleInteractionEvent(event: InteractionEvent): void {
 
   if (event.type === "viewportChanged") {
     viewport = event.viewport;
+    updateMainPriceScale();
     chartEngine.setViewport(viewport);
     invalidateRender({
       layers: ["axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair"],
@@ -1144,7 +1171,7 @@ function handleInteractionEvent(event: InteractionEvent): void {
 }
 
 function createCurrentInteractionEngine(): InteractionEngine {
-  if (!layout || !viewport) {
+  if (!layout || !viewport || !priceScale) {
     throw new Error("Chart layout is not ready");
   }
 
@@ -1153,6 +1180,7 @@ function createCurrentInteractionEngine(): InteractionEngine {
   return createInteractionEngine({
     series: fixtureDailyCandleSeries,
     viewport,
+    priceScale,
     width: mainPanelLayout.plotArea.width,
     plotLeft: mainPanelLayout.plotArea.x,
     plotTop: mainPanelLayout.plotArea.y,
@@ -1231,6 +1259,7 @@ function clearIndicatorInteractionState(): void {
   setDrawingHoverId(undefined);
   crosshair = undefined;
   interactionEngine = undefined;
+  priceScale = undefined;
   lastKeyboardCommandText = "none";
   interactionSession.handleInput({ type: "leave" });
   renderStatic();
@@ -1267,11 +1296,12 @@ function getDrawingMagnetTargets(exclude?: {
       )
     : drawingTargets;
   const ohlcTargets =
-    layout && viewport
+    layout && viewport && priceScale
       ? createOhlcMagnetTargetsFromSeries({
           series: fixtureDailyCandleSeries,
           viewport,
-          plotArea: getMainPanelLayout().plotArea
+          plotArea: getMainPanelLayout().plotArea,
+          priceScale
         })
       : [];
 

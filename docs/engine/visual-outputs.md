@@ -15,11 +15,16 @@ registry.register(createMarkerVisualRenderer());
 
 Then render them through `createVisualLayer(registry)` and pass outputs in `RenderState.visualOutputs`.
 
+Main-panel outputs receive the exact `RenderState.priceScale` used by candles, axes, crosshair,
+interaction, and OHLC magnet projection. Sub-panel outputs receive a separate linear
+`valueScale`, so oscillators such as MACD can render zero and negative values even when the main
+panel uses log or percentage mode. In log mode, non-positive main-panel values are skipped.
+
 The visual subsystem includes:
 
 - `getVisualAutoscaleRange(output)` for panel scale calculation
 - `hitTestVisualOutput(context, x, y)` for pointer interaction
-- `getVisualTooltipRows(hit)` for neutral tooltip rows
+- `renderer.getTooltipRows(hit, { formatTime, timeframe })` for host-formatted neutral tooltip rows
 
 ## Core Indicators
 

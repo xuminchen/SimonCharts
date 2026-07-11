@@ -9,7 +9,9 @@ import type {
   VisualRenderContext,
   VisualTooltipRow
 } from "../../../visuals/visualTypes";
-import { indexToX, priceToY } from "../../../viewport/viewport";
+import type { TooltipFormattingContext } from "../../../series/seriesTypes";
+import { priceToY } from "../../../viewport/priceScale";
+import { indexToX } from "../../../viewport/viewport";
 
 export interface VisibleValuePoint {
   index: number;
@@ -97,6 +99,13 @@ export function isFiniteNumber(value: number | null | undefined): value is numbe
   return typeof value === "number" && Number.isFinite(value);
 }
 
+export function isRenderableVisualValue(
+  context: VisualCoordinateContext,
+  value: number | null | undefined
+): value is number {
+  return isFiniteNumber(value) && !(context.valueScale.mode === "log" && value <= 0);
+}
+
 export function isVisibleIndex(context: VisualCoordinateContext, index: number): boolean {
   return index >= context.state.viewport.visibleRange.from && index <= context.state.viewport.visibleRange.to;
 }
@@ -107,15 +116,14 @@ export function xForVisualIndex(context: VisualCoordinateContext, index: number)
 
 export function yForVisualValue(
   context: VisualCoordinateContext,
-  range: VisualAutoscaleRange,
+  _range: VisualAutoscaleRange,
   value: number
 ): number {
   return priceToY(
     value,
-    range,
+    context.valueScale,
     context.panel.plotArea.y,
-    context.panel.plotArea.height,
-    context.state.viewport.priceScaleMode
+    context.panel.plotArea.height
   );
 }
 
@@ -141,7 +149,7 @@ export function getVisibleIndicatorPoint(
   indexByTime: Map<number, number>,
   point: IndicatorPoint
 ): VisibleValuePoint | undefined {
-  if (!isFiniteNumber(point.value)) {
+  if (!isRenderableVisualValue(context, point.value)) {
     return undefined;
   }
 
@@ -187,8 +195,13 @@ export function getNearestVisualHit(
   return nearestHit;
 }
 
-export function getDefaultVisualTooltipRows(hit: VisualHitTestResult): VisualTooltipRow[] {
-  const rows: VisualTooltipRow[] = [{ label: "Time", value: String(hit.time) }];
+export function getDefaultVisualTooltipRows(
+  hit: VisualHitTestResult,
+  formatting: TooltipFormattingContext
+): VisualTooltipRow[] {
+  const rows: VisualTooltipRow[] = [
+    { label: "Time", value: formatting.formatTime(hit.time, formatting.timeframe) }
+  ];
 
   if (isFiniteNumber(hit.value)) {
     rows.push({ label: "Value", value: formatVisualValue(hit.value) });

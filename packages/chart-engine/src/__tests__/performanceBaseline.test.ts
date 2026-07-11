@@ -4,9 +4,11 @@ import {
   computeVisiblePriceRange,
   coreIndicatorIds,
   createFiguresForDrawing,
+  createMainPanelPriceScale,
   createRenderScheduler,
   createSourceSeriesRenderModel,
   defaultChartTheme,
+  defaultChartTimeFormatter,
   drawingTypes,
   renderStaticChart
 } from "../index";
@@ -44,6 +46,7 @@ class FakeCanvasContext {
   rect(_x: number, _y: number, _width: number, _height: number): void {}
   clip(): void {}
   clearRect(_x: number, _y: number, _width: number, _height: number): void {}
+  setLineDash(_dash: number[]): void {}
 }
 
 describe("performance baseline", () => {
@@ -220,6 +223,13 @@ function createRenderState(series: CandleSeries, viewport: ViewportState): Rende
     series,
     seriesType: "candles",
     viewport,
+    priceScale: createMainPanelPriceScale(
+      series,
+      viewport.visibleRange,
+      viewport.priceScaleMode,
+      []
+    ),
+    formatTime: defaultChartTimeFormatter,
     theme: defaultChartTheme,
     layout: createLayout()
   };

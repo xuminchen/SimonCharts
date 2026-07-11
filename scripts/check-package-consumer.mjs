@@ -11,6 +11,7 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  createMainPanelPriceScale,
   beginDrawingHandleDrag,
   beginDrawingMoveDrag,
   beginDrawingSelectionBox,
@@ -356,7 +357,13 @@ if (
 const ohlcTargets = createOhlcMagnetTargetsFromSeries({
   series: fixtureDailyCandleSeries,
   viewport: engine.getState().viewport,
-  plotArea: { x: 0, y: 0, width: 640, height: 320 }
+  plotArea: { x: 0, y: 0, width: 640, height: 320 },
+  priceScale: createMainPanelPriceScale(
+    fixtureDailyCandleSeries,
+    engine.getState().viewport.visibleRange,
+    engine.getState().viewport.priceScaleMode,
+    []
+  )
 });
 
 if (

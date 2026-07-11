@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  createAxisLayer,
   createCandlestickLayer,
+  createGridLayer,
   createMovingAverageLayer,
   createStaticLayers,
   createVolumeLayer,
+  defaultChartTimeFormatter,
+  priceToY,
   renderStaticChart
 } from "../index";
+import { createMainPanelPriceScale } from "../render/mainPriceScale";
 import type {
   CandleSeries,
   ChartLayer,
   ChartLayout,
+  IndicatorVisualOutput,
   LayerRenderContext,
   RenderState,
   ViewportState
@@ -60,6 +66,10 @@ class FakeCanvasContext {
 
   restore(): void {
     this.record("restore");
+  }
+
+  setLineDash(dash: number[]): void {
+    this.record("setLineDash", [...dash]);
   }
 
   rect(x: number, y: number, width: number, height: number): void {
@@ -118,9 +128,22 @@ function createLayout(): ChartLayout {
 }
 
 function createState(override: Partial<RenderState> = {}): RenderState {
+  const series = override.series ?? createSeries();
+  const viewport = override.viewport ?? createViewport();
+  const visualOutputs = override.visualOutputs ?? [];
+
   return {
-    series: createSeries(),
-    viewport: createViewport(),
+    series,
+    viewport,
+    priceScale:
+      override.priceScale ??
+      createMainPanelPriceScale(
+        series,
+        viewport.visibleRange,
+        viewport.priceScaleMode,
+        visualOutputs
+      ),
+    formatTime: defaultChartTimeFormatter,
     theme: {
       colors: {
         background: "#ffffff",
@@ -154,9 +177,13 @@ function createState(override: Partial<RenderState> = {}): RenderState {
         candleWick: 1,
         crosshair: 1,
         indicator: 2
+      },
+      lineDashes: {
+        grid: []
       }
     },
     layout: createLayout(),
+    visualOutputs,
     ...override
   };
 }
@@ -173,6 +200,101 @@ function callsNamed(context: LayerRenderContext, name: string): DrawCall[] {
 }
 
 describe("static renderer", () => {
+  it.each(["linear", "log", "percentage"] as const)(
+    "merges visible main-panel visual bounds into the %s price scale",
+    (priceScaleMode) => {
+      const series = createSeries();
+      const visibleRange = { from: 1, to: 3 };
+      const visualOutputs: IndicatorVisualOutput[] = [
+        {
+          id: "boll",
+          label: "BOLL",
+          type: "band",
+          panelId: "main",
+          upper: [
+            { time: 2, value: 30 },
+            { time: 6, value: 300 }
+          ],
+          lower: [
+            { time: 2, value: 5 },
+            { time: 6, value: 0.5 }
+          ]
+        },
+        {
+          id: "macd",
+          label: "MACD",
+          type: "histogram",
+          panelId: "macd",
+          values: [{ time: 2, value: -500 }]
+        }
+      ];
+
+      const scale = createMainPanelPriceScale(
+        series,
+        visibleRange,
+        priceScaleMode,
+        visualOutputs
+      );
+
+      expect(priceToY(30, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+      expect(priceToY(30, scale, 0, 80)).toBeLessThanOrEqual(80);
+      expect(priceToY(5, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+      expect(priceToY(5, scale, 0, 80)).toBeLessThanOrEqual(80);
+      expect(priceToY(300, scale, 0, 80)).toBeLessThan(0);
+    }
+  );
+
+  it("ignores non-positive main-panel visual values in log mode", () => {
+    const series = createSeries();
+    const visualOutputs: IndicatorVisualOutput[] = [
+      {
+        id: "ma",
+        label: "MA",
+        type: "line",
+        panelId: "main",
+        values: [
+          { time: 2, value: -1 },
+          { time: 3, value: 20 }
+        ]
+      }
+    ];
+
+    expect(() =>
+      createMainPanelPriceScale(series, { from: 1, to: 3 }, "log", visualOutputs)
+    ).not.toThrow();
+  });
+
+  it("uses the shared percentage scale and host formatter for axis labels", () => {
+    const series = { ...createSeries(), timeframe: "1m" as const };
+    const viewport = { ...createViewport(), priceScaleMode: "percentage" as const };
+    const renderContext = createRenderContext(
+      createState({
+        series,
+        viewport,
+        formatTime: (time, timeframe) => `SH:${time}:${timeframe}`
+      })
+    );
+
+    createAxisLayer().render(renderContext);
+
+    const labels = callsNamed(renderContext, "fillText").map((call) => call.args[0]);
+
+    expect(labels.some((label) => String(label).endsWith("%"))).toBe(true);
+    expect(labels).toContain("SH:2:1m");
+    expect(labels).toContain("SH:4:1m");
+  });
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "renders the static chart with the shared %s scale",
+    (priceScaleMode) => {
+      const viewport = { ...createViewport(), priceScaleMode };
+      const renderContext = createRenderContext(createState({ viewport }));
+
+      expect(() => renderStaticChart(renderContext)).not.toThrow();
+      expect(callsNamed(renderContext, "fillText").length).toBeGreaterThan(0);
+    }
+  );
+
   it("creates static layers in deterministic render order", () => {
     expect(createStaticLayers().map((layer) => layer.id)).toEqual([
       "grid",
@@ -181,6 +303,19 @@ describe("static renderer", () => {
       "volume",
       "movingAverage"
     ]);
+  });
+
+  it("isolates the configured grid dash from later layers", () => {
+    const renderContext = createRenderContext();
+
+    renderContext.state.theme.lineDashes.grid = [1, 3];
+    createGridLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "save")).toHaveLength(1);
+    expect(callsNamed(renderContext, "setLineDash")).toEqual([
+      { name: "setLineDash", args: [[1, 3]] }
+    ]);
+    expect(callsNamed(renderContext, "restore")).toHaveLength(1);
   });
 
   it("renders layers in order with the same neutral render state", () => {
@@ -289,5 +424,27 @@ describe("static renderer", () => {
       { name: "lineTo", x: 55 }
     ]);
     expect(callsNamed(renderContext, "stroke")).toHaveLength(2);
+  });
+
+  it("skips non-positive moving-average points on a log scale", () => {
+    const viewport = {
+      ...createViewport({ from: 0, to: 2 }),
+      priceScaleMode: "log" as const
+    };
+    const renderContext = createRenderContext(
+      createState({
+        viewport,
+        movingAverages: [
+          [
+            { time: 1, value: -1 },
+            { time: 2, value: 12 },
+            { time: 3, value: 13 }
+          ]
+        ]
+      })
+    );
+
+    expect(() => createMovingAverageLayer().render(renderContext)).not.toThrow();
+    expect(callsNamed(renderContext, "lineTo")).toHaveLength(1);
   });
 });

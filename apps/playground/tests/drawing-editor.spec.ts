@@ -3,10 +3,12 @@ import type { Page } from "@playwright/test";
 import {
   createChartLayout,
   createInitialViewport,
+  createMainPanelPriceScale,
   createOhlcMagnetTargetsFromSeries,
   createPanelLayout,
   fixtureDailyCandleSeries
 } from "@simoncharts/chart-engine";
+import { playgroundVisualOutputs } from "../src/fixtures/visualFixtures";
 
 interface DrawingExportPayload {
   drawings: Array<{ anchors: Array<{ x: number; y: number }> }>;
@@ -52,6 +54,12 @@ function getVisibleHighTarget(width: number, height: number): Point {
     series: fixtureDailyCandleSeries,
     viewport,
     plotArea: mainPanel.plotArea,
+    priceScale: createMainPanelPriceScale(
+      fixtureDailyCandleSeries,
+      viewport.visibleRange,
+      viewport.priceScaleMode,
+      playgroundVisualOutputs
+    ),
     fields: ["high"]
   });
   const target = targets.find(

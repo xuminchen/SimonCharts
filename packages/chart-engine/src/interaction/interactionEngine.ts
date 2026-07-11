@@ -1,6 +1,6 @@
 import type { Candle, CandleSeries } from "../model/market";
 import type { ChartCrosshairState, ChartEvent, ViewportState } from "../model/runtime";
-import { computeVisiblePriceRange } from "../viewport/priceRange";
+import type { PriceScale } from "../viewport/priceScale";
 import {
   panViewportByPixels,
   resetViewportToLatest,
@@ -35,6 +35,7 @@ export interface CreateInteractionEngineOptions {
   width: number;
   plotHeight: number;
   viewport?: ViewportState;
+  priceScale: PriceScale;
   plotLeft?: number;
   plotTop?: number;
   onEvent?: (event: InteractionEvent) => void;
@@ -46,6 +47,7 @@ export interface InteractionEngine {
   handlePointerMove(input: InteractionPointInput): void;
   handlePointerUp(input: InteractionPointInput): void;
   resetView(): void;
+  setPriceScale(priceScale: PriceScale): void;
   getViewport(): ViewportState;
   getCrosshair(): CrosshairState | undefined;
   getState(): InteractionState;
@@ -61,6 +63,7 @@ export function createInteractionEngine(options: CreateInteractionEngineOptions)
 
   let viewport =
     options.viewport ?? resetViewportToLatest(series.candles.length, Math.max(0, width));
+  let priceScale = options.priceScale;
   let crosshair: CrosshairState | undefined;
   let dragStartX: number | undefined;
   let dragStartViewport: ViewportState | undefined;
@@ -110,13 +113,11 @@ export function createInteractionEngine(options: CreateInteractionEngineOptions)
       return;
     }
 
-    const priceRange = computeVisiblePriceRange(series, viewport.visibleRange);
     const price = priceAtY(
       input.y,
-      priceRange,
+      priceScale,
       plotTop,
-      plotHeight,
-      viewport.priceScaleMode
+      plotHeight
     );
 
     crosshair = createCrosshairState(hit.index, hit.candle, price);
@@ -169,6 +170,9 @@ export function createInteractionEngine(options: CreateInteractionEngineOptions)
     resetView() {
       updateViewport(resetViewportToLatest(series.candles.length, width));
       clearCrosshair();
+    },
+    setPriceScale(nextPriceScale) {
+      priceScale = nextPriceScale;
     },
     getViewport() {
       return viewport;

@@ -1,10 +1,11 @@
+import { scaleValueToPrice } from "../../../viewport/priceScale";
 import {
   createTimeIndex,
   createVisualRenderer,
   getAutoscaleFromValues,
   getNearestVisualHit,
   getVisualRenderRange,
-  isFiniteNumber,
+  isRenderableVisualValue,
   isVisibleIndex,
   withPanelPlotClip,
   xForVisualIndex,
@@ -29,7 +30,13 @@ export function createHistogramVisualRenderer() {
 
       const renderRange = getVisualRenderRange(renderContext, range);
       const baselineValue =
-        range.min <= 0 && range.max >= 0 ? 0 : range.min > 0 ? range.min : range.max;
+        renderContext.valueScale.mode === "log"
+          ? scaleValueToPrice(renderContext.valueScale.min, renderContext.valueScale)
+          : range.min <= 0 && range.max >= 0
+            ? 0
+            : range.min > 0
+              ? range.min
+              : range.max;
       const baselineY = yForVisualValue(renderContext, renderRange, baselineValue);
       const indexByTime = createTimeIndex(renderContext.state.series);
       const barWidth = Math.max(1, renderContext.state.viewport.candleWidth * 0.7);
@@ -37,7 +44,7 @@ export function createHistogramVisualRenderer() {
 
       withPanelPlotClip(renderContext, () => {
         for (const point of output.values) {
-          if (!isFiniteNumber(point.value)) {
+          if (!isRenderableVisualValue(renderContext, point.value)) {
             continue;
           }
 
@@ -76,7 +83,7 @@ export function createHistogramVisualRenderer() {
       const renderRange = getVisualRenderRange(hitContext, range);
       const indexByTime = createTimeIndex(hitContext.state.series);
       const candidates = output.values.flatMap((point) => {
-        if (!isFiniteNumber(point.value)) {
+        if (!isRenderableVisualValue(hitContext, point.value)) {
           return [];
         }
 

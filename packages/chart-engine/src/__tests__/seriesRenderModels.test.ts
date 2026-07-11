@@ -6,6 +6,7 @@ import {
   hitTestSeriesPoint,
   type CandleSeries
 } from "../index";
+import { defaultChartTimeFormatter } from "../model/formatters";
 
 function createSeries(): CandleSeries {
   return {
@@ -21,6 +22,10 @@ function createSeries(): CandleSeries {
 }
 
 describe("source series render model", () => {
+  it("provides a host-neutral default time formatter", () => {
+    expect(defaultChartTimeFormatter(1_725_000_000, "1m")).toBe("1725000000");
+  });
+
   it("maps source candles to render points with source index traceability", () => {
     const model = createSourceSeriesRenderModel("candles", createSeries());
 
@@ -102,7 +107,14 @@ describe("source series render model", () => {
       visibleRange: { from: 0, to: 1 }
     });
 
-    expect(hit ? getDefaultSeriesTooltipRows(hit).map((row) => row.label) : []).toEqual([
+    expect(
+      hit
+        ? getDefaultSeriesTooltipRows(hit, {
+            formatTime: (time, timeframe) => `SH:${time}:${timeframe}`,
+            timeframe: "1m"
+          }).map((row) => row.label)
+        : []
+    ).toEqual([
       "Time",
       "Open",
       "High",
@@ -111,5 +123,23 @@ describe("source series render model", () => {
       "Volume",
       "Turnover"
     ]);
+  });
+
+  it("uses the host time formatter for the series tooltip time row", () => {
+    const model = createSourceSeriesRenderModel("candles", createSeries());
+    const hit = hitTestSeriesPoint(model, 2, {
+      plotLeft: 0,
+      candleWidth: 10,
+      visibleRange: { from: 0, to: 1 }
+    });
+
+    expect(
+      hit
+        ? getDefaultSeriesTooltipRows(hit, {
+            formatTime: (time, timeframe) => `SH:${time}:${timeframe}`,
+            timeframe: "1m"
+          })[0]
+        : undefined
+    ).toEqual({ label: "Time", value: "SH:1:1m" });
   });
 });

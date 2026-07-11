@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   createInitialViewport,
   createInteractionEngine,
+  createPriceScaleFromBounds,
   fixtureDailyCandleSeries,
   hitTestCandleAtX,
   indexToX
 } from "../index";
+import { createMainPanelPriceScale } from "../render/mainPriceScale";
 import type { CandleSeries, InteractionEvent, ViewportState } from "../index";
 
 const width = 240;
@@ -13,10 +15,24 @@ const plotLeft = 16;
 const plotTop = 20;
 const plotHeight = 180;
 
-function createEngine(events: InteractionEvent[] = []) {
+function createEngine(
+  events: InteractionEvent[] = [],
+  priceScaleMode: ViewportState["priceScaleMode"] = "linear"
+) {
+  const viewport = {
+    ...createInitialViewport(fixtureDailyCandleSeries.candles.length, width),
+    priceScaleMode
+  };
+
   return createInteractionEngine({
     series: fixtureDailyCandleSeries,
-    viewport: createInitialViewport(fixtureDailyCandleSeries.candles.length, width),
+    viewport,
+    priceScale: createMainPanelPriceScale(
+      fixtureDailyCandleSeries,
+      viewport.visibleRange,
+      priceScaleMode,
+      []
+    ),
     width,
     plotLeft,
     plotTop,
@@ -44,6 +60,41 @@ function createSeries(count: number): CandleSeries {
 }
 
 describe("interaction engine", () => {
+  it("uses a replacement shared price scale for inverse mapping", () => {
+    const engine = createEngine();
+    const viewport = engine.getViewport();
+    const index = viewport.visibleRange.from + 1;
+
+    engine.setPriceScale(createPriceScaleFromBounds({ min: 100, max: 200 }, 100, "linear"));
+    engine.handlePointerMove({
+      x: indexToX(index, viewport, plotLeft),
+      y: plotTop + plotHeight / 2
+    });
+
+    expect(engine.getCrosshair()?.price).toBeCloseTo(150);
+  });
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "inverse-maps crosshair coordinates with the shared %s scale",
+    (priceScaleMode) => {
+      const events: InteractionEvent[] = [];
+      const engine = createEngine(events, priceScaleMode);
+      const viewport = engine.getViewport();
+      const index = viewport.visibleRange.from + 1;
+
+      engine.handlePointerMove({
+        x: indexToX(index, viewport, plotLeft),
+        y: plotTop + plotHeight / 2
+      });
+
+      expect(events.at(-1)).toMatchObject({
+        type: "crosshairMoved",
+        crosshair: { index }
+      });
+      expect(engine.getCrosshair()?.price).toBeGreaterThan(0);
+    }
+  );
+
   it("zooms in around the cursor candle index on wheel up", () => {
     const events: InteractionEvent[] = [];
     const engine = createEngine(events);

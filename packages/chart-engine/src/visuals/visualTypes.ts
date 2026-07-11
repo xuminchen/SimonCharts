@@ -1,12 +1,15 @@
 import type { IndicatorVisualOutput } from "../model/visual";
 import type { PanelArea } from "../panels/panelTypes";
 import type { LayerRenderContext, RenderState } from "../render/renderTypes";
+import type { TooltipFormattingContext } from "../series/seriesTypes";
+import type { PriceScale } from "../viewport/priceScale";
 
 export type VisualOutputType = IndicatorVisualOutput["type"];
 
 export interface VisualRenderContext extends LayerRenderContext {
   output: IndicatorVisualOutput;
   panel: PanelArea;
+  valueScale: PriceScale;
   valueRange?: VisualAutoscaleRange;
 }
 
@@ -14,6 +17,7 @@ export interface VisualHitTestContext {
   output: IndicatorVisualOutput;
   panel: PanelArea;
   state: RenderState;
+  valueScale: PriceScale;
   valueRange?: VisualAutoscaleRange;
 }
 
@@ -40,5 +44,8 @@ export interface VisualRenderer {
   render(context: VisualRenderContext): void;
   getAutoscale(output: IndicatorVisualOutput): VisualAutoscaleRange | undefined;
   hitTest(context: VisualHitTestContext, x: number, y: number): VisualHitTestResult | undefined;
-  getTooltipRows(hit: VisualHitTestResult): VisualTooltipRow[];
+  getTooltipRows(
+    hit: VisualHitTestResult,
+    formatting: TooltipFormattingContext
+  ): VisualTooltipRow[];
 }

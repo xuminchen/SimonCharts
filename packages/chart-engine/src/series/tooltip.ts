@@ -1,10 +1,17 @@
-import type { SeriesHitTestResult, SeriesTooltipRow } from "./seriesTypes";
+import type {
+  SeriesHitTestResult,
+  SeriesTooltipRow,
+  TooltipFormattingContext
+} from "./seriesTypes";
 
-export function getDefaultSeriesTooltipRows(hit: SeriesHitTestResult): SeriesTooltipRow[] {
+export function getDefaultSeriesTooltipRows(
+  hit: SeriesHitTestResult,
+  formatting: TooltipFormattingContext
+): SeriesTooltipRow[] {
   const point = hit.point;
 
   return [
-    { label: "Time", value: String(point.time) },
+    { label: "Time", value: formatting.formatTime(point.time, formatting.timeframe) },
     { label: "Open", value: formatNumber(point.open ?? point.close) },
     { label: "High", value: formatNumber(point.high ?? point.close) },
     { label: "Low", value: formatNumber(point.low ?? point.close) },

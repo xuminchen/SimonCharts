@@ -5,6 +5,8 @@ import {
   createSeriesRendererRegistry,
   createSourceSeriesRenderModel,
   defaultChartTheme,
+  defaultChartTimeFormatter,
+  supportedSeriesTypes,
   type CandleSeries,
   type ChartLayout,
   type LayerRenderContext,
@@ -14,6 +16,7 @@ import {
   type SeriesType,
   type ViewportState
 } from "../index";
+import { createMainPanelPriceScale } from "../render/mainPriceScale";
 
 interface DrawCall {
   name: string;
@@ -128,12 +131,14 @@ function createSeries(): CandleSeries {
   };
 }
 
-function createViewport(): ViewportState {
+function createViewport(
+  priceScaleMode: ViewportState["priceScaleMode"] = "linear"
+): ViewportState {
   return {
     visibleRange: { from: 0, to: 2 },
     candleWidth: 10,
     scrollOffset: 0,
-    priceScaleMode: "linear"
+    priceScaleMode
   };
 }
 
@@ -149,24 +154,64 @@ function createLayout(): ChartLayout {
   };
 }
 
-function createState(seriesType: SeriesType): RenderState {
+function createState(
+  seriesType: SeriesType,
+  priceScaleMode: ViewportState["priceScaleMode"] = "linear",
+  series = createSeries()
+): RenderState {
+  const viewport = createViewport(priceScaleMode);
+
   return {
-    series: createSeries(),
+    series,
     seriesType,
-    viewport: createViewport(),
+    viewport,
+    priceScale: createMainPanelPriceScale(
+      series,
+      viewport.visibleRange,
+      viewport.priceScaleMode,
+      []
+    ),
+    formatTime: defaultChartTimeFormatter,
     theme: defaultChartTheme,
     layout: createLayout()
   };
 }
 
-function createRenderContext(seriesType: SeriesType): LayerRenderContext {
+function createRenderContext(
+  seriesType: SeriesType,
+  priceScaleMode: ViewportState["priceScaleMode"] = "linear",
+  series = createSeries()
+): LayerRenderContext {
   return {
     context: new FakeCanvasContext() as unknown as CanvasRenderingContext2D,
-    state: createState(seriesType)
+    state: createState(seriesType, priceScaleMode, series)
   };
 }
 
 describe("series renderers", () => {
+  it.each(
+    supportedSeriesTypes.flatMap((seriesType) =>
+      (["linear", "log", "percentage"] as const).map(
+        (priceScaleMode) => [seriesType, priceScaleMode] as const
+      )
+    )
+  )("renders %s with a shared %s scale", (seriesType, priceScaleMode) => {
+    const registry = createDefaultSeriesRendererRegistry();
+    const series: CandleSeries = {
+      ...createSeries(),
+      candles: createSeries().candles.map((candle, index) => ({
+        ...candle,
+        open: index + 0.1,
+        high: index === 2 ? 100 : index + 1,
+        low: index === 0 ? 0.01 : index + 0.05,
+        close: index + 0.5
+      }))
+    };
+    const context = createRenderContext(seriesType, priceScaleMode, series);
+
+    expect(() => createSeriesLayer(registry).render(context)).not.toThrow();
+  });
+
   it("registers default renderers in deterministic order", () => {
     expect(createDefaultSeriesRendererRegistry().list().map((renderer) => renderer.type)).toEqual(
       [

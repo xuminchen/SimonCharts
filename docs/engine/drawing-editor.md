@@ -211,14 +211,16 @@ Layout snapshots preserve `viewport`, versioned drawing payloads, `indicatorIds`
 Magnet helpers are deterministic:
 
 - `createOhlcMagnetTargets(points)` creates OHLC targets with optional `field` and `dataIndex`.
-- `createOhlcMagnetTargetsFromSeries(options)` creates visible candle OHLC targets from a neutral candle series, viewport, plot area, optional price range, and optional OHLC fields.
+- `createOhlcMagnetTargetsFromSeries(options)` creates visible candle OHLC targets from a neutral candle series, viewport, plot area, required shared `PriceScale`, and optional OHLC fields.
 - `createDrawingAnchorMagnetTargets(drawings)` creates targets from finite drawing anchor coordinates.
 - `createVisualPointMagnetTargets(points)` creates visual output point targets.
 - `findNearestMagnetTarget(point, targets, radius)` selects nearest distance; ties resolve in this order: `ohlc`, `drawingAnchor`, `visualPoint`.
 - `snapPointToMagnetTargets(point, targets, radius)` returns the target point or the original point.
 - `getMagnetSnapState(options)` returns the snapped point, matched target, and neutral magnet session state.
 
-OHLC target creation is DOM-free. Hosts pass `CandleSeries`, `ViewportState`, `MagnetPlotArea`, optional `MagnetPriceRange`, and optional `fields`; the Engine projects visible candle open, high, low, and close values into `MagnetSnapTarget[]`.
+OHLC target creation is DOM-free. Hosts pass `CandleSeries`, `ViewportState`, `MagnetPlotArea`, the
+required shared main `PriceScale`, and optional `fields`; the Engine projects visible candle open,
+high, low, and close values into `MagnetSnapTarget[]` on the same y coordinates as the chart.
 
 `getMagnetSnapState()` is DOM-free. Hosts pass a neutral pointer point, neutral magnet targets, and a radius. The Engine returns a neutral result containing the snapped point, the matched `MagnetSnapTarget` when one is in range, and a `MagnetSessionState` value that can be passed to `InteractionSession` with `{ type: "magnet", magnet }`.
 

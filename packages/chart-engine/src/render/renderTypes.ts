@@ -1,11 +1,13 @@
 import type { MovingAveragePoint } from "../indicators/movingAverage";
 import type { DrawingObject } from "../drawing/drawingTypes";
+import type { ChartTimeFormatter } from "../model/formatters";
 import type { CandleSeries } from "../model/market";
 import type { ChartCrosshairState as CrosshairState, ViewportState } from "../model/runtime";
 import type { ChartTheme } from "../model/theme";
 import type { IndicatorVisualOutput } from "../model/visual";
 import type { PanelArea } from "../panels/panelTypes";
 import type { SeriesType } from "../series/seriesTypes";
+import type { PriceScale } from "../viewport/priceScale";
 
 export interface ChartLayout {
   width: number;
@@ -36,6 +38,8 @@ export interface RenderState {
   series: CandleSeries;
   seriesType?: SeriesType;
   viewport: ViewportState;
+  priceScale: PriceScale;
+  formatTime: ChartTimeFormatter;
   theme: ChartTheme;
   layout: ChartLayout;
   movingAverages?: MovingAveragePoint[][];

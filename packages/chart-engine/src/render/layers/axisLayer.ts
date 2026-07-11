@@ -1,5 +1,8 @@
-import { computeVisiblePriceRange } from "../../viewport/priceRange";
 import type { ViewportState } from "../../model/runtime";
+import {
+  formatPriceScaleTick,
+  scaleValueToPrice
+} from "../../viewport/priceScale";
 import type { ChartLayer } from "../renderTypes";
 
 const priceTickCount = 4;
@@ -20,8 +23,8 @@ export function createAxisLayer(): ChartLayer {
         return;
       }
 
-      const priceRange = computeVisiblePriceRange(series, bounds);
-      const priceSpan = priceRange.max - priceRange.min;
+      const priceScale = state.priceScale;
+      const scaleSpan = priceScale.max - priceScale.min;
 
       context.fillStyle = theme.colors.text;
       context.font = `${theme.typography.fontSize}px ${theme.typography.fontFamily}`;
@@ -30,10 +33,11 @@ export function createAxisLayer(): ChartLayer {
 
       for (let step = 0; step <= priceTickCount; step += 1) {
         const y = plotArea.y + (plotArea.height / priceTickCount) * step;
-        const price = priceRange.max - (priceSpan / priceTickCount) * step;
+        const scaleValue = priceScale.max - (scaleSpan / priceTickCount) * step;
+        const price = scaleValueToPrice(scaleValue, priceScale);
 
         context.fillText(
-          formatPrice(price),
+          formatPriceScaleTick(price, priceScale),
           priceAxisArea.x + theme.spacing.axisPadding,
           y
         );
@@ -46,22 +50,18 @@ export function createAxisLayer(): ChartLayer {
         context.textAlign = "center";
         context.textBaseline = "top";
         context.fillText(
-          String(fromCandle.time),
+          state.formatTime(fromCandle.time, series.timeframe),
           timeAxisArea.x,
           timeAxisArea.y + theme.spacing.axisPadding
         );
         context.fillText(
-          String(toCandle.time),
+          state.formatTime(toCandle.time, series.timeframe),
           timeAxisArea.x + timeAxisArea.width,
           timeAxisArea.y + theme.spacing.axisPadding
         );
       }
     }
   };
-}
-
-function formatPrice(price: number): string {
-  return Number.isInteger(price) ? String(price) : price.toFixed(2);
 }
 
 function getVisibleBounds(

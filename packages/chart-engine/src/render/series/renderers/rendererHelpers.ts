@@ -7,7 +7,8 @@ import type {
   SeriesRenderPoint,
   SeriesType
 } from "../../../series/seriesTypes";
-import { indexToX, priceToY } from "../../../viewport/viewport";
+import { priceToY } from "../../../viewport/priceScale";
+import { indexToX } from "../../../viewport/viewport";
 
 export interface VisibleRenderBounds {
   from: number;
@@ -90,15 +91,14 @@ export function xForIndex(context: SeriesRendererContext, index: number): number
 
 export function yForPrice(
   context: SeriesRendererContext,
-  range: PriceRange,
+  _range: PriceRange,
   price: number
 ): number {
   return priceToY(
     price,
-    range,
+    context.state.priceScale,
     context.layout.plotArea.y,
-    context.layout.plotArea.height,
-    context.state.viewport.priceScaleMode
+    context.layout.plotArea.height
   );
 }
 

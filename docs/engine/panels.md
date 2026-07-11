@@ -19,6 +19,9 @@ const areas = createPanelLayout({
 
 `PanelDefinition` is layout metadata only. It does not identify a host page, feature, user workflow, strategy, or persisted dashboard.
 
-Panel scales are computed through `createPanelScales()` and related helpers. Renderers receive panel geometry through `LayerRenderContext` and `RenderState.panels`.
+Panel layout metadata is separate from value-scale ownership. Main-panel visual renderers receive
+the shared `RenderState.priceScale`; each sub panel receives its own linear `valueScale` derived
+from that panel's visible visual autoscale range. `createPanelScales()` remains available for
+generic panel metadata, while price rendering uses the explicit `PriceScale` contract.
 
 The built-in playground uses one main panel and one sub panel to verify visual output isolation and canvas rendering across panels.

@@ -1,8 +1,8 @@
 import type { MagnetSessionState } from "../interaction/sessionTypes";
 import type { CandleSeries } from "../model/market";
 import type { ViewportState } from "../model/runtime";
-import { computeVisiblePriceRange } from "../viewport/priceRange";
-import { indexToX, priceToY } from "../viewport/viewport";
+import { priceToY, type PriceScale } from "../viewport/priceScale";
+import { indexToX } from "../viewport/viewport";
 import type { DrawingObject } from "./drawingTypes";
 
 export interface MagnetPoint {
@@ -36,16 +36,11 @@ export interface MagnetPlotArea {
   height: number;
 }
 
-export interface MagnetPriceRange {
-  min: number;
-  max: number;
-}
-
 export interface OhlcMagnetTargetOptions {
   series: CandleSeries;
   viewport: ViewportState;
   plotArea: MagnetPlotArea;
-  priceRange?: MagnetPriceRange;
+  priceScale: PriceScale;
   fields?: readonly OhlcMagnetField[];
 }
 
@@ -177,8 +172,6 @@ export function createOhlcMagnetTargetsFromSeries(
   }
 
   const fields = options.fields ?? defaultOhlcMagnetFields;
-  const priceRange =
-    options.priceRange ?? computeVisiblePriceRange(options.series, options.viewport.visibleRange);
   const points: OhlcMagnetPoint[] = [];
 
   for (let index = from; index <= to; index += 1) {
@@ -188,10 +181,9 @@ export function createOhlcMagnetTargetsFromSeries(
     for (const field of fields) {
       const y = priceToY(
         candle[field],
-        priceRange,
+        options.priceScale,
         options.plotArea.y,
-        options.plotArea.height,
-        options.viewport.priceScaleMode
+        options.plotArea.height
       );
 
       points.push({ x, y, field, dataIndex: index });

@@ -10,6 +10,7 @@ import {
   createDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingToolRegistry,
+  createMainPanelPriceScale,
   beginDrawingHandleDrag,
   beginDrawingMoveDrag,
   beginDrawingSelectionBox,
@@ -35,12 +36,14 @@ import {
   createRenderScheduler,
   createVisualRendererRegistry,
   defaultChartTheme,
+  defaultChartTimeFormatter,
   engineApiVersion,
   fixtureDailyCandleSeries,
   serializeChartLayoutSnapshot
 } from "@simoncharts/chart-engine";
 import type {
   CandleSeries,
+  ChartTimeFormatter,
   ChartEngine,
   ChartLayout,
   ChartLayoutSnapshot,
@@ -74,7 +77,6 @@ import type {
   MagnetSnapState,
   MagnetSnapStateOptions,
   MagnetPlotArea,
-  MagnetPriceRange,
   OhlcMagnetTargetOptions,
   DrawingObject,
   DrawingPoint,
@@ -100,6 +102,7 @@ import type {
   RenderFrameDiagnostic,
   RenderInvalidation,
   RenderScheduler,
+  TooltipFormattingContext,
   VisualRenderer,
   VisualRendererRegistry,
   EngineReleaseChannel,
@@ -414,12 +417,22 @@ const magnetSnapStateOptions: MagnetSnapStateOptions = {
 };
 const magnetSnapState: MagnetSnapState = getMagnetSnapState(magnetSnapStateOptions);
 const magnetPlotArea: MagnetPlotArea = { x: 0, y: 0, width: 640, height: 320 };
-const magnetPriceRange: MagnetPriceRange = { min: 10, max: 30 };
+const mainPriceScale = createMainPanelPriceScale(
+  series,
+  engine.getState().viewport.visibleRange,
+  engine.getState().viewport.priceScaleMode,
+  [visualOutput]
+);
+const formatTime: ChartTimeFormatter = defaultChartTimeFormatter;
+const tooltipFormatting: TooltipFormattingContext = {
+  formatTime,
+  timeframe: series.timeframe
+};
 const ohlcMagnetTargetOptions: OhlcMagnetTargetOptions = {
   series,
   viewport: engine.getState().viewport,
   plotArea: magnetPlotArea,
-  priceRange: magnetPriceRange,
+  priceScale: mainPriceScale,
   fields: ["open", "high", "low", "close"]
 };
 const ohlcMagnetTargets = createOhlcMagnetTargetsFromSeries(ohlcMagnetTargetOptions);
@@ -439,6 +452,8 @@ const layerContext = {
   state: {
     series,
     viewport: engine.getState().viewport,
+    priceScale: mainPriceScale,
+    formatTime,
     theme: defaultChartTheme,
     layout,
     visualOutputs: [visualOutput]
@@ -498,7 +513,9 @@ void neutralCursorInput;
 void magnetSnapStateOptions;
 void magnetSnapState;
 void magnetPlotArea;
-void magnetPriceRange;
+void mainPriceScale;
+void formatTime;
+void tooltipFormatting;
 void ohlcMagnetTargetOptions;
 void ohlcMagnetTargets;
 void frame;

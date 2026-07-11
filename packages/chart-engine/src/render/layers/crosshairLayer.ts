@@ -1,5 +1,5 @@
-import { computeVisiblePriceRange } from "../../viewport/priceRange";
-import { indexToX, priceToY } from "../../viewport/viewport";
+import { priceToY } from "../../viewport/priceScale";
+import { indexToX } from "../../viewport/viewport";
 import type { ChartLayer } from "../renderTypes";
 
 export function createCrosshairLayer(): ChartLayer {
@@ -21,14 +21,12 @@ export function createCrosshairLayer(): ChartLayer {
         return;
       }
 
-      const priceRange = computeVisiblePriceRange(series, viewport.visibleRange);
       const x = indexToX(crosshair.index, viewport, plotArea.x);
       const y = priceToY(
         crosshair.price,
-        priceRange,
+        state.priceScale,
         plotArea.y,
-        plotArea.height,
-        viewport.priceScaleMode
+        plotArea.height
       );
 
       context.save();

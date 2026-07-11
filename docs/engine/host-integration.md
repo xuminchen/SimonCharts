@@ -27,9 +27,12 @@ Minimum v0.4 integration sequence:
 
 1. Normalize host market data into `CandleSeries`.
 2. Create a chart engine from the package root with `createChartEngine({ series })`.
-3. Translate browser or native input into neutral viewport, interaction, drawing, and command calls.
-4. Persist layout snapshots with `serializeChartLayoutSnapshot()` and restore them with `deserializeChartLayoutSnapshot()`.
-5. Store the serialized payload in host-owned persistence.
+3. Create the current main `PriceScale` with `createMainPanelPriceScale()` and reuse that exact
+   object in `RenderState`, `InteractionEngine`, and OHLC magnet projection.
+4. Supply an explicit `ChartTimeFormatter` in every `RenderState` and tooltip formatting context.
+5. Translate browser or native input into neutral viewport, interaction, drawing, and command calls.
+6. Persist layout snapshots with `serializeChartLayoutSnapshot()` and restore them with `deserializeChartLayoutSnapshot()`.
+7. Store the serialized payload in host-owned persistence.
 
 The host owns:
 
@@ -47,6 +50,7 @@ The engine owns:
 - `PanelDefinition` layout calculation
 - `DrawingObject` editing and rendering
 - neutral `ChartEngine` state, commands, and events
+- reversible linear, log, and percentage price transforms; hosts own time presentation
 
 `HostAdapter` can be used for neutral callback integration. It should adapt from engine events to host behavior outside the engine package.
 

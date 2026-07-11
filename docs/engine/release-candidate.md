@@ -25,7 +25,7 @@ The release candidate includes:
 - Engine-owned drawing interaction primitives for box selection, keyboard nudging, and edit handles
 - Engine-owned drawing body hit-test for neutral drawings, renderer registries, hidden/locked filtering, and distance/z-order sorting
 - Engine-owned drawing hover intent for neutral drawings, selected handles, pointer points, renderer registries, target ids, and cursor intent
-- Engine-owned OHLC magnet target projection from neutral candle series, viewport, plot area, optional price range, and optional fields
+- Engine-owned OHLC magnet target projection from neutral candle series, viewport, plot area, required shared `PriceScale`, and optional fields
 - Engine-owned drawing magnet snap state for neutral points, magnet targets, snap radius, snapped points, matched targets, and neutral magnet session state
 - Engine-owned drawing handle drag flow for anchor, resize, and rotate operations
 - Engine-owned drawing move drag flow for selected drawing body movement previews and one final command
