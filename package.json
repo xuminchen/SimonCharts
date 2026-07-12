@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc -b packages/chart-engine apps/playground",
+    "typecheck": "tsc -b packages/chart-engine packages/chart-workspace apps/playground",
     "test": "vitest run",
     "test:watch": "vitest",
     "guard:engine-boundary": "node scripts/check-engine-boundary.mjs",
@@ -22,7 +22,7 @@
     "check:performance": "vitest run packages/chart-engine/src/__tests__/performanceBaseline.test.ts --reporter=dot",
     "check:release-gate": "node scripts/check-release-gate.mjs",
     "check:release-readiness": "node scripts/check-release-readiness.mjs",
-    "build": "npm run build -w @simoncharts/chart-engine && npm run build -w @simoncharts/playground",
+    "build": "npm run build -w @simoncharts/chart-engine && npm run build -w @simoncharts/chart-workspace && npm run build -w @simoncharts/playground",
     "dev": "npm run dev -w @simoncharts/playground",
     "test:e2e": "playwright test"
   },
