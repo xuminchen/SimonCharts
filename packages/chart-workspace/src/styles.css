@@ -74,4 +74,5 @@
 .sc-data-window-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; background: var(--sc-surface); }
 .sc-data-window-row span { color: var(--sc-muted); }
 .sc-error-panel { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; color: var(--sc-text); background: var(--sc-bg); }
+.sc-error-panel[data-warning="true"] { inset: 8px 8px auto auto; display: flex; gap: 8px; padding: 8px 12px; border: 1px solid var(--sc-border); background: var(--sc-surface); }
 .sc-error-panel[hidden] { display: none; }

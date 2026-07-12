@@ -157,6 +157,7 @@ export function createChartWorkspace(
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
+      controller!.deactivate();
       unbind();
       controller!.destroy();
       checkpointStore.clear();

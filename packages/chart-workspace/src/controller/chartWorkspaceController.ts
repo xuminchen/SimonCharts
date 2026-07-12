@@ -65,6 +65,7 @@ export interface WorkspaceViewModel {
 }
 
 export interface WorkspaceUiActions {
+  retry(): void;
   setSymbol(symbol: ChartSymbol): void;
   setTimeframe(timeframe: Timeframe): void;
   setAdjustMode(adjustMode: AdjustMode): void;
@@ -86,6 +87,7 @@ export interface WorkspaceUiActions {
 
 export interface ChartWorkspaceController extends WorkspaceUiActions {
   start(): void;
+  deactivate(): void;
   getState(): Readonly<ChartWorkspaceState>;
   getViewModel(): Readonly<WorkspaceViewModel>;
   setSymbol(symbol: ChartSymbol): void;
@@ -166,10 +168,18 @@ export function createChartWorkspaceController(
     search: { query: "", loading: false, results: [] }
   };
   let active = true;
+  let runtimeDestroyed = false;
   let retryTarget: "initial-data" | "render" | undefined;
   let failedHistoryCursor: string | undefined;
   let materializedAnchorTime: number | undefined;
   let currentMaterialized: MaterializedSeries | undefined;
+
+  const deactivate = (): void => {
+    if (!active) return;
+    active = false;
+    dependencies.dataCoordinator.destroy();
+    dependencies.searchCoordinator.destroy();
+  };
 
   const publish = (): void => {
     viewModel = { ...viewModel, state: { ...state, symbol: cloneSymbol(state.symbol) } };
@@ -236,6 +246,7 @@ export function createChartWorkspaceController(
       if (!active) return;
       beginSelection();
     },
+    deactivate,
     getState() {
       return structuredClone(state);
     },
@@ -479,10 +490,9 @@ export function createChartWorkspaceController(
       publish();
     },
     destroy() {
-      if (!active) return;
-      active = false;
-      dependencies.dataCoordinator.destroy();
-      dependencies.searchCoordinator.destroy();
+      deactivate();
+      if (runtimeDestroyed) return;
+      runtimeDestroyed = true;
       dependencies.runtime.destroy();
     }
   };

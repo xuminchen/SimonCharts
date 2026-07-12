@@ -55,6 +55,7 @@ export function createWorkspaceShell(): WorkspaceShell {
       const unbindToolbar = toolbar.bind(actions);
       const unbindDrawingPalette = drawingPalette.bind(actions);
       const unbindBottomPanel = bottomPanel.bind(actions);
+      const unbindErrorPanel = errorPanel.bind(() => actions.retry(), () => actions.retryHistory());
       let startY = 0;
       let startHeight = 0;
       const move = (event: PointerEvent) => {
@@ -80,6 +81,7 @@ export function createWorkspaceShell(): WorkspaceShell {
         unbindToolbar();
         unbindDrawingPalette();
         unbindBottomPanel();
+        unbindErrorPanel();
         resizer.removeEventListener("pointerdown", down);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
