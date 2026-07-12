@@ -6,6 +6,7 @@ import { createBottomPanel } from "./bottomPanel";
 import { createErrorPanel } from "./errorPanel";
 import { createTopToolbar } from "./topToolbar";
 import { createEngineCapabilityManifest } from "@simoncharts/chart-engine";
+import { createDrawingPalette } from "./drawingPalette";
 
 export interface WorkspaceShell {
   readonly root: HTMLDivElement;
@@ -31,6 +32,8 @@ export function createWorkspaceShell(): WorkspaceShell {
   overlayCanvas.tabIndex = 0;
   const paletteHost = document.createElement("div");
   paletteHost.className = "sc-drawing-palette-host";
+  const drawingPalette = createDrawingPalette(chartRegion);
+  paletteHost.append(drawingPalette.element);
   const errorPanel = createErrorPanel();
   chartRegion.append(staticCanvas, overlayCanvas, paletteHost, errorPanel.element);
   const resizer = document.createElement("div");
@@ -50,6 +53,7 @@ export function createWorkspaceShell(): WorkspaceShell {
     overlayCanvas,
     bind(actions) {
       const unbindToolbar = toolbar.bind(actions);
+      const unbindDrawingPalette = drawingPalette.bind(actions);
       let startY = 0;
       let startHeight = 0;
       const move = (event: PointerEvent) => {
@@ -73,6 +77,7 @@ export function createWorkspaceShell(): WorkspaceShell {
       resizer.addEventListener("pointerdown", down);
       const unbind = () => {
         unbindToolbar();
+        unbindDrawingPalette();
         resizer.removeEventListener("pointerdown", down);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
@@ -86,6 +91,7 @@ export function createWorkspaceShell(): WorkspaceShell {
           ? "ready-with-warning"
           : viewModel.status.type;
       toolbar.render(viewModel);
+      drawingPalette.render(viewModel);
       bottomPanel.render(viewModel);
       errorPanel.render(viewModel.status);
     },

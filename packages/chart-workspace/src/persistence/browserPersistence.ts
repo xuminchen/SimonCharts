@@ -40,7 +40,7 @@ export interface WorkspacePreferences {
 
 export const defaultLayoutState: WorkspaceLayoutState = Object.freeze({
   bottomPanel: Object.freeze({ height: 240, collapsed: false, activeTab: "objects" }),
-  drawingPalette: Object.freeze({ x: 12, y: 12, collapsed: false })
+  drawingPalette: Object.freeze({ x: 12, y: 12, collapsed: true })
 });
 
 export const defaultPreferences: WorkspacePreferences = Object.freeze({

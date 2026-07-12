@@ -47,6 +47,13 @@
 .sc-chart-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .sc-overlay-canvas { touch-action: none; }
 .sc-drawing-palette-host { position: absolute; inset: 0; pointer-events: none; }
+.sc-drawing-palette { position: absolute; z-index: 5; min-width: 92px; padding: 4px; color: var(--sc-text); background: var(--sc-surface); border: 1px solid var(--sc-border); pointer-events: auto; }
+.sc-drawing-palette-header { display: flex; min-height: 28px; cursor: move; }
+.sc-drawing-palette-grip { display: inline-grid; width: 24px; place-items: center; }
+.sc-drawing-categories { display: grid; gap: 2px; }
+.sc-drawing-palette button { color: var(--sc-text); background: transparent; border: 0; text-align: left; }
+.sc-drawing-tools-popup { position: absolute; top: 0; left: calc(100% + 4px); max-height: 420px; min-width: 210px; overflow: auto; padding: 6px; background: var(--sc-surface); border: 1px solid var(--sc-border); }
+.sc-drawing-tools-popup button { display: block; width: 100%; }
 .sc-bottom-host { min-height: 0; }
 .sc-bottom-resizer { height: 4px; cursor: ns-resize; background: var(--sc-border); }
 .sc-bottom-panel { min-height: 0; border-top: 1px solid var(--sc-border); background: var(--sc-surface); overflow: hidden; }
