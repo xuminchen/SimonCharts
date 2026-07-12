@@ -18,6 +18,8 @@ export interface HostCounters {
   activeEventListeners: number;
   abortedRequests: number;
   errors: number;
+  lastSeriesResolvedAt?: number;
+  firstFrameAfterSeriesResolvedAt?: number;
 }
 
 export interface FixtureRequestLog extends Record<string, unknown> {
@@ -38,6 +40,9 @@ export interface FixtureControls {
   boundaryConflict: boolean;
   versionChange: boolean;
   history: boolean;
+  single: boolean;
+  million: boolean;
+  emptyPage: boolean;
 }
 
 export function readFixtureControls(search: string): FixtureControls {
@@ -52,7 +57,10 @@ export function readFixtureControls(search: string): FixtureControls {
     cursorCycle: params.get("cursorCycle") === "1",
     boundaryConflict: params.get("boundaryConflict") === "1",
     versionChange: params.get("versionChange") === "1",
-    history: params.get("history") === "1" || ["historyFailure", "cursorCycle", "boundaryConflict", "versionChange"].some((key) => params.get(key) === "1") || invalidPage === "history"
+    history: params.get("history") === "1" || params.get("million") === "1" || ["historyFailure", "cursorCycle", "boundaryConflict", "versionChange"].some((key) => params.get(key) === "1") || invalidPage === "history",
+    single: params.get("single") === "1",
+    million: params.get("million") === "1",
+    emptyPage: params.get("emptyPage") === "1"
   };
 }
 
@@ -60,7 +68,7 @@ function candleAt(position: number): Candle {
   const close = 100 + Math.sin(position / 25) * 8 + position * 0.0001;
   return {
     time: Date.UTC(2026, 5, 5, 1, 30) + position * 60_000,
-    open: close - 0.2,
+    open: close + (position % 2 === 0 ? -0.2 : 0.2),
     high: close + 0.8,
     low: close - 0.8,
     close,
@@ -86,11 +94,19 @@ function waitFor(signal: AbortSignal, milliseconds: number): Promise<void> {
 
 function pageFor(request: SeriesRequest, controls: FixtureControls, version: string): SeriesPage {
   const historyRequest = request.beforeCursor !== undefined;
-  const start = controls.history ? (historyRequest ? 0 : 500) : 0;
+  const initialStart = controls.million ? 999_500 : controls.history ? 500 : 0;
+  const start = historyRequest
+    ? controls.million
+      ? Number(request.beforeCursor?.split(":")[1] ?? 0)
+      : 0
+    : initialStart;
+  const count = controls.emptyPage ? 0 : controls.single ? 1 : 500;
+  const nextStart = start - 500;
+  const hasMoreBefore = controls.million ? nextStart >= 0 : controls.history && !historyRequest;
   const page = {
-    candles: Array.from({ length: 500 }, (_, position) => candleAt(start + position)),
-    ...(controls.history && !historyRequest ? { beforeCursor: "page-1" } : {}),
-    hasMoreBefore: controls.history && !historyRequest,
+    candles: Array.from({ length: count }, (_, position) => candleAt(start + position)),
+    ...(hasMoreBefore ? { beforeCursor: controls.million ? `page:${nextStart}` : "page-1" } : {}),
+    hasMoreBefore,
     dataVersion: version
   };
   if (controls.invalidPage === (historyRequest ? "history" : "initial")) {
@@ -116,6 +132,10 @@ export function createFixtureDataSource(
     try {
       const result = await work();
       log.status = "resolved";
+      if (!log.symbolId.startsWith("search:")) {
+        counters.lastSeriesResolvedAt = performance.now();
+        counters.firstFrameAfterSeriesResolvedAt = undefined;
+      }
       return result;
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -158,6 +178,8 @@ export function createFixtureDataSource(
         if (request.beforeCursor !== undefined && controls.versionChange && version === "fixture-v1") version = "fixture-v2";
         const page = pageFor(request, controls, version);
         log.dataVersion = page.dataVersion;
+        log.candleCount = page.candles.length;
+        log.totalAvailable = controls.million ? 1_000_000 : page.candles.length;
         return page;
       });
     }

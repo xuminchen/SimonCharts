@@ -9,5 +9,7 @@ describe("workspace capability matrix", () => {
     expect(model.seriesTypes).toHaveLength(17);
     expect(model.indicators).toHaveLength(16);
     expect(model.priceScaleModes).toEqual(["linear", "log", "percentage"]);
+    expect(createEngineCapabilityManifest().drawingTools).toHaveLength(63);
+    expect(["none", "forward", "backward"]).toHaveLength(3);
   });
 });

@@ -60,6 +60,8 @@ export function createDrawingPalette(chartRegion: HTMLElement): DrawingPalette {
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.drawingTool = definition.type;
+      button.dataset.drawingMode = definition.drawingMode;
+      button.dataset.anchorCount = String(definition.anchorCount);
       button.textContent = definition.label;
       popup.append(button);
     }

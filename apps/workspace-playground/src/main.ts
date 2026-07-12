@@ -71,6 +71,9 @@ const activeFrames = new Set<number>();
 window.requestAnimationFrame = (callback) => {
   const id = nativeRequestAnimationFrame((time) => {
     if (activeFrames.delete(id)) counters.activeAnimationFrames -= 1;
+    if (counters.lastSeriesResolvedAt !== undefined && counters.firstFrameAfterSeriesResolvedAt === undefined) {
+      counters.firstFrameAfterSeriesResolvedAt = performance.now();
+    }
     callback(time);
   });
   activeFrames.add(id);

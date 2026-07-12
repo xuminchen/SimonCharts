@@ -100,6 +100,8 @@ declare global {
       activeEventListeners: number;
       abortedRequests: number;
       errors: number;
+      lastSeriesResolvedAt?: number;
+      firstFrameAfterSeriesResolvedAt?: number;
     };
     __workspaceRequests?: Array<Record<string, unknown>>;
   }

@@ -110,6 +110,7 @@ describe("workspace engine runtime", () => {
     const after = runtime.getMetrics();
     expect(after.renderCountByPass.static).toBe(before.renderCountByPass.static);
     expect(after.renderCountByPass.overlay).toBeGreaterThan(before.renderCountByPass.overlay);
+    expect(after.maxMaterializedCandleCount).toBeLessThan(20_000);
 
     runtime.retryRender();
     runtime.destroy();
