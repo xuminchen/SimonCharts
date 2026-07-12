@@ -4,7 +4,10 @@ import {
   serializeDrawingObject
 } from "../drawing/drawingSerialization";
 import type { SerializedDrawingObject } from "../drawing/drawingSchema";
-import type { ViewportState } from "../model/runtime";
+import {
+  supportedPriceScaleModes,
+  type ViewportState
+} from "../model/runtime";
 import type { ChartSettings } from "../settings/chartSettings";
 
 export const currentLayoutSnapshotSchemaVersion = 1;
@@ -101,7 +104,7 @@ function isViewportState(value: unknown): value is ViewportState {
     typeof value.visibleRange.to === "number" &&
     typeof value.candleWidth === "number" &&
     typeof value.scrollOffset === "number" &&
-    (value.priceScaleMode === "linear" || value.priceScaleMode === "log")
+    supportedPriceScaleModes.includes(value.priceScaleMode as ViewportState["priceScaleMode"])
   );
 }
 

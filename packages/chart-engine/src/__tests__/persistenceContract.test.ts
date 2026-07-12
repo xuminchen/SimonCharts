@@ -32,6 +32,42 @@ describe("layout persistence contract", () => {
     expect(restored.settings).not.toBe(source.settings);
   });
 
+  it.each(["linear", "log", "percentage"] as const)(
+    "round-trips the canonical %s price scale mode",
+    (priceScaleMode) => {
+      const serialized = serializeChartLayoutSnapshot({
+        viewport: {
+          visibleRange: { from: 0, to: 1 },
+          candleWidth: 8,
+          scrollOffset: 0,
+          priceScaleMode
+        },
+        drawings: [],
+        indicatorIds: []
+      });
+
+      expect(deserializeChartLayoutSnapshot(serialized).viewport.priceScaleMode).toBe(
+        priceScaleMode
+      );
+    }
+  );
+
+  it("rejects non-canonical price scale aliases", () => {
+    expect(() =>
+      deserializeChartLayoutSnapshot({
+        schemaVersion: 1,
+        viewport: {
+          visibleRange: { from: 0, to: 1 },
+          candleWidth: 8,
+          scrollOffset: 0,
+          priceScaleMode: "percent"
+        },
+        drawings: [],
+        indicatorIds: []
+      })
+    ).toThrow("Chart layout snapshot viewport must be an object");
+  });
+
   it("rejects unsupported layout schema versions", () => {
     expect(() =>
       deserializeChartLayoutSnapshot({

@@ -29,7 +29,7 @@ const enginePackage = await readJson("packages/chart-engine/package.json");
 const playgroundPackage = await readJson("apps/playground/package.json");
 const lockfile = await readJson("package-lock.json");
 
-const expectedVersion = "1.0.0-rc.0";
+const expectedVersion = "1.0.0-rc.1";
 
 expect(enginePackage.name === "@simoncharts/chart-engine", "chart-engine package name must be stable");
 expect(enginePackage.version === expectedVersion, `chart-engine version must be ${expectedVersion}`);

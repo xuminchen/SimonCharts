@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 const expectedName = "@simoncharts/chart-engine";
-const expectedVersion = "1.0.0-rc.0";
+const expectedVersion = "1.0.0-rc.1";
 const failures = [];
 
 function expect(condition, message) {
@@ -42,6 +42,7 @@ const requiredFiles = [
   "dist/extensions/chartExtension.d.ts",
   "dist/drawing/drawingHandleDrag.d.ts",
   "dist/drawing/drawingInteraction.d.ts",
+  "dist/drawing/drawingCoordinates.d.ts",
   "dist/drawing/drawingMoveDrag.d.ts",
   "dist/drawing/drawingParameters.d.ts",
   "dist/drawing/drawingPropertySchema.d.ts",
@@ -50,8 +51,13 @@ const requiredFiles = [
   "dist/drawing/drawingToolRegistry.d.ts",
   "dist/drawing/drawingTransform.d.ts",
   "dist/figures/figureRegistry.d.ts",
+  "dist/indicators/indicatorChunk.d.ts",
+  "dist/model/formatters.d.ts",
+  "dist/render/mainPriceScale.d.ts",
   "dist/render/staticRenderer.d.ts",
   "dist/series/seriesRegistry.d.ts",
+  "dist/series/transforms/seriesTransformChunk.d.ts",
+  "dist/viewport/priceScale.d.ts",
   "dist/visuals/visualRegistry.d.ts"
 ];
 

@@ -3,6 +3,8 @@ import {
   createChartEngine,
   fixtureDailyCandleSeries,
   serializeChartLayoutSnapshot,
+  supportedTimeframes,
+  type CandleSeries,
   type HostAdapter
 } from "../index";
 
@@ -62,5 +64,33 @@ describe("host integration contract", () => {
     expect(persistedLayouts).toHaveLength(1);
     expect(serialized.schemaVersion).toBe(1);
     expect(serialized.indicatorIds).toEqual(["MACD"]);
+  });
+
+  it("loads every canonical timeframe through setSeries and persists percentage", () => {
+    const engine = createChartEngine({ series: fixtureDailyCandleSeries });
+
+    for (const timeframe of supportedTimeframes) {
+      const series: CandleSeries = {
+        ...fixtureDailyCandleSeries,
+        timeframe,
+        dataVersion: `${fixtureDailyCandleSeries.dataVersion}:${timeframe}`
+      };
+
+      engine.setSeries(series);
+      expect(engine.getState().series.timeframe).toBe(timeframe);
+      expect(engine.getState().series.dataVersion).toBe(series.dataVersion);
+    }
+
+    const snapshot = serializeChartLayoutSnapshot({
+      viewport: {
+        ...engine.getState().viewport,
+        priceScaleMode: "percentage"
+      },
+      drawings: [],
+      indicatorIds: []
+    });
+
+    expect(snapshot.viewport.priceScaleMode).toBe("percentage");
+    engine.destroy();
   });
 });

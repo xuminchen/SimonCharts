@@ -16,6 +16,7 @@ import {
   createDefaultDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingLayer,
+  drawingPointFromPointer,
   createPanelLayout,
   createRenderScheduler,
   createStaticLayers,
@@ -42,15 +43,20 @@ import {
   hitTestDrawingEditHandle,
   renderOverlay,
   fixtureDailyCandleSeries,
+  projectDrawingObject,
   renderStaticChart,
   resizeCanvas,
   serializeDrawingObject,
   updateDrawingMoveDrag,
   updateDrawingSelectionBox,
   updateDrawingHandleDrag,
+  unprojectDrawingObject,
+  supportedPriceScaleModes,
+  supportedTimeframes,
   supportedSeriesTypes
 } from "@simoncharts/chart-engine";
 import type {
+  CandleSeries,
   ChartCrosshairState,
   ChartLayout,
   ChartTheme,
@@ -66,15 +72,19 @@ import type {
   CoreIndicatorId,
   DrawingEditor,
   DrawingEditorCommand,
+  DrawingEditorPoint,
   DrawingEditorTool,
+  DrawingCoordinateContext,
   DrawingHandleDragOperation,
   DrawingMoveDragOperation,
   DrawingObject,
   DrawingPropertyDefinition,
   DrawingSelectionBoxOperation,
   MagnetSnapTarget,
+  PriceScaleMode,
   SeriesType,
   ThemeMode,
+  Timeframe,
   PriceScale,
   ViewportState
 } from "@simoncharts/chart-engine";
@@ -89,10 +99,21 @@ declare global {
   }
 }
 
-assertCandleSeries(fixtureDailyCandleSeries);
+function loadPlaygroundSeries(timeframe: Timeframe): CandleSeries {
+  return {
+    ...fixtureDailyCandleSeries,
+    timeframe,
+    dataVersion: `${fixtureDailyCandleSeries.dataVersion}:${timeframe}`,
+    candles: fixtureDailyCandleSeries.candles.map((candle) => ({ ...candle }))
+  };
+}
+
+let activeSeries = loadPlaygroundSeries(playgroundState.timeframe);
+
+assertCandleSeries(activeSeries);
 window.__SIMON_CHART_EVENTS__ = [];
 const chartEngine = createChartEngine({
-  series: fixtureDailyCandleSeries,
+  series: activeSeries,
   seriesType: playgroundState.seriesType
 });
 
@@ -107,6 +128,9 @@ const chartSurface = document.createElement("div");
 const topControls = document.createElement("div");
 const seriesTypeLabel = document.createElement("label");
 const seriesTypeSelect = document.createElement("select");
+const timeframeLabel = document.createElement("label");
+const timeframeSelect = document.createElement("select");
+const activeTimeframe = document.createElement("span");
 const indicatorLabel = document.createElement("label");
 const indicatorSelector = document.createElement("select");
 const activeSeriesType = document.createElement("span");
@@ -118,7 +142,8 @@ const toggleGridButton = document.createElement("button");
 const gridState = document.createElement("span");
 const invertPriceScaleButton = document.createElement("button");
 const scaleState = document.createElement("span");
-const percentagePriceScaleButton = document.createElement("button");
+const priceScaleModeLabel = document.createElement("label");
+const priceScaleModeSelect = document.createElement("select");
 const priceScaleModeState = document.createElement("span");
 const viewportCandleWidthState = document.createElement("span");
 const themeModeLabel = document.createElement("label");
@@ -149,6 +174,11 @@ chartSurface.className = "chart-surface";
 topControls.className = "top-controls";
 seriesTypeLabel.textContent = "Type";
 seriesTypeSelect.dataset.testid = "series-type";
+timeframeLabel.textContent = "Timeframe";
+timeframeSelect.dataset.testid = "timeframe";
+activeTimeframe.dataset.testid = "active-timeframe";
+activeTimeframe.hidden = true;
+activeTimeframe.textContent = chartEngine.getState().series.timeframe;
 indicatorLabel.textContent = "Indicator";
 indicatorSelector.dataset.testid = "indicator-selector";
 activeSeriesType.dataset.testid = "active-series-type";
@@ -174,9 +204,8 @@ invertPriceScaleButton.dataset.testid = "invert-price-scale";
 invertPriceScaleButton.textContent = "Invert";
 scaleState.className = "status-item";
 scaleState.dataset.testid = "scale-state";
-percentagePriceScaleButton.type = "button";
-percentagePriceScaleButton.dataset.testid = "percentage-price-scale";
-percentagePriceScaleButton.textContent = "%";
+priceScaleModeLabel.textContent = "Scale";
+priceScaleModeSelect.dataset.testid = "price-scale-mode-control";
 priceScaleModeState.className = "status-item diagnostics-item";
 priceScaleModeState.dataset.testid = "price-scale-mode";
 viewportCandleWidthState.className = "status-item diagnostics-item";
@@ -253,6 +282,23 @@ for (const type of supportedSeriesTypes) {
   seriesTypeSelect.append(option);
 }
 
+for (const timeframe of supportedTimeframes) {
+  const option = document.createElement("option");
+
+  option.value = timeframe;
+  option.textContent = timeframe;
+  option.selected = timeframe === playgroundState.timeframe;
+  timeframeSelect.append(option);
+}
+
+for (const mode of supportedPriceScaleModes) {
+  const option = document.createElement("option");
+
+  option.value = mode;
+  option.textContent = mode;
+  priceScaleModeSelect.append(option);
+}
+
 const fixtureIndicatorOption = document.createElement("option");
 fixtureIndicatorOption.value = "";
 fixtureIndicatorOption.textContent = "Fixture";
@@ -268,10 +314,14 @@ for (const definition of coreIndicatorDefinitions) {
 }
 
 seriesTypeLabel.append(seriesTypeSelect);
+timeframeLabel.append(timeframeSelect);
 indicatorLabel.append(indicatorSelector);
+priceScaleModeLabel.append(priceScaleModeSelect);
 themeModeLabel.append(themeModeSelect);
 topControls.append(
   seriesTypeLabel,
+  timeframeLabel,
+  activeTimeframe,
   indicatorLabel,
   activeSeriesType,
   zoomInButton,
@@ -280,7 +330,7 @@ topControls.append(
   gridState,
   invertPriceScaleButton,
   scaleState,
-  percentagePriceScaleButton,
+  priceScaleModeLabel,
   priceScaleModeState,
   viewportCandleWidthState,
   themeModeLabel,
@@ -374,7 +424,7 @@ const staticLayers = [
   createVisualLayer(visualRendererRegistry),
   createDrawingLayer(drawingRendererRegistry)
 ];
-const movingAverages = Object.values(calculateDefaultMovingAverages(fixtureDailyCandleSeries));
+let movingAverages = Object.values(calculateDefaultMovingAverages(activeSeries));
 const darkChartTheme: ChartTheme = {
   ...defaultChartTheme,
   colors: {
@@ -395,6 +445,7 @@ const darkChartTheme: ChartTheme = {
 };
 let viewport: ViewportState | undefined;
 let priceScale: PriceScale | undefined;
+let drawingCoordinateContext: DrawingCoordinateContext | undefined;
 let crosshair: ChartCrosshairState | undefined;
 let layout: ChartLayout | undefined;
 let panels: PanelArea[] = [];
@@ -421,12 +472,20 @@ function updateMainPriceScale(): void {
   }
 
   priceScale = createMainPanelPriceScale(
-    fixtureDailyCandleSeries,
+    activeSeries,
     viewport.visibleRange,
     viewport.priceScaleMode,
     activeVisualOutputs,
     movingAverages
   );
+  if (layout) {
+    drawingCoordinateContext = {
+      series: activeSeries,
+      viewport,
+      plotArea: getMainPanelLayout().plotArea,
+      priceScale
+    };
+  }
   interactionEngine?.setPriceScale(priceScale);
 }
 
@@ -471,26 +530,27 @@ function syncLayout(): void {
   panelCount.textContent = `${panels.length} panels`;
   visualOutputCount.textContent = `${activeVisualOutputs.length} visuals`;
   syncPanelTitles();
-  syncDrawingStatus();
 
   if (!viewport) {
-    viewport = createInitialViewport(fixtureDailyCandleSeries.candles.length, layout.plotArea.width);
+    viewport = createInitialViewport(activeSeries.candles.length, layout.plotArea.width);
   } else if (layoutChanged) {
     const visibleRange = computeVisibleRange(
       viewport,
-      fixtureDailyCandleSeries.candles.length,
+      activeSeries.candles.length,
       layout.plotArea.width
     );
 
     viewport = {
       ...viewport,
-      scrollOffset: Math.max(0, fixtureDailyCandleSeries.candles.length - 1 - visibleRange.to),
+      scrollOffset: Math.max(0, activeSeries.candles.length - 1 - visibleRange.to),
       visibleRange
     };
   }
   if (!priceScale || layoutChanged) {
     updateMainPriceScale();
   }
+  syncDrawingStatus();
+  syncChartEngineDrawings();
   chartEngine.setViewport(viewport);
   if (layoutChanged) {
     syncEngineStatus();
@@ -548,7 +608,7 @@ function createRenderContext(
   return {
     context,
     state: {
-      series: fixtureDailyCandleSeries,
+      series: activeSeries,
       viewport,
       priceScale,
       formatTime: defaultChartTimeFormatter,
@@ -559,11 +619,24 @@ function createRenderContext(
       seriesType: chartEngine.getState().seriesType,
       panels,
       visualOutputs: activeVisualOutputs,
-      drawings: drawingPreviewDrawings ?? drawingEditor.getState().drawings,
+      drawings: drawingPreviewDrawings ?? chartEngine.getState().drawings,
       selectedDrawingIds: drawingSelectionPreviewIds ?? drawingEditor.getState().selectedDrawingIds,
       hoveredDrawingId: drawingHoveredDrawingId
     }
   };
+}
+
+function syncChartEngineDrawings(): void {
+  if (!drawingCoordinateContext) {
+    return;
+  }
+
+  const editorState = drawingEditor.getState();
+  const drawings = editorState.previewDrawing
+    ? [...editorState.drawings, editorState.previewDrawing]
+    : editorState.drawings;
+
+  chartEngine.setDrawings(drawings);
 }
 
 function syncDrawingStatus(): void {
@@ -575,7 +648,14 @@ function syncDrawingStatus(): void {
 }
 
 function executeDrawingCommand(command: DrawingEditorCommand): void {
-  drawingEditor.executeCommand(command);
+  drawingEditor.executeCommand(
+    command.type === "dragAnchor"
+      ? {
+          ...command,
+          point: drawingPointFromPointer(command.point, requireDrawingCoordinateContext())
+        }
+      : command
+  );
   drawingToolbar.setActiveTool(drawingEditor.getState().activeTool);
   setDrawingHoverId(undefined);
   clearDrawingMagnetState();
@@ -741,7 +821,11 @@ function syncDrawingJsonExport(): void {
   const state = drawingEditor.getState();
   const payload = {
     schemaVersion: 1,
-    drawings: state.drawings.map(serializeDrawingObject),
+    drawings: state.drawings.map((drawing) =>
+      serializeDrawingObject(
+        unprojectDrawingObject(drawing, requireDrawingCoordinateContext())
+      )
+    ),
     selectedDrawingIds: state.selectedDrawingIds
   };
 
@@ -755,12 +839,36 @@ function setDrawingImportStatus(message: string, kind: "error" | "success" | und
 
 function createPlaygroundDrawingEditor(drawings: DrawingObject[]): DrawingEditor {
   return createDrawingEditor({
-    drawings,
+    drawings: drawings.map(normalizeInitialDrawingToDomain),
+    coordinateAdapter: {
+      toScreen(drawing) {
+        return projectDrawingObject(drawing, requireDrawingCoordinateContext());
+      },
+      toDomain(drawing) {
+        return unprojectDrawingObject(drawing, requireDrawingCoordinateContext());
+      }
+    },
     onEvent(event) {
       window.__SIMON_CHART_EVENTS__?.push(event);
       syncDrawingStatus();
     }
   });
+}
+
+function normalizeInitialDrawingToDomain(drawing: DrawingObject): DrawingObject {
+  const domainDrawing = structuredClone(drawing);
+
+  domainDrawing.anchors = drawing.anchors.map((anchor) => {
+    if (Number.isFinite(anchor.x) && Number.isFinite(anchor.y)) {
+      return unprojectDrawingObject(
+        { ...drawing, anchors: [{ ...anchor }] },
+        requireDrawingCoordinateContext()
+      ).anchors[0];
+    }
+
+    return { time: anchor.time, price: anchor.price };
+  });
+  return domainDrawing;
 }
 
 function getPlaygroundPanelDefinitions(): PanelDefinition[] {
@@ -1073,9 +1181,12 @@ function isDrawingImportPayload(
 function syncEngineStatus(): void {
   const engineState = chartEngine.getState();
 
+  timeframeSelect.value = engineState.series.timeframe;
+  activeTimeframe.textContent = engineState.series.timeframe;
   gridState.textContent = engineState.settings.gridVisible ? "grid on" : "grid off";
   scaleState.textContent = engineState.invertedPriceScale ? "inverted" : "normal";
   priceScaleModeState.textContent = priceScale?.mode ?? engineState.viewport.priceScaleMode;
+  priceScaleModeSelect.value = engineState.viewport.priceScaleMode;
   viewportCandleWidthState.textContent = String(engineState.viewport.candleWidth);
   themeModeSelect.value = engineState.settings.themeMode;
   themeState.textContent = engineState.settings.themeMode;
@@ -1093,6 +1204,35 @@ function syncViewportCommandState(): void {
     handleInteractionEvent({ type: "crosshairMoved", crosshair: undefined });
   }
   interactionEngine = createCurrentInteractionEngine();
+  syncEngineStatus();
+}
+
+function setPlaygroundTimeframe(timeframe: Timeframe): void {
+  const priceScaleMode = chartEngine.getState().viewport.priceScaleMode;
+
+  cancelPointerInteraction();
+  activeSeries = loadPlaygroundSeries(timeframe);
+  assertCandleSeries(activeSeries);
+  playgroundState.timeframe = timeframe;
+  chartEngine.setSeries(activeSeries);
+  movingAverages = Object.values(calculateDefaultMovingAverages(activeSeries));
+  activeVisualOutputs = activeIndicatorDefinition
+    ? calculateCoreIndicator(activeIndicatorDefinition.id, activeSeries).outputs
+    : playgroundVisualOutputs;
+
+  if (layout) {
+    viewport = {
+      ...createInitialViewport(activeSeries.candles.length, layout.plotArea.width),
+      priceScaleMode
+    };
+    chartEngine.setViewport(viewport);
+  }
+
+  priceScale = undefined;
+  drawingCoordinateContext = undefined;
+  interactionEngine = undefined;
+  crosshair = undefined;
+  render();
   syncEngineStatus();
 }
 
@@ -1224,7 +1364,7 @@ function createCurrentInteractionEngine(): InteractionEngine {
   const mainPanelLayout = getMainPanelLayout();
 
   return createInteractionEngine({
-    series: fixtureDailyCandleSeries,
+    series: activeSeries,
     viewport,
     priceScale,
     width: mainPanelLayout.plotArea.width,
@@ -1271,6 +1411,7 @@ function updateDrawingHover(point: { x: number; y: number }): void {
 }
 
 function cancelPointerInteraction(): void {
+  drawingEditor.cancel();
   drawingHandleDragOperation = undefined;
   drawingHandleDragPoint = undefined;
   drawingMoveDragOperation = undefined;
@@ -1321,6 +1462,14 @@ function getCanvasPoint(event: PointerEvent): { x: number; y: number } {
   };
 }
 
+function requireDrawingCoordinateContext(): DrawingCoordinateContext {
+  if (!drawingCoordinateContext) {
+    throw new Error("Drawing coordinate context is not ready");
+  }
+
+  return drawingCoordinateContext;
+}
+
 function getWheelPoint(event: WheelEvent): { x: number; y: number } {
   const rect = overlayCanvas.getBoundingClientRect();
 
@@ -1334,7 +1483,9 @@ function getDrawingMagnetTargets(exclude?: {
   drawingId: string;
   anchorIndex: number;
 }): MagnetSnapTarget[] {
-  const drawingTargets = createDrawingAnchorMagnetTargets(drawingEditor.getState().drawings);
+  const drawingTargets = createDrawingAnchorMagnetTargets(
+    drawingEditor.getState().drawings
+  );
   const filteredDrawingTargets = exclude
     ? drawingTargets.filter(
         (target) =>
@@ -1344,7 +1495,7 @@ function getDrawingMagnetTargets(exclude?: {
   const ohlcTargets =
     layout && viewport && priceScale
       ? createOhlcMagnetTargetsFromSeries({
-          series: fixtureDailyCandleSeries,
+          series: activeSeries,
           viewport,
           plotArea: getMainPanelLayout().plotArea,
           priceScale
@@ -1366,6 +1517,10 @@ function getDrawingSnapPoint(
 
   interactionSession.handleInput({ type: "magnet", magnet: snap.magnet });
   return snap.point;
+}
+
+function getDrawingEditorPoint(point: { x: number; y: number }): DrawingEditorPoint {
+  return drawingPointFromPointer(getDrawingSnapPoint(point), requireDrawingCoordinateContext());
 }
 
 function getDrawingHandleDragPoint(
@@ -1557,11 +1712,13 @@ function isDrawingNudgeKey(key: string): boolean {
 }
 
 function getNudgeDelta(key: string, step: number): { dx: number; dy: number } {
+  const horizontalStep = step * (viewport?.candleWidth ?? 1);
+
   switch (key) {
     case "ArrowLeft":
-      return { dx: -step, dy: 0 };
+      return { dx: -horizontalStep, dy: 0 };
     case "ArrowRight":
-      return { dx: step, dy: 0 };
+      return { dx: horizontalStep, dy: 0 };
     case "ArrowUp":
       return { dx: 0, dy: -step };
     default:
@@ -1584,8 +1741,15 @@ resetButton.addEventListener("click", () => {
   syncViewportCommandState();
 });
 
-percentagePriceScaleButton.addEventListener("click", () => {
-  chartEngine.dispatch({ type: "setPriceScaleMode", mode: "percentage" });
+timeframeSelect.addEventListener("change", () => {
+  setPlaygroundTimeframe(timeframeSelect.value as Timeframe);
+});
+
+priceScaleModeSelect.addEventListener("change", () => {
+  chartEngine.dispatch({
+    type: "setPriceScaleMode",
+    mode: priceScaleModeSelect.value as PriceScaleMode
+  });
   syncViewportCommandState();
 });
 
@@ -1610,7 +1774,7 @@ indicatorSelector.addEventListener("change", () => {
   activeIndicatorDefinition = coreIndicatorDefinitions.find(
     (definition) => definition.id === indicatorId
   );
-  activeVisualOutputs = calculateCoreIndicator(indicatorId, fixtureDailyCandleSeries).outputs;
+  activeVisualOutputs = calculateCoreIndicator(indicatorId, activeSeries).outputs;
   clearIndicatorInteractionState();
   render();
 });
@@ -1670,7 +1834,7 @@ function handleDrawingPointerDown(
   const clearedHover = setDrawingHoverId(undefined);
 
   if (editorState.activeTool !== "select") {
-    drawingEditor.pointerDown(getDrawingSnapPoint(point));
+    drawingEditor.pointerDown(getDrawingEditorPoint(point));
     renderStatic();
     return true;
   }
@@ -1738,6 +1902,13 @@ function handleDrawingPointerDown(
 
 function handleDrawingPointerMove(event: PointerEvent): boolean {
   const point = getCanvasPoint(event);
+  const editorState = drawingEditor.getState();
+
+  if (editorState.activeTool !== "select") {
+    drawingEditor.pointerMove(getDrawingEditorPoint(point));
+    renderStatic();
+    return true;
+  }
 
   if (drawingHandleDragOperation) {
     const dragPoint = getDrawingHandleDragPoint(drawingHandleDragOperation, point);
@@ -1775,6 +1946,12 @@ function handleDrawingPointerMove(event: PointerEvent): boolean {
 }
 
 function handleDrawingPointerUp(point: { x: number; y: number }): boolean {
+  if (drawingEditor.getState().activeTool !== "select") {
+    drawingEditor.pointerUp(getDrawingEditorPoint(point));
+    renderStatic();
+    return true;
+  }
+
   if (drawingHandleDragOperation) {
     return finishDrawingHandlePointerDrag(point);
   }

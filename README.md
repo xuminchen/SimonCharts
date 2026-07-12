@@ -25,13 +25,16 @@ Internal source paths are not public API. Runtime exports are guarded by `npm ru
 
 ## Current RC Scope
 
-`@simoncharts/chart-engine@1.0.0-rc.0` includes:
+`@simoncharts/chart-engine@1.0.0-rc.1` includes:
 
+- eight canonical timeframes and linear, log, and percentage price scales
 - 17 built-in chart series types
+- bounded checkpoint runners for all 16 core indicators and five synthetic series transforms
 - static canvas rendering and layered rendering primitives
 - neutral interaction and render scheduler state
 - visual output renderers for line, histogram, band, and marker outputs
-- 63 built-in drawing tools and a command-driven drawing editor
+- 63 built-in drawing tools, step/continuous creation previews, and a command-driven drawing editor
+- canonical time/absolute-price drawing coordinates with shared render and edit projection
 - drawing serialization and layout snapshot contracts
 - extension registration for series, visual, drawing, and figure contributions
 

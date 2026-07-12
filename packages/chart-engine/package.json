@@ -1,6 +1,6 @@
 {
   "name": "@simoncharts/chart-engine",
-  "version": "1.0.0-rc.0",
+  "version": "1.0.0-rc.1",
   "description": "Host-independent chart engine kernel for SimonCharts.",
   "license": "UNLICENSED",
   "keywords": [

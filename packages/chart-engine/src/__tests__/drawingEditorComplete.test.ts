@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDrawingEditor,
   createDrawingToolRegistry,
+  type DrawingEditor,
   type DrawingEditorEvent,
   type DrawingObject
 } from "../index";
@@ -89,6 +90,47 @@ describe("complete drawing editor", () => {
       { x: 1, y: 2, time: 1, price: 10 },
       { x: 31, y: 32, time: 4, price: 13 }
     ]);
+  });
+
+  it("keeps creation preview and creation events in the current screen projection", () => {
+    const events: DrawingEditorEvent[] = [];
+    let offset = { x: 100, y: 200 };
+    const editor = createDrawingEditor({
+      drawings: [],
+      coordinateAdapter: {
+        toScreen: (drawing) => offsetDrawingToScreen(drawing, offset),
+        toDomain: (drawing) => offsetDrawingToDomain(drawing, offset)
+      },
+      onEvent(event) {
+        events.push(event);
+      }
+    });
+
+    editor.setTool("trendLine");
+    editor.pointerDown({ x: 101, y: 210, time: 1, price: 10 });
+    expect(editor.getState().previewDrawing?.anchors).toEqual([
+      { x: 101, y: 210, time: 1, price: 10 }
+    ]);
+
+    const eventCount = events.length;
+
+    offset = { x: 300, y: 400 };
+    expect(editor.getState().previewDrawing?.anchors).toEqual([
+      { x: 301, y: 410, time: 1, price: 10 }
+    ]);
+    expect(events).toHaveLength(eventCount);
+
+    editor.pointerDown({ x: 302, y: 420, time: 2, price: 20 });
+
+    const committed = findDrawing(editor.getState().drawings, "drawing-1");
+    const created = events.findLast((event) => event.type === "drawingCreated");
+
+    expect(committed.anchors).toEqual([
+      { x: 301, y: 410, time: 1, price: 10 },
+      { x: 302, y: 420, time: 2, price: 20 }
+    ]);
+    expect(created).toEqual({ type: "drawingCreated", drawing: committed });
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: true, canRedo: false });
   });
 
   it("keeps step state events and history unchanged on pointer up", () => {
@@ -822,6 +864,338 @@ describe("complete drawing editor", () => {
     ]);
   });
 
+  it("reprojects current drawings and handles without changing history or emitting events", () => {
+    const events: DrawingEditorEvent[] = [];
+    let offset = { x: 100, y: 200 };
+    const editor = createDrawingEditor({
+      drawings: [
+        {
+          id: "free",
+          type: "trendLine",
+          anchors: [
+            { time: 1, price: 10 },
+            { time: 2, price: 20 }
+          ]
+        }
+      ],
+      coordinateAdapter: {
+        toScreen(drawing) {
+          return {
+            ...drawing,
+            anchors: drawing.anchors.map((anchor) => ({
+              ...anchor,
+              x: (anchor.time ?? 0) + offset.x,
+              y: (anchor.price ?? 0) + offset.y
+            }))
+          };
+        },
+        toDomain(drawing) {
+          return {
+            ...drawing,
+            anchors: drawing.anchors.map((anchor) => ({
+              time: (anchor.x ?? 0) - offset.x,
+              price: (anchor.y ?? 0) - offset.y
+            }))
+          };
+        }
+      },
+      onEvent(event) {
+        events.push(event);
+      }
+    });
+
+    editor.selectDrawing("free");
+    events.length = 0;
+
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { time: 1, price: 10, x: 101, y: 210 },
+      { time: 2, price: 20, x: 102, y: 220 }
+    ]);
+    expect(editor.getSelectedEditHandles()[0]).toMatchObject({ x: 101, y: 210 });
+
+    offset = { x: 300, y: 400 };
+
+    expect(findDrawing(editor.getState().drawings, "free").anchors).toEqual([
+      { time: 1, price: 10, x: 301, y: 410 },
+      { time: 2, price: 20, x: 302, y: 420 }
+    ]);
+    expect(editor.getSelectedEditHandles()[0]).toMatchObject({ x: 301, y: 410 });
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: false });
+    expect(events).toEqual([]);
+
+    editor.selectDrawings([]);
+    editor.selectDrawingsInBounds({ x: 300, y: 409, width: 3, height: 12 });
+    expect(editor.getState().selectedDrawingIds).toEqual(["free"]);
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: false });
+  });
+
+  for (const geometryEdit of [
+    {
+      name: "anchor drag",
+      run(editor: DrawingEditor) {
+        editor.dragAnchor("free", 1, { x: 40, y: 50 });
+      }
+    },
+    {
+      name: "body drag",
+      run(editor: DrawingEditor) {
+        editor.dragSelected({ dx: 5, dy: -2 });
+      }
+    },
+    {
+      name: "resize",
+      run(editor: DrawingEditor) {
+        editor.resizeSelected({
+          handle: "bottomRight",
+          fromBounds: { x: 0, y: 0, width: 10, height: 10 },
+          toPoint: { x: 20, y: 30 }
+        });
+      }
+    },
+    {
+      name: "rotate",
+      run(editor: DrawingEditor) {
+        editor.rotateSelected({ center: { x: 5, y: 5 }, angleRadians: Math.PI / 2 });
+      }
+    }
+  ]) {
+    it(`round-trips ${geometryEdit.name} through one coordinate-aware history commit`, () => {
+      const toScreenInputs: DrawingObject[] = [];
+      const toDomainInputs: DrawingObject[] = [];
+      const toDomainResults: DrawingObject[] = [];
+      const events: DrawingEditorEvent[] = [];
+      let offset = { x: 100, y: 200 };
+      const original: DrawingObject = {
+        id: "free",
+        type: "rectangle",
+        anchors: [
+          { time: 0, price: 0 },
+          { time: 10, price: 10 }
+        ],
+        style: { color: "#2563eb", lineDash: [2, 3] },
+        metadata: { nested: { values: [1, 2] } }
+      };
+      const editor = createDrawingEditor({
+        drawings: [original],
+        coordinateAdapter: {
+          toScreen(drawing) {
+            toScreenInputs.push(drawing);
+            return offsetDrawingToScreen(drawing, offset);
+          },
+          toDomain(drawing) {
+            toDomainInputs.push(drawing);
+            const result = offsetDrawingToDomain(drawing, offset);
+
+            toDomainResults.push(result);
+            return result;
+          }
+        },
+        onEvent(event) {
+          events.push(event);
+        }
+      });
+
+      editor.selectDrawing("free");
+      events.length = 0;
+      geometryEdit.run(editor);
+
+      const committed = findDrawing(editor.getState().drawings, "free");
+      const updatedEvent = events.find((event) => event.type === "drawingUpdated");
+
+      expect(toDomainInputs).toHaveLength(1);
+      expect(committed.anchors).toEqual(
+        committed.anchors.map((anchor) => ({
+          ...anchor,
+          time: (anchor.x ?? 0) - offset.x,
+          price: (anchor.y ?? 0) - offset.y
+        }))
+      );
+      expect(updatedEvent).toEqual({ type: "drawingUpdated", drawing: committed });
+      expect(editor.getCapabilities()).toMatchObject({ canUndo: true, canRedo: false });
+
+      toScreenInputs[0].anchors[0].time = 999;
+      toDomainInputs[0].anchors[0].x = 999;
+      toDomainResults[0].anchors[0].price = 999;
+      expect(findDrawing(editor.getState().drawings, "free")).toEqual(committed);
+
+      offset = { x: 300, y: 400 };
+      editor.undo();
+      expect(findDrawing(editor.getState().drawings, "free")).toEqual(
+        offsetDrawingToScreen(original, offset)
+      );
+      expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: true });
+
+      editor.redo();
+      expect(
+        findDrawing(editor.getState().drawings, "free").anchors.map(({ time, price }) => ({
+          time,
+          price
+        }))
+      ).toEqual(committed.anchors.map(({ time, price }) => ({ time, price })));
+      expect(editor.getCapabilities()).toMatchObject({ canUndo: true, canRedo: false });
+    });
+  }
+
+  it("round-trips a multi-drawing geometry edit in one shared history snapshot", () => {
+    const original: DrawingObject[] = [
+      { id: "a", type: "trendLine", anchors: [{ time: 0, price: 0 }] },
+      { id: "b", type: "trendLine", anchors: [{ time: 20, price: 20 }] }
+    ];
+    const editor = createDrawingEditor({
+      drawings: original,
+      coordinateAdapter: {
+        toScreen: (drawing) => offsetDrawingToScreen(drawing, { x: 100, y: 200 }),
+        toDomain: (drawing) => offsetDrawingToDomain(drawing, { x: 100, y: 200 })
+      }
+    });
+
+    editor.selectDrawings(["a", "b"]);
+    editor.dragSelected({ dx: 3, dy: 4 });
+    const committed = editor.getState().drawings;
+
+    expect(committed.map((drawing) => drawing.anchors[0])).toEqual([
+      { x: 103, y: 204, time: 3, price: 4 },
+      { x: 123, y: 224, time: 23, price: 24 }
+    ]);
+
+    editor.undo();
+    expect(editor.getState().drawings).toEqual(
+      original.map((drawing) => offsetDrawingToScreen(drawing, { x: 100, y: 200 }))
+    );
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: true });
+
+    editor.redo();
+    expect(editor.getState().drawings).toEqual(committed);
+  });
+
+  it("keeps state, history, and events atomic when coordinate conversion throws", () => {
+    const events: DrawingEditorEvent[] = [];
+    const editor = createDrawingEditor({
+      drawings: [
+        {
+          id: "free",
+          type: "trendLine",
+          anchors: [
+            { x: 0, y: 0, time: 1, price: 10 },
+            { x: 10, y: 10, time: 2, price: 20 }
+          ]
+        }
+      ],
+      coordinateAdapter: {
+        toScreen: (drawing) => drawing,
+        toDomain(drawing) {
+          drawing.anchors[0].x = 999;
+          throw new Error("coordinate conversion failed");
+        }
+      },
+      onEvent(event) {
+        events.push(event);
+      }
+    });
+
+    editor.selectDrawing("free");
+    events.length = 0;
+    const stateBefore = editor.getState();
+    const capabilitiesBefore = editor.getCapabilities();
+
+    expect(() => editor.dragAnchor("free", 1, { x: 40, y: 50 })).toThrow(
+      "coordinate conversion failed"
+    );
+    expect(editor.getState()).toEqual(stateBefore);
+    expect(editor.getCapabilities()).toEqual(capabilitiesBefore);
+    expect(events).toEqual([]);
+  });
+
+  it("precomputes projected update events before committing geometry", () => {
+    const events: DrawingEditorEvent[] = [];
+    let screenCalls = 0;
+    let throwOnScreenCall = Number.POSITIVE_INFINITY;
+    const editor = createDrawingEditor({
+      drawings: [{ id: "free", type: "trendLine", anchors: [{ x: 0, y: 0 }] }],
+      coordinateAdapter: {
+        toScreen(drawing) {
+          screenCalls += 1;
+          if (screenCalls === throwOnScreenCall) {
+            throw new Error("event projection failed");
+          }
+          return drawing;
+        },
+        toDomain: (drawing) => drawing
+      },
+      onEvent(event) {
+        events.push(event);
+      }
+    });
+
+    editor.selectDrawing("free");
+    const stateBefore = editor.getState();
+    events.length = 0;
+    screenCalls = 0;
+    throwOnScreenCall = 2;
+
+    expect(() => editor.dragSelected({ dx: 5, dy: 6 })).toThrow("event projection failed");
+
+    throwOnScreenCall = Number.POSITIVE_INFINITY;
+    expect(editor.getState()).toEqual(stateBefore);
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: false });
+    expect(events).toEqual([]);
+  });
+
+  it("keeps creation state and ids atomic when preview projection throws", () => {
+    let shouldThrow = true;
+    const editor = createDrawingEditor({
+      drawings: [],
+      coordinateAdapter: {
+        toScreen(drawing) {
+          if (shouldThrow) {
+            throw new Error("preview projection failed");
+          }
+          return drawing;
+        },
+        toDomain: (drawing) => drawing
+      }
+    });
+
+    editor.setTool("trendLine");
+    expect(() => editor.pointerDown({ x: 1, y: 2 })).toThrow("preview projection failed");
+
+    shouldThrow = false;
+    expect(editor.getState()).toMatchObject({
+      drawings: [],
+      isCreating: false,
+      previewDrawing: undefined
+    });
+    expect(editor.getCapabilities()).toMatchObject({
+      pendingAnchorCount: 0,
+      canUndo: false,
+      canRedo: false
+    });
+
+    editor.pointerDown({ x: 3, y: 4 });
+    expect(editor.getState().previewDrawing?.id).toBe("drawing-1");
+  });
+
+  it("does not convert non-geometry edits to domain coordinates", () => {
+    let toDomainCalls = 0;
+    const editor = createDrawingEditor({
+      drawings: [{ id: "free", type: "trendLine", anchors: [{ x: 0, y: 0 }] }],
+      coordinateAdapter: {
+        toScreen: (drawing) => drawing,
+        toDomain(drawing) {
+          toDomainCalls += 1;
+          return drawing;
+        }
+      }
+    });
+
+    editor.selectDrawing("free");
+    editor.updateSelectedStyle({ color: "#dc2626" });
+    editor.updateSelectedText("note");
+    editor.lockSelected();
+
+    expect(toDomainCalls).toBe(0);
+  });
+
   it("executes neutral drawing editor commands", () => {
     const editor = createDrawingEditor({
       drawings: [
@@ -1265,6 +1639,147 @@ describe("complete drawing editor", () => {
       }
     ]);
   });
+
+  it("keeps paste and duplicate screen offsets after projection changes and undo redo", () => {
+    let offset = { x: 100, y: 200 };
+    const editor = createDrawingEditor({
+      drawings: [
+        {
+          id: "source",
+          type: "trendLine",
+          anchors: [
+            { time: 1, price: 10 },
+            { time: 2, price: 20 }
+          ]
+        }
+      ],
+      coordinateAdapter: {
+        toScreen: (drawing) => offsetDrawingToScreen(drawing, offset),
+        toDomain: (drawing) => offsetDrawingToDomain(drawing, offset)
+      }
+    });
+
+    editor.selectDrawing("source");
+    editor.copySelected();
+    editor.pasteCopied({ dx: 12, dy: 12 });
+
+    let state = editor.getState();
+    const pastedId = state.selectedDrawingIds[0];
+
+    expect(findDrawing(state.drawings, pastedId).anchors).toEqual([
+      { time: 13, price: 22, x: 113, y: 222 },
+      { time: 14, price: 32, x: 114, y: 232 }
+    ]);
+
+    offset = { x: 300, y: 400 };
+    state = editor.getState();
+    expect(findDrawing(state.drawings, pastedId).anchors).toEqual([
+      { time: 13, price: 22, x: 313, y: 422 },
+      { time: 14, price: 32, x: 314, y: 432 }
+    ]);
+
+    editor.duplicateSelected({ dx: 5, dy: 6 });
+    state = editor.getState();
+    const duplicatedId = state.selectedDrawingIds[0];
+
+    expect(findDrawing(state.drawings, duplicatedId).anchors).toEqual([
+      { time: 18, price: 28, x: 318, y: 428 },
+      { time: 19, price: 38, x: 319, y: 438 }
+    ]);
+
+    editor.undo();
+    expect(editor.getState().drawings.some((drawing) => drawing.id === duplicatedId)).toBe(false);
+    editor.redo();
+    expect(findDrawing(editor.getState().drawings, duplicatedId).anchors[0]).toEqual({
+      time: 18,
+      price: 28,
+      x: 318,
+      y: 428
+    });
+  });
+
+  it("does not consume paste ids or mutate state when coordinate conversion throws", () => {
+    const events: DrawingEditorEvent[] = [];
+    let shouldThrow = true;
+    const editor = createDrawingEditor({
+      drawings: [
+        { id: "a", type: "trendLine", anchors: [{ time: 1, price: 10 }] },
+        { id: "b", type: "trendLine", anchors: [{ time: 2, price: 20 }] }
+      ],
+      coordinateAdapter: {
+        toScreen: (drawing) => offsetDrawingToScreen(drawing, { x: 100, y: 200 }),
+        toDomain(drawing) {
+          if (shouldThrow && drawing.id === "drawing-2") {
+            throw new Error("second paste conversion failed");
+          }
+
+          return offsetDrawingToDomain(drawing, { x: 100, y: 200 });
+        }
+      },
+      onEvent(event) {
+        events.push(event);
+      }
+    });
+
+    editor.selectDrawings(["a", "b"]);
+    editor.copySelected();
+    events.length = 0;
+    const stateBefore = editor.getState();
+
+    expect(() => editor.pasteCopied({ dx: 1, dy: 1 })).toThrow(
+      "second paste conversion failed"
+    );
+    expect(editor.getState()).toEqual(stateBefore);
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: false });
+    expect(events).toEqual([]);
+
+    shouldThrow = false;
+    editor.pasteCopied({ dx: 1, dy: 1 });
+
+    expect(editor.getState().selectedDrawingIds).toEqual(["drawing-1", "drawing-2"]);
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: true, canRedo: false });
+  });
+
+  it("precomputes projected paste events before committing or advancing ids", () => {
+    const events: DrawingEditorEvent[] = [];
+    let screenCalls = 0;
+    let throwOnScreenCall = Number.POSITIVE_INFINITY;
+    const editor = createDrawingEditor({
+      drawings: [{ id: "source", type: "trendLine", anchors: [{ x: 1, y: 2 }] }],
+      coordinateAdapter: {
+        toScreen(drawing) {
+          screenCalls += 1;
+          if (screenCalls === throwOnScreenCall) {
+            throw new Error("paste event projection failed");
+          }
+          return drawing;
+        },
+        toDomain: (drawing) => drawing
+      },
+      onEvent(event) {
+        events.push(event);
+      }
+    });
+
+    editor.selectDrawing("source");
+    editor.copySelected();
+    const stateBefore = editor.getState();
+    events.length = 0;
+    screenCalls = 0;
+    throwOnScreenCall = 2;
+
+    expect(() => editor.pasteCopied({ dx: 1, dy: 1 })).toThrow(
+      "paste event projection failed"
+    );
+
+    throwOnScreenCall = Number.POSITIVE_INFINITY;
+    expect(editor.getState()).toEqual(stateBefore);
+    expect(editor.getCapabilities()).toMatchObject({ canUndo: false, canRedo: false });
+    expect(events).toEqual([]);
+
+    editor.pasteCopied({ dx: 1, dy: 1 });
+    expect(editor.getState().selectedDrawingIds).toEqual(["drawing-1"]);
+  });
 });
 
 function findDrawing(drawings: DrawingObject[], id: string): DrawingObject {
@@ -1275,6 +1790,41 @@ function findDrawing(drawings: DrawingObject[], id: string): DrawingObject {
   }
 
   return drawing;
+}
+
+function offsetDrawingToScreen(
+  drawing: DrawingObject,
+  offset: { x: number; y: number }
+): DrawingObject {
+  return {
+    ...drawing,
+    anchors: drawing.anchors.map((anchor) => ({
+      ...anchor,
+      x: (anchor.time ?? 0) + offset.x,
+      y: (anchor.price ?? 0) + offset.y
+    }))
+  };
+}
+
+function offsetDrawingToDomain(
+  drawing: DrawingObject,
+  offset: { x: number; y: number }
+): DrawingObject {
+  return {
+    ...drawing,
+    anchors: drawing.anchors.map((anchor) => {
+      const domainAnchor = {
+        ...anchor,
+        time: (anchor.x ?? 0) - offset.x,
+        price: (anchor.y ?? 0) - offset.y
+      };
+
+      delete domainAnchor.x;
+      delete domainAnchor.y;
+      delete domainAnchor.index;
+      return domainAnchor;
+    })
+  };
 }
 
 function roundAnchors(drawing: DrawingObject): Array<{ x: number; y: number }> {

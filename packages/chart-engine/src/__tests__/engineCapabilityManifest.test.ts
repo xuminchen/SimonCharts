@@ -7,6 +7,8 @@ import {
   createEngineCapabilityManifest,
   drawingTypes,
   engineApiVersion,
+  supportedPriceScaleModes,
+  supportedTimeframes,
   supportedSeriesTypes
 } from "../index";
 
@@ -15,7 +17,7 @@ describe("engine capability manifest", () => {
     const manifest = createEngineCapabilityManifest();
 
     expect(manifest.packageName).toBe("@simoncharts/chart-engine");
-    expect(manifest.packageVersion).toBe("1.0.0-rc.0");
+    expect(manifest.packageVersion).toBe("1.0.0-rc.1");
     expect(manifest.apiVersion).toBe(engineApiVersion);
     expect(manifest.releaseChannel).toBe("rc");
   });
@@ -24,7 +26,7 @@ describe("engine capability manifest", () => {
     const manifest = createEngineCapabilityManifest();
     const result = checkEngineApiVersionCompatibility(manifest, {
       packageName: "@simoncharts/chart-engine",
-      packageVersion: "1.0.0-rc.0",
+      packageVersion: "1.0.0-rc.1",
       apiVersion: engineApiVersion,
       releaseChannel: "rc"
     });
@@ -47,7 +49,7 @@ describe("engine capability manifest", () => {
         {
           key: "packageVersion",
           expected: ">=1.0.0-rc.0",
-          actual: "1.0.0-rc.0"
+          actual: "1.0.0-rc.1"
         }
       ]
     });
@@ -73,7 +75,7 @@ describe("engine capability manifest", () => {
         {
           key: "packageVersion",
           expected: "1.0.0",
-          actual: "1.0.0-rc.0"
+          actual: "1.0.0-rc.1"
         },
         {
           key: "apiVersion",
@@ -124,12 +126,42 @@ describe("engine capability manifest", () => {
   it("aligns capability counts with engine constants", () => {
     const manifest = createEngineCapabilityManifest();
 
+    expect(manifest.timeframes).toEqual([...supportedTimeframes]);
+    expect(manifest.priceScaleModes).toEqual([...supportedPriceScaleModes]);
     expect(manifest.seriesTypes).toHaveLength(supportedSeriesTypes.length);
     expect(manifest.drawingTypes).toHaveLength(drawingTypes.length);
     expect(manifest.coreIndicatorIds).toHaveLength(coreIndicatorIds.length);
     expect(manifest.seriesTypes).toEqual([...supportedSeriesTypes]);
     expect(manifest.drawingTypes).toEqual([...drawingTypes]);
     expect(manifest.coreIndicatorIds).toEqual([...coreIndicatorIds]);
+  });
+
+  it("declares the exact drawing, interaction, and calculation capability lists", () => {
+    const manifest = createEngineCapabilityManifest();
+
+    expect(manifest.drawingEditorCapabilities).toEqual([
+      "createDrawing",
+      "selectDrawing",
+      "moveDrawing",
+      "editAnchors",
+      "deleteDrawing",
+      "serializeDrawing",
+      "previewDrawing",
+      "coordinateAdapter"
+    ]);
+    expect(manifest.interactionCapabilities).toEqual([
+      "hitTest",
+      "hoverState",
+      "magnetSnap",
+      "selectionBox",
+      "handleDrag",
+      "moveDrag",
+      "continuousDrawing"
+    ]);
+    expect(manifest.calculationCapabilities).toEqual([
+      "checkpointedCoreIndicators",
+      "checkpointedSyntheticSeries"
+    ]);
   });
 
   it("mirrors built-in drawing tool summaries", () => {
@@ -151,17 +183,22 @@ describe("engine capability manifest", () => {
   it("returns defensive array and object copies", () => {
     const manifest = createEngineCapabilityManifest();
 
+    manifest.timeframes.push("1m");
+    manifest.priceScaleModes.push("linear");
     manifest.seriesTypes.push("line");
     manifest.drawingTypes.push("trendLine");
     manifest.coreIndicatorIds.push("MA");
     manifest.visualOutputTypes.push("line");
     manifest.drawingEditorCapabilities.push("createDrawing");
     manifest.interactionCapabilities.push("hitTest");
+    manifest.calculationCapabilities.push("checkpointedCoreIndicators");
     manifest.extensionContributionTypes.push("seriesRenderers");
     manifest.drawingTools[0]!.label = "Changed";
 
     const nextManifest = createEngineCapabilityManifest();
 
+    expect(nextManifest.timeframes).toEqual([...supportedTimeframes]);
+    expect(nextManifest.priceScaleModes).toEqual([...supportedPriceScaleModes]);
     expect(nextManifest.seriesTypes).toEqual([...supportedSeriesTypes]);
     expect(nextManifest.drawingTypes).toEqual([...drawingTypes]);
     expect(nextManifest.coreIndicatorIds).toEqual([...coreIndicatorIds]);
@@ -172,7 +209,9 @@ describe("engine capability manifest", () => {
       "moveDrawing",
       "editAnchors",
       "deleteDrawing",
-      "serializeDrawing"
+      "serializeDrawing",
+      "previewDrawing",
+      "coordinateAdapter"
     ]);
     expect(nextManifest.interactionCapabilities).toEqual([
       "hitTest",
@@ -180,7 +219,12 @@ describe("engine capability manifest", () => {
       "magnetSnap",
       "selectionBox",
       "handleDrag",
-      "moveDrag"
+      "moveDrag",
+      "continuousDrawing"
+    ]);
+    expect(nextManifest.calculationCapabilities).toEqual([
+      "checkpointedCoreIndicators",
+      "checkpointedSyntheticSeries"
     ]);
     expect(nextManifest.extensionContributionTypes).toEqual([
       "seriesRenderers",
@@ -229,12 +273,15 @@ describe("engine capability manifest", () => {
   it("accepts requirements derived from the current manifest", () => {
     const manifest = createEngineCapabilityManifest();
     const result = checkEngineCapabilityRequirements(manifest, {
+      timeframes: manifest.timeframes,
+      priceScaleModes: manifest.priceScaleModes,
       seriesTypes: manifest.seriesTypes,
       drawingTypes: manifest.drawingTypes,
       coreIndicatorIds: manifest.coreIndicatorIds,
       visualOutputTypes: manifest.visualOutputTypes,
       drawingEditorCapabilities: manifest.drawingEditorCapabilities,
       interactionCapabilities: manifest.interactionCapabilities,
+      calculationCapabilities: manifest.calculationCapabilities,
       extensionContributionTypes: manifest.extensionContributionTypes
     });
 
@@ -247,13 +294,24 @@ describe("engine capability manifest", () => {
   it("reports unknown future values as missing", () => {
     const manifest = createEngineCapabilityManifest();
     const result = checkEngineCapabilityRequirements(manifest, {
+      timeframes: ["futureTimeframe"],
+      priceScaleModes: ["futureScale"],
       seriesTypes: ["line", "futureSeries"],
-      visualOutputTypes: ["futureVisual"]
+      visualOutputTypes: ["futureVisual"],
+      calculationCapabilities: ["futureCalculation"]
     });
 
     expect(result).toEqual({
       compatible: false,
       missing: [
+        {
+          key: "timeframes",
+          values: ["futureTimeframe"]
+        },
+        {
+          key: "priceScaleModes",
+          values: ["futureScale"]
+        },
         {
           key: "seriesTypes",
           values: ["futureSeries"]
@@ -261,6 +319,10 @@ describe("engine capability manifest", () => {
         {
           key: "visualOutputTypes",
           values: ["futureVisual"]
+        },
+        {
+          key: "calculationCapabilities",
+          values: ["futureCalculation"]
         }
       ]
     });

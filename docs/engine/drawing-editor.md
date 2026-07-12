@@ -86,6 +86,23 @@ It chooses the current series candle time from the edited x, returns absolute pr
 y, and removes `x`, `y`, and `index`. Projection never selects a locale, timezone, or timeframe,
 and none of the coordinate functions mutate their inputs.
 
+`DrawingEditorOptions.coordinateAdapter` closes this boundary as a host-neutral pair:
+`toScreen(drawing)` and `toDomain(drawing)`. A host can implement them with
+`projectDrawingObject()` and `unprojectDrawingObject()` using its current coordinate context. The
+editor keeps domain drawings in its snapshots and clipboard, while `getState()`,
+`drawingPreviewChanged`, `drawingCreated`, `drawingUpdated`, edit handles, screen-bounds selection,
+and geometry operations expose the current screen projection. Persist by passing that projected
+drawing through `toDomain()` first. New rc.1 persistence inputs and outputs use canonical
+`time + absolute price`; screen-only fixture migration is not part of the Engine contract.
+
+Anchor/body drag, nudge, resize, rotate, paste, and duplicate all run domain → screen → transform →
+domain before their single history commit. Conversion inputs and results are deep-isolated. If a
+conversion throws, editor state, history, events, and paste/duplicate ID allocation remain
+unchanged. Undo and redo restore domain snapshots and project them through the current adapter, so
+viewport, timeframe, or price-scale changes reproject the next read without a refresh command,
+history entry, or event storm. Omitting the adapter preserves the identity-coordinate behavior used
+by screen-only hosts and all 63 tools.
+
 The editor owns neutral operations such as select, box select, drag, anchor edits, keyboard nudging, resize, rotate, style edits, metadata edits, text edits, z-order, copy, paste, duplicate, delete, lock, hide, undo, and redo. Use `getObjectManagerItems()` for `DrawingObjectManagerItem` snapshots containing `id`, `type`, `visible`, `locked`, `selected`, and `zIndex`.
 
 Style, metadata, and text commands are exposed as `updateSelectedStyle(style)`, `updateSelectedMetadata(metadata)`, and `updateSelectedText(text)`. Transform commands are exposed as `resizeSelected(options)` and `rotateSelected(options)`. The corresponding command payloads are `DrawingEditorCommand` entries: `selectDrawingsInBounds`, `nudgeSelected`, `resizeSelected`, `rotateSelected`, `updateSelectedStyle`, `updateSelectedMetadata`, `updateSelectedText`, `bringSelectedForward`, `sendSelectedBackward`, `copySelected`, `pasteCopied`, `duplicateSelected`, `lockSelected`, `unlockSelected`, `hideSelected`, and `showSelected`.

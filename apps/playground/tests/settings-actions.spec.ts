@@ -35,7 +35,7 @@ test("canonical viewport and scale controls update owned render state", async ({
 
   const linearPixels = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
 
-  await page.getByTestId("percentage-price-scale").click();
+  await page.getByTestId("price-scale-mode-control").selectOption("percentage");
   await expect(page.getByTestId("price-scale-mode")).toHaveText("percentage");
   await expect
     .poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL()))

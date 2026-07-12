@@ -1,25 +1,26 @@
 # Release Candidate
 
-`@simoncharts/chart-engine@1.0.0-rc.0` is the first release candidate for the independent SimonCharts Engine package.
+`@simoncharts/chart-engine@1.0.0-rc.1` is the workspace-readiness release candidate for the independent SimonCharts Engine package.
 
 ## Scope
 
 The release candidate includes:
 
 - neutral market data, viewport, theme, settings, and chart state contracts
-- Engine-owned capability manifest for package metadata, API version, release channel, supported series, built-in drawings, core indicators, drawing editor capabilities, interaction capabilities, visual output families, and extension contribution types
+- Engine-owned capability manifest for package metadata, API version, release channel, eight canonical timeframes, three price scale modes, supported series, built-in drawings, core indicators, drawing preview, coordinate-adapter projection, continuous interaction, checkpointed calculations, visual output families, and extension contribution types
 - Engine-owned API version compatibility checker for exact package/API/release diagnostics
 - Engine-owned capability requirement checker for deterministic manifest compatibility diagnostics
 - Engine-owned extension compatibility preflight helpers for deriving contribution requirements and checking them against the capability manifest
 - Engine-owned extension validation diagnostics for local extension structure and contribution issues
 - Engine-owned lifecycle install validation diagnostics for already-installed ids and local contribution conflicts
 - 17 built-in chart series types through `supportedSeriesTypes`
+- eight timeframes through `supportedTimeframes` and linear/log/percentage through `supportedPriceScaleModes`
 - static canvas rendering and layered rendering primitives
 - interaction engine, interaction session, crosshair state, and render scheduler
 - visual output renderers for line, histogram, band, and marker outputs
 - panel layout and scale helpers
 - 63 built-in drawing tools
-- command-driven drawing editor with selection, drag, anchor editing, style editing, text editing, z-order, copy, paste, duplicate, lock, hide, delete, undo, and redo
+- command-driven drawing editor with creation preview, continuous gestures, a domain/screen coordinate adapter, selection, drag, anchor editing, style editing, text editing, z-order, copy, paste, duplicate, lock, hide, delete, undo, and redo
 - Engine-owned drawing property schema for host-rendered property panels
 - Engine-owned advanced drawing parameters for Fibonacci levels, Gann ratios, position labels, and range labels
 - Engine-owned drawing interaction primitives for box selection, keyboard nudging, and edit handles
@@ -52,7 +53,7 @@ Hosts own:
 
 ## Non-Goals
 
-`1.0.0-rc.0` does not include:
+`1.0.0-rc.1` does not include:
 
 - remote plugin loading
 - plugin sandboxing
@@ -98,7 +99,28 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 - Performance coverage includes deterministic local 10k-candle and 50k-candle acceptance baselines. Broader device, browser, and production telemetry benchmarks remain post-RC work.
 - npm audit currently reports development dependency vulnerabilities; fixing them may require dependency upgrades outside this RC hardening scope.
 
-## Acceptance Evidence
+## Current rc.1 Acceptance Evidence
+
+Current acceptance evidence refreshed on 2026-07-11:
+
+- `npm run check:release-gate` passed all 15 steps.
+- `npm run test` passed: 52 test files, 944 tests.
+- `npm run typecheck` passed.
+- `npm run guard:engine-boundary` passed: 172 files scanned.
+- `npm run guard:public-api` passed: 162 runtime exports.
+- `npm run guard:public-types` passed: 414 type symbols.
+- `npm run guard:sdk-imports` passed.
+- `npm run build` passed for the Engine package and Playground; Engine runtime output was 185.86 kB and Playground JavaScript was 146.18 kB.
+- `npm run check:host-smoke` passed for a packed tarball installed into a temporary non-workspace host.
+- `npm run check:package-consumer` and `npm run check:package-types` passed.
+- `npm run check:performance` passed: 1 file, 3 deterministic performance scenarios.
+- `npm run check:release-readiness` passed for `@simoncharts/chart-engine@1.0.0-rc.1`.
+- `npm run check:package-artifact` and `npm pack --dry-run -w @simoncharts/chart-engine` passed with 127 package files.
+- The dry-run artifact was 64,747 bytes packed and 283,246 bytes unpacked, with SHA-1 `1f3eae05c8e94393e4946bcea77cbb4f38fd542a` and integrity `sha512-D6cclAs08XdPwjNtHdDQZGMgbIQDPkRB5YL/FpQ/haL88Q8Ed8slWTFf0DvA/TD3jGxOZK1qXzgyGEutqmylSg==`.
+- `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` passed: 51 browser tests, including real `1m`/`percentage` selection, continuous brush commit/cancel, projection-aware hit/body drag, offset paste/duplicate, preview cleanup, and canonical undo/redo.
+- Port 5173 had no listener after the browser suite.
+
+## Historical rc.0 Acceptance Evidence
 
 Current acceptance evidence refreshed on 2026-07-04:
 

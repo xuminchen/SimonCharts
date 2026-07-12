@@ -10,7 +10,7 @@ import {
   mergeChartSettings,
   supportedTimeframes
 } from "../index";
-import type { CandleSeries, HostAdapter, Timeframe, ViewportState } from "../index";
+import type { Candle, CandleSeries, HostAdapter, Timeframe, ViewportState } from "../index";
 
 describe("neutral engine model contracts", () => {
   it("publishes the canonical timeframe values", () => {
@@ -148,6 +148,47 @@ describe("neutral engine model contracts", () => {
     }
   });
 
+  it.each(["time", "open", "high", "low", "close", "volume", "turnover"] as const)(
+    "rejects a candle with non-finite %s",
+    (field) => {
+      for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        expect(isValidCandle({ ...validCandle, [field]: value })).toBe(false);
+      }
+    }
+  );
+
+  it.each(["open", "high", "low", "close"] as const)(
+    "requires positive %s prices",
+    (field) => {
+      expect(isValidCandle({ ...validCandle, [field]: 0 })).toBe(false);
+      expect(isValidCandle({ ...validCandle, [field]: -1 })).toBe(false);
+    }
+  );
+
+  it.each(["volume", "turnover"] as const)(
+    "requires nonnegative %s",
+    (field) => {
+      expect(isValidCandle({ ...validCandle, [field]: -1 })).toBe(false);
+    }
+  );
+
+  it("accepts zero volume and turnover", () => {
+    expect(isValidCandle({ ...validCandle, volume: 0, turnover: 0 })).toBe(true);
+  });
+
+  it.each([
+    ["low above open", { low: 10.5 }],
+    ["low above high", { low: 13 }],
+    ["low above close", { low: 11.5 }],
+    ["open above high", { open: 13 }],
+    ["close above high", { close: 13 }]
+  ] satisfies Array<[string, Partial<Candle>]>) (
+    "rejects invalid OHLC bounds: %s",
+    (_, patch) => {
+      expect(isValidCandle({ ...validCandle, ...patch })).toBe(false);
+    }
+  );
+
   it("finds a candle by exact time", () => {
     const candle = fixtureDailyCandleSeries.candles[42];
 
@@ -212,3 +253,13 @@ describe("neutral engine model contracts", () => {
     expect(settings.gridVisible).toBe(false);
   });
 });
+
+const validCandle: Candle = {
+  time: 1,
+  open: 10,
+  high: 12,
+  low: 9,
+  close: 11,
+  volume: 100,
+  turnover: 1_100
+};

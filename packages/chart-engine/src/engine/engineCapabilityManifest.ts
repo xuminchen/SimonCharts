@@ -5,12 +5,17 @@ import {
   type DrawingToolCategory
 } from "../drawing/drawingToolDefinitions";
 import { coreIndicatorIds, type CoreIndicatorId } from "../indicators/indicatorDefinitions";
+import { supportedTimeframes, type Timeframe } from "../model/market";
+import {
+  supportedPriceScaleModes,
+  type PriceScaleMode
+} from "../model/runtime";
 import { supportedSeriesTypes, type SeriesType } from "../series/seriesTypes";
 import type { VisualOutputType } from "../visuals/visualTypes";
 
 export type { VisualOutputType } from "../visuals/visualTypes";
 
-export const engineApiVersion = "1.0.0-rc.0";
+export const engineApiVersion = "1.0.0-rc.1";
 
 export type EngineReleaseChannel = "rc";
 
@@ -45,7 +50,9 @@ export type DrawingEditorCapability =
   | "moveDrawing"
   | "editAnchors"
   | "deleteDrawing"
-  | "serializeDrawing";
+  | "serializeDrawing"
+  | "previewDrawing"
+  | "coordinateAdapter";
 
 export type InteractionCapability =
   | "hitTest"
@@ -53,7 +60,12 @@ export type InteractionCapability =
   | "magnetSnap"
   | "selectionBox"
   | "handleDrag"
-  | "moveDrag";
+  | "moveDrag"
+  | "continuousDrawing";
+
+export type CalculationCapability =
+  | "checkpointedCoreIndicators"
+  | "checkpointedSyntheticSeries";
 
 export interface EngineDrawingToolCapability {
   type: BuiltInDrawingType;
@@ -67,9 +79,11 @@ export interface EngineDrawingToolCapability {
 
 export interface EngineCapabilityManifest {
   packageName: "@simoncharts/chart-engine";
-  packageVersion: "1.0.0-rc.0";
+  packageVersion: "1.0.0-rc.1";
   apiVersion: typeof engineApiVersion;
   releaseChannel: EngineReleaseChannel;
+  timeframes: Timeframe[];
+  priceScaleModes: PriceScaleMode[];
   seriesTypes: SeriesType[];
   drawingTypes: BuiltInDrawingType[];
   drawingTools: EngineDrawingToolCapability[];
@@ -77,16 +91,20 @@ export interface EngineCapabilityManifest {
   visualOutputTypes: VisualOutputType[];
   drawingEditorCapabilities: DrawingEditorCapability[];
   interactionCapabilities: InteractionCapability[];
+  calculationCapabilities: CalculationCapability[];
   extensionContributionTypes: ExtensionContributionType[];
 }
 
 export type EngineCapabilityRequirementKey =
+  | "timeframes"
+  | "priceScaleModes"
   | "seriesTypes"
   | "drawingTypes"
   | "coreIndicatorIds"
   | "visualOutputTypes"
   | "drawingEditorCapabilities"
   | "interactionCapabilities"
+  | "calculationCapabilities"
   | "extensionContributionTypes";
 
 export type EngineCapabilityRequirements = Partial<
@@ -104,12 +122,15 @@ export interface EngineCapabilityCheckResult {
 }
 
 const requirementKeys: readonly EngineCapabilityRequirementKey[] = [
+  "timeframes",
+  "priceScaleModes",
   "seriesTypes",
   "drawingTypes",
   "coreIndicatorIds",
   "visualOutputTypes",
   "drawingEditorCapabilities",
   "interactionCapabilities",
+  "calculationCapabilities",
   "extensionContributionTypes"
 ];
 
@@ -128,7 +149,9 @@ const drawingEditorCapabilities: DrawingEditorCapability[] = [
   "moveDrawing",
   "editAnchors",
   "deleteDrawing",
-  "serializeDrawing"
+  "serializeDrawing",
+  "previewDrawing",
+  "coordinateAdapter"
 ];
 
 const interactionCapabilities: InteractionCapability[] = [
@@ -137,7 +160,13 @@ const interactionCapabilities: InteractionCapability[] = [
   "magnetSnap",
   "selectionBox",
   "handleDrag",
-  "moveDrag"
+  "moveDrag",
+  "continuousDrawing"
+];
+
+const calculationCapabilities: CalculationCapability[] = [
+  "checkpointedCoreIndicators",
+  "checkpointedSyntheticSeries"
 ];
 
 const extensionContributionTypes: ExtensionContributionType[] = [
@@ -151,9 +180,11 @@ const extensionContributionTypes: ExtensionContributionType[] = [
 export function createEngineCapabilityManifest(): EngineCapabilityManifest {
   return {
     packageName: "@simoncharts/chart-engine",
-    packageVersion: "1.0.0-rc.0",
+    packageVersion: "1.0.0-rc.1",
     apiVersion: engineApiVersion,
     releaseChannel: "rc",
+    timeframes: [...supportedTimeframes],
+    priceScaleModes: [...supportedPriceScaleModes],
     seriesTypes: [...supportedSeriesTypes],
     drawingTypes: [...drawingTypes],
     drawingTools: builtInDrawingToolDefinitions.map((definition) => ({
@@ -169,6 +200,7 @@ export function createEngineCapabilityManifest(): EngineCapabilityManifest {
     visualOutputTypes: [...visualOutputTypes],
     drawingEditorCapabilities: [...drawingEditorCapabilities],
     interactionCapabilities: [...interactionCapabilities],
+    calculationCapabilities: [...calculationCapabilities],
     extensionContributionTypes: [...extensionContributionTypes]
   };
 }

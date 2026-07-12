@@ -266,3 +266,121 @@ test("wheel zoom invalidates chart layers and records render reason", async ({ p
     .toBe(staticBefore + 1);
   await expect(page.getByTestId("last-invalidation-reason")).toHaveText("viewportChanged");
 });
+
+test("step drawing hover previews before the final anchor commits", async ({ page }) => {
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const canvas = page.getByTestId("chart-canvas");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 140, box.y + 180);
+  await expect(page.getByTestId("drawing-count")).toHaveText("0 drawings");
+  const firstAnchorPixels = await canvas.evaluate((element) =>
+    (element as HTMLCanvasElement).toDataURL()
+  );
+
+  await page.mouse.move(box.x + 260, box.y + 240);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        ((window as unknown as {
+          __SIMON_CHART_EVENTS__?: Array<{
+            type?: string;
+            drawing?: { anchors?: unknown[] };
+          }>;
+        }).__SIMON_CHART_EVENTS__ ?? []).some(
+          (event) =>
+            event.type === "drawingPreviewChanged" && event.drawing?.anchors?.length === 2
+        )
+      )
+    )
+    .toBe(true);
+  await expect
+    .poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL()))
+    .not.toBe(firstAnchorPixels);
+  await expect(page.getByTestId("drawing-count")).toHaveText("0 drawings");
+
+  await page.mouse.click(box.x + 260, box.y + 240);
+  await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
+});
+
+test("lost capture, blur, and tool cancellation clear active creation", async ({ page }) => {
+  const cancelActiveBrush = async (source: "lostCapture" | "blur") => {
+    await page.goto("/");
+    const overlay = page.getByTestId("chart-overlay");
+    const box = await overlay.boundingBox();
+
+    if (!box) {
+      throw new Error("overlay missing");
+    }
+
+    await page.getByTestId("drawing-tool-brush").click();
+    await page.mouse.move(box.x + 140, box.y + 180);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 200, box.y + 220);
+    await page.evaluate(() => {
+      (window as Window & { __SIMON_CHART_EVENTS__?: unknown[] }).__SIMON_CHART_EVENTS__ = [];
+    });
+
+    if (source === "lostCapture") {
+      await overlay.evaluate((element, point) => {
+        element.dispatchEvent(
+          new PointerEvent("lostpointercapture", {
+            bubbles: true,
+            pointerId: 1,
+            clientX: point.x,
+            clientY: point.y
+          })
+        );
+      }, { x: box.x + 200, y: box.y + 220 });
+    } else {
+      await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    }
+
+    await page.mouse.up();
+    await expect(page.getByTestId("drawing-count")).toHaveText("0 drawings");
+    await expect(page.getByTestId("undo")).toBeDisabled();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const events =
+            (window as unknown as { __SIMON_CHART_EVENTS__?: Array<Record<string, unknown>> })
+              .__SIMON_CHART_EVENTS__ ?? [];
+
+          return events.some((event) => event.type === "creationCanceled");
+        })
+      )
+      .toBe(true);
+  };
+
+  await cancelActiveBrush("lostCapture");
+  await cancelActiveBrush("blur");
+
+  await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  await page.getByTestId("drawing-tool-trendLine").click();
+  await page.mouse.click(box.x + 140, box.y + 180);
+  await page.getByTestId("drawing-tool-select").click();
+  await expect(page.getByTestId("drawing-count")).toHaveText("0 drawings");
+  await expect(page.getByTestId("undo")).toBeDisabled();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        ((window as unknown as { __SIMON_CHART_EVENTS__?: Array<Record<string, unknown>> })
+          .__SIMON_CHART_EVENTS__ ?? []).some((event) => event.type === "creationCanceled")
+      )
+    )
+    .toBe(true);
+});

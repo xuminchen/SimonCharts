@@ -46,6 +46,8 @@ import {
   engineApiVersion,
   fixtureDailyCandleSeries,
   serializeDrawingObject,
+  supportedPriceScaleModes,
+  supportedTimeframes,
   transformSeriesChunk
 } from "@simoncharts/chart-engine";
 
@@ -89,16 +91,22 @@ const engineApiCompatibility = checkEngineApiVersionCompatibility(engineCapabili
   releaseChannel: "rc"
 });
 const engineCompatibility = checkEngineCapabilityRequirements(engineCapabilities, {
+  timeframes: ["1m", "1d", "1mo"],
+  priceScaleModes: ["linear", "log", "percentage"],
   seriesTypes: ["candles", "line"],
   drawingTypes: ["trendLine"],
   coreIndicatorIds: ["MA", "MACD"],
   visualOutputTypes: ["line"],
-  interactionCapabilities: ["hitTest", "magnetSnap"]
+  interactionCapabilities: ["hitTest", "magnetSnap", "continuousDrawing"],
+  drawingEditorCapabilities: ["previewDrawing", "coordinateAdapter"],
+  calculationCapabilities: ["checkpointedCoreIndicators", "checkpointedSyntheticSeries"]
 });
 
 if (
   engineCapabilities.packageName !== "@simoncharts/chart-engine" ||
   engineCapabilities.apiVersion !== engineApiVersion ||
+  engineCapabilities.timeframes.join(",") !== supportedTimeframes.join(",") ||
+  engineCapabilities.priceScaleModes.join(",") !== supportedPriceScaleModes.join(",") ||
   engineCapabilities.seriesTypes.length !== 17 ||
   engineCapabilities.drawingTypes.length !== 63 ||
   engineCapabilities.coreIndicatorIds.length !== 16 ||
@@ -182,7 +190,30 @@ if (
   throw new Error("Package consumer failed to resume JSON checkpoint calculations");
 }
 
-const drawingEditor = createDrawingEditor({ drawings: [drawing] });
+const drawingEditor = createDrawingEditor({
+  drawings: [drawing],
+  coordinateAdapter: {
+    toScreen(domainDrawing) {
+      return {
+        ...domainDrawing,
+        anchors: domainDrawing.anchors.map((anchor) => ({
+          ...anchor,
+          x: anchor.x ?? anchor.time,
+          y: anchor.y ?? anchor.price
+        }))
+      };
+    },
+    toDomain(screenDrawing) {
+      return {
+        ...screenDrawing,
+        anchors: screenDrawing.anchors.map((anchor) => ({
+          time: anchor.x,
+          price: anchor.y
+        }))
+      };
+    }
+  }
+});
 drawingEditor.executeCommand({ type: "selectDrawing", drawingId: "host-drawing-1" });
 const drawingPropertySchema = getDrawingPropertySchema(drawing.type);
 
@@ -303,7 +334,9 @@ const committedMoveDrawing = drawingEditor.getState().drawings.find((item) => it
 if (
   !committedMoveDrawing ||
   committedMoveDrawing.anchors[0].x !== movedPreviewDrawing.anchors[0].x ||
-  committedMoveDrawing.anchors[0].y !== movedPreviewDrawing.anchors[0].y
+  committedMoveDrawing.anchors[0].y !== movedPreviewDrawing.anchors[0].y ||
+  committedMoveDrawing.anchors[0].time !== movedPreviewDrawing.anchors[0].x ||
+  committedMoveDrawing.anchors[0].price !== movedPreviewDrawing.anchors[0].y
 ) {
   throw new Error("Package consumer failed to commit drawing move drag command");
 }

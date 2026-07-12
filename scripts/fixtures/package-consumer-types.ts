@@ -48,6 +48,7 @@ import {
 } from "@simoncharts/chart-engine";
 import type {
   CandleSeries,
+  CalculationCapability,
   ChartTimeFormatter,
   ChartEngine,
   ChartLayout,
@@ -70,6 +71,7 @@ import type {
   DrawingEditorCapability,
   DrawingEditor,
   DrawingEditorCapabilities,
+  DrawingEditorCoordinateAdapter,
   DrawingEditorCommand,
   DrawingEditorEvent,
   DrawingEditorPoint,
@@ -90,6 +92,7 @@ import type {
   MagnetSnapStateOptions,
   MagnetPlotArea,
   OhlcMagnetTargetOptions,
+  PriceScaleMode,
   DrawingObject,
   DrawingPoint,
   DrawingResizeOptions,
@@ -164,6 +167,7 @@ const packagedTimeframes: Timeframe[] = [
   "1w",
   "1mo"
 ];
+const packagedPriceScaleModes: PriceScaleMode[] = ["linear", "log", "percentage"];
 const engine: ChartEngine = createChartEngine({ series, seriesType: "candles" });
 const engineCapabilityManifest: EngineCapabilityManifest = createEngineCapabilityManifest();
 const engineDrawingToolCapability: EngineDrawingToolCapability =
@@ -171,6 +175,8 @@ const engineDrawingToolCapability: EngineDrawingToolCapability =
 const drawingEditorCapability: DrawingEditorCapability =
   engineCapabilityManifest.drawingEditorCapabilities[0];
 const interactionCapability: InteractionCapability = engineCapabilityManifest.interactionCapabilities[0];
+const calculationCapability: CalculationCapability =
+  engineCapabilityManifest.calculationCapabilities[0];
 const extensionContributionType: ExtensionContributionType =
   engineCapabilityManifest.extensionContributionTypes[0];
 const visualOutputType: VisualOutputType = engineCapabilityManifest.visualOutputTypes[0];
@@ -198,7 +204,18 @@ const engineCapabilityRequirementGap: EngineCapabilityRequirementGap = {
   key: "seriesTypes",
   values: ["futureSeries"]
 };
-const drawingEditor: DrawingEditor = createDrawingEditor({ drawings: [] });
+const drawingEditorCoordinateAdapter: DrawingEditorCoordinateAdapter = {
+  toScreen(drawing): DrawingObject {
+    return drawing;
+  },
+  toDomain(drawing): DrawingObject {
+    return drawing;
+  }
+};
+const drawingEditor: DrawingEditor = createDrawingEditor({
+  drawings: [],
+  coordinateAdapter: drawingEditorCoordinateAdapter
+});
 const drawingEditorState: DrawingEditorState = drawingEditor.getState();
 const drawingPreview: DrawingObject | undefined = drawingEditorState.previewDrawing;
 const drawingPreviewEvent: DrawingEditorEvent = {
@@ -545,6 +562,7 @@ const snapshot: ChartLayoutSnapshot = {
 serializeChartLayoutSnapshot(snapshot);
 
 void capabilities;
+void drawingEditorCoordinateAdapter;
 void drawingEditorState;
 void drawingPreview;
 void drawingPreviewEvent;

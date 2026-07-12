@@ -1,9 +1,11 @@
-import type { SeriesType } from "@simoncharts/chart-engine";
+import type { SeriesType, Timeframe } from "@simoncharts/chart-engine";
 
 export interface PlaygroundState {
   seriesType: SeriesType;
+  timeframe: Timeframe;
 }
 
 export const playgroundState: PlaygroundState = {
-  seriesType: "candles"
+  seriesType: "candles",
+  timeframe: "1d"
 };

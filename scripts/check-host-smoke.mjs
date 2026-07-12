@@ -5,7 +5,7 @@ import path from "node:path";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/chart-engine";
-const expectedVersion = "1.0.0-rc.0";
+const expectedVersion = "1.0.0-rc.1";
 
 let tempRoot;
 
@@ -166,7 +166,9 @@ function createHostSmokeScript() {
   deserializeChartLayoutSnapshot,
   engineApiVersion,
   fixtureDailyCandleSeries,
-  serializeChartLayoutSnapshot
+  serializeChartLayoutSnapshot,
+  supportedPriceScaleModes,
+  supportedTimeframes
 } from "@simoncharts/chart-engine";
 
 function assert(condition, message) {
@@ -179,8 +181,14 @@ const manifest = createEngineCapabilityManifest();
 
 assert(manifest.packageName === "@simoncharts/chart-engine", "capability manifest package name mismatch");
 assert(manifest.apiVersion === engineApiVersion, "capability manifest API version mismatch");
+assert(JSON.stringify(manifest.timeframes) === JSON.stringify(supportedTimeframes), "capability manifest timeframe mismatch");
+assert(JSON.stringify(manifest.priceScaleModes) === JSON.stringify(supportedPriceScaleModes), "capability manifest price scale mismatch");
 assert(manifest.seriesTypes.length === 17, "capability manifest must expose 17 series types");
 assert(manifest.drawingTypes.length === 63, "capability manifest must expose 63 drawing types");
+assert(manifest.drawingEditorCapabilities.includes("previewDrawing"), "capability manifest must expose drawing preview");
+assert(manifest.drawingEditorCapabilities.includes("coordinateAdapter"), "capability manifest must expose drawing coordinate adapter");
+assert(manifest.interactionCapabilities.includes("continuousDrawing"), "capability manifest must expose continuous drawing");
+assert(manifest.calculationCapabilities.join(",") === "checkpointedCoreIndicators,checkpointedSyntheticSeries", "capability manifest calculation mismatch");
 
 const engine = createChartEngine({
   series: fixtureDailyCandleSeries,
@@ -192,7 +200,7 @@ const viewport = {
   visibleRange: { from: 2, to: 22 },
   candleWidth: 9,
   scrollOffset: 1,
-  priceScaleMode: "linear"
+  priceScaleMode: "percentage"
 };
 const drawing = {
   id: "host-trend-line",
@@ -203,12 +211,18 @@ const drawing = {
   ]
 };
 
+engine.setSeries({
+  ...fixtureDailyCandleSeries,
+  timeframe: "1m",
+  dataVersion: fixtureDailyCandleSeries.dataVersion + ":1m"
+});
 engine.setViewport(viewport);
 engine.setDrawings([drawing]);
 
 const engineState = engine.getState();
 
 assert(engineState.series.candles.length === fixtureDailyCandleSeries.candles.length, "chart engine state lost series candles");
+assert(engineState.series.timeframe === "1m", "chart engine setSeries lost timeframe");
 assert(engineState.seriesType === "candles", "chart engine state lost series type");
 assert(engineState.viewport.visibleRange.from === 2, "chart engine state lost viewport");
 assert(engineState.drawings.length === 1, "chart engine state lost drawings");
@@ -224,10 +238,41 @@ const serializedLayout = serializeChartLayoutSnapshot({
 const roundTripLayout = deserializeChartLayoutSnapshot(serializedLayout);
 
 assert(roundTripLayout.viewport.visibleRange.to === engineState.viewport.visibleRange.to, "layout snapshot viewport round-trip failed");
+assert(roundTripLayout.viewport.priceScaleMode === "percentage", "layout snapshot price scale round-trip failed");
 assert(roundTripLayout.drawings[0]?.id === "host-trend-line", "layout snapshot drawing round-trip failed");
 assert(roundTripLayout.indicatorIds.join(",") === "MA", "layout snapshot indicators round-trip failed");
 
-const editor = createDrawingEditor({ drawings: [drawing] });
+const editorDrawing = {
+  ...drawing,
+  anchors: [
+    { time: 10, price: 20 },
+    { time: 80, price: 60 }
+  ]
+};
+const editor = createDrawingEditor({
+  drawings: [editorDrawing],
+  coordinateAdapter: {
+    toScreen(domainDrawing) {
+      return {
+        ...domainDrawing,
+        anchors: domainDrawing.anchors.map((anchor) => ({
+          ...anchor,
+          x: anchor.time,
+          y: anchor.price
+        }))
+      };
+    },
+    toDomain(screenDrawing) {
+      return {
+        ...screenDrawing,
+        anchors: screenDrawing.anchors.map((anchor) => ({
+          time: anchor.x,
+          price: anchor.y
+        }))
+      };
+    }
+  }
+});
 
 editor.executeCommand({ type: "selectDrawing", drawingId: "host-trend-line" });
 editor.executeCommand({ type: "updateSelectedStyle", style: { color: "#0f766e", lineWidth: 2 } });
@@ -238,7 +283,14 @@ const editedDrawing = editor.getState().drawings.find((item) => item.id === "hos
 assert(editor.getState().selectedDrawingIds[0] === "host-trend-line", "drawing editor command selection failed");
 assert(editedDrawing?.style?.color === "#0f766e", "drawing editor command style update failed");
 assert(editedDrawing?.anchors[0]?.x === 13, "drawing editor command drag failed");
+assert(editedDrawing?.anchors[0]?.time === 13, "drawing editor domain conversion failed");
+assert(editedDrawing?.anchors[0]?.price === 16, "drawing editor price conversion failed");
 assert(editor.getCapabilities().canUndo, "drawing editor command history did not update");
+
+editor.undo();
+assert(editor.getState().drawings[0]?.anchors[0]?.x === 10, "drawing editor projected undo failed");
+editor.redo();
+assert(editor.getState().drawings[0]?.anchors[0]?.time === 13, "drawing editor projected redo failed");
 
 const ma = calculateCoreIndicator("MA", fixtureDailyCandleSeries, { period: 5 });
 const maOutput = ma.outputs[0];

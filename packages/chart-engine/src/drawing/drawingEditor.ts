@@ -37,10 +37,16 @@ export interface DrawingEditorState {
   previewDrawing?: DrawingObject;
 }
 
+export interface DrawingEditorCoordinateAdapter {
+  toScreen(drawing: DrawingObject): DrawingObject;
+  toDomain(drawing: DrawingObject): DrawingObject;
+}
+
 export interface DrawingEditorOptions {
   drawings: DrawingObject[];
   onEvent?: (event: DrawingEditorEvent) => void;
   toolRegistry?: DrawingToolRegistry;
+  coordinateAdapter?: DrawingEditorCoordinateAdapter;
 }
 
 export interface DrawingEditor {
@@ -112,31 +118,44 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return;
       }
 
-      reservePendingDrawingId();
-
-      if (isContinuousTool()) {
-        if (pendingAnchors.length > 0) {
-          return;
-        }
-
-        pendingAnchors = [pointToAnchor(point)];
-        emitPreview(createPendingDrawing());
+      if (isContinuousTool() && pendingAnchors.length > 0) {
         return;
       }
 
-      pendingAnchors = [...pendingAnchors, pointToAnchor(point)];
+      const anchor = pointToDomainAnchor(point);
+      const drawingId = pendingDrawingId ?? createDrawingId(drawings, nextDrawingNumber);
 
-      if (pendingAnchors.length < toolRegistry.require(activeTool).anchorCount) {
-        emitPreview(createPendingDrawing());
+      if (isContinuousTool()) {
+        const nextPendingAnchors = [anchor];
+        const nextPreview = createPendingDrawing(nextPendingAnchors, drawingId);
+        const projectedPreview = toScreenDrawing(nextPreview);
+
+        reservePendingDrawingId(drawingId);
+        pendingAnchors = nextPendingAnchors;
+        emitPreview(nextPreview, projectedPreview);
+        return;
+      }
+
+      const nextPendingAnchors = [...pendingAnchors, anchor];
+
+      if (nextPendingAnchors.length < toolRegistry.require(activeTool).anchorCount) {
+        const nextPreview = createPendingDrawing(nextPendingAnchors, drawingId);
+        const projectedPreview = toScreenDrawing(nextPreview);
+
+        reservePendingDrawingId(drawingId);
+        pendingAnchors = nextPendingAnchors;
+        emitPreview(nextPreview, projectedPreview);
         return;
       }
 
       const drawing: DrawingObject = {
-        id: requirePendingDrawingId(),
+        id: drawingId,
         type: activeTool,
-        anchors: pendingAnchors.map((anchor) => ({ ...anchor }))
+        anchors: nextPendingAnchors.map((anchor) => ({ ...anchor }))
       };
+      const projectedDrawing = toScreenDrawing(drawing);
 
+      reservePendingDrawingId(drawingId);
       pendingAnchors = [];
       pendingDrawingId = undefined;
       clearPreview();
@@ -144,7 +163,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         "createDrawing",
         { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id] },
         () => {
-          emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
+          emit({ type: "drawingCreated", drawing: cloneDrawing(projectedDrawing) });
           emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
         }
       );
@@ -154,17 +173,22 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return;
       }
 
-      const anchor = pointToAnchor(point);
+      const screenAnchor = pointToAnchor(point);
+      const anchor = pointToDomainAnchor(point);
 
       if (isContinuousTool()) {
         const lastAnchor = pendingAnchors.at(-1);
 
-        if (!lastAnchor || hasSameScreenPoint(lastAnchor, anchor)) {
+        if (!lastAnchor || hasSameScreenPoint(toScreenAnchor(lastAnchor), screenAnchor)) {
           return;
         }
 
-        pendingAnchors = [...pendingAnchors, anchor];
-        emitPreview(createPendingDrawing());
+        const nextPendingAnchors = [...pendingAnchors, anchor];
+        const nextPreview = createPendingDrawing(nextPendingAnchors);
+        const projectedPreview = toScreenDrawing(nextPreview);
+
+        pendingAnchors = nextPendingAnchors;
+        emitPreview(nextPreview, projectedPreview);
         return;
       }
 
@@ -175,14 +199,16 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return;
       }
 
-      const finalAnchor = pointToAnchor(point);
+      const finalScreenAnchor = pointToAnchor(point);
+      const finalAnchor = pointToDomainAnchor(point);
       const lastAnchor = pendingAnchors.at(-1);
+      let nextPendingAnchors = pendingAnchors;
 
-      if (lastAnchor && !hasSameScreenPoint(lastAnchor, finalAnchor)) {
-        pendingAnchors = [...pendingAnchors, finalAnchor];
+      if (lastAnchor && !hasSameScreenPoint(toScreenAnchor(lastAnchor), finalScreenAnchor)) {
+        nextPendingAnchors = [...pendingAnchors, finalAnchor];
       }
 
-      if (pendingAnchors.length < toolRegistry.require(activeTool).anchorCount) {
+      if (nextPendingAnchors.length < toolRegistry.require(activeTool).anchorCount) {
         cancelActiveCreation();
         return;
       }
@@ -190,8 +216,9 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       const drawing: DrawingObject = {
         id: requirePendingDrawingId(),
         type: activeTool,
-        anchors: pendingAnchors.map((anchor) => ({ ...anchor }))
+        anchors: nextPendingAnchors.map((anchor) => ({ ...anchor }))
       };
+      const projectedDrawing = toScreenDrawing(drawing);
 
       pendingAnchors = [];
       pendingDrawingId = undefined;
@@ -200,7 +227,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         "createDrawing",
         { drawings: [...drawings, drawing], selectedDrawingIds: [drawing.id] },
         () => {
-          emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
+          emit({ type: "drawingCreated", drawing: cloneDrawing(projectedDrawing) });
           emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
         }
       );
@@ -217,7 +244,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
     },
     selectDrawingsInBounds(bounds, options = {}) {
-      const matchingIds = getDrawingIdsInBounds(drawings, bounds);
+      const matchingIds = getDrawingIdsInBounds(toScreenDrawings(drawings), bounds);
       const nextIds = options.additive ? [...selectedDrawingIds, ...matchingIds] : matchingIds;
 
       selectedDrawingIds = getExistingUniqueIds(nextIds);
@@ -252,10 +279,10 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       api.dragSelected(delta);
     },
     resizeSelected(options) {
-      mutateSelected("resizeDrawing", (drawing) => resizeDrawing(drawing, options));
+      mutateSelectedGeometry("resizeDrawing", (drawing) => resizeDrawing(drawing, options));
     },
     rotateSelected(options) {
-      mutateSelected("rotateDrawing", (drawing) => rotateDrawing(drawing, options));
+      mutateSelectedGeometry("rotateDrawing", (drawing) => rotateDrawing(drawing, options));
     },
     executeCommand(command) {
       executeCommand(command);
@@ -289,7 +316,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     },
     getSelectedEditHandles() {
       return getSelectedDrawings().flatMap((drawing) =>
-        getDrawingEditHandles(drawing).map((handle) => ({ ...handle }))
+        getDrawingEditHandles(toScreenDrawing(drawing)).map((handle) => ({ ...handle }))
       );
     },
     dragSelected(delta) {
@@ -301,7 +328,9 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
           return drawing;
         }
 
-        const updated = moveDrawing(drawing, delta.dx, delta.dy);
+        const updated = toDomainDrawing(
+          moveDrawing(toScreenDrawing(drawing), delta.dx, delta.dy)
+        );
 
         updatedDrawings.push(updated);
         return updated;
@@ -311,11 +340,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return;
       }
 
+      const projectedUpdatedDrawings = updatedDrawings.map(toScreenDrawing);
+
       commitSnapshot(
         "moveDrawing",
         { drawings: nextDrawings, selectedDrawingIds },
         () => {
-          for (const drawing of updatedDrawings) {
+          for (const drawing of projectedUpdatedDrawings) {
             emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
           }
         }
@@ -328,12 +359,14 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         return;
       }
 
-      const updated: DrawingObject = {
-        ...drawing,
-        anchors: drawing.anchors.map((anchor, index) =>
+      const screenDrawing = toScreenDrawing(drawing);
+      const updated = toDomainDrawing({
+        ...screenDrawing,
+        anchors: screenDrawing.anchors.map((anchor, index) =>
           index === anchorIndex ? { ...anchor, ...pointToAnchor(point) } : anchor
         )
-      };
+      });
+      const projectedUpdated = toScreenDrawing(updated);
 
       commitSnapshot(
         "dragAnchor",
@@ -341,7 +374,7 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
           drawings: drawings.map((existing) => (existing.id === updated.id ? updated : existing)),
           selectedDrawingIds
         },
-        () => emit({ type: "drawingUpdated", drawing: cloneDrawing(updated) })
+        () => emit({ type: "drawingUpdated", drawing: cloneDrawing(projectedUpdated) })
       );
     },
     deleteSelected() {
@@ -397,11 +430,11 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     },
     getState() {
       return {
-        drawings: cloneDrawings(drawings),
+        drawings: toScreenDrawings(drawings),
         selectedDrawingIds: [...selectedDrawingIds],
         activeTool,
         isCreating: pendingAnchors.length > 0,
-        previewDrawing: previewDrawing ? cloneDrawing(previewDrawing) : undefined
+        previewDrawing: previewDrawing ? toScreenDrawing(previewDrawing) : undefined
       };
     }
   };
@@ -463,24 +496,27 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     return activeTool !== "select" && toolRegistry.require(activeTool).drawingMode === "continuous";
   }
 
-  function createPendingDrawing(anchors = pendingAnchors): DrawingObject {
+  function createPendingDrawing(
+    anchors = pendingAnchors,
+    drawingId = requirePendingDrawingId()
+  ): DrawingObject {
     if (activeTool === "select") {
       throw new Error("Cannot preview a drawing while the select tool is active");
     }
 
     return {
-      id: requirePendingDrawingId(),
+      id: drawingId,
       type: activeTool,
       anchors: anchors.map((anchor) => ({ ...anchor }))
     };
   }
 
-  function reservePendingDrawingId(): void {
+  function reservePendingDrawingId(drawingId: string): void {
     if (pendingDrawingId) {
       return;
     }
 
-    pendingDrawingId = createDrawingId(drawings, nextDrawingNumber);
+    pendingDrawingId = drawingId;
     nextDrawingNumber = Number(pendingDrawingId.slice("drawing-".length)) + 1;
   }
 
@@ -492,12 +528,55 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     return pendingDrawingId;
   }
 
-  function emitPreview(drawing: DrawingObject | undefined): void {
+  function emitPreview(
+    drawing: DrawingObject | undefined,
+    projectedDrawing = drawing ? toScreenDrawing(drawing) : undefined
+  ): void {
     previewDrawing = drawing ? cloneDrawing(drawing) : undefined;
     emit({
       type: "drawingPreviewChanged",
-      drawing: previewDrawing ? cloneDrawing(previewDrawing) : undefined
+      drawing: projectedDrawing ? cloneDrawing(projectedDrawing) : undefined
     });
+  }
+
+  function pointToDomainAnchor(point: DrawingEditorPoint): DrawingAnchor {
+    const drawing: DrawingObject = {
+      id: "pending-coordinate-conversion",
+      type: activeTool === "select" ? "trendLine" : activeTool,
+      anchors: [pointToAnchor(point)]
+    };
+
+    return { ...toDomainDrawing(drawing).anchors[0] };
+  }
+
+  function toScreenAnchor(anchor: DrawingAnchor): DrawingAnchor {
+    return {
+      ...toScreenDrawing({
+        id: "pending-coordinate-projection",
+        type: activeTool === "select" ? "trendLine" : activeTool,
+        anchors: [anchor]
+      }).anchors[0]
+    };
+  }
+
+  function toScreenDrawing(drawing: DrawingObject): DrawingObject {
+    if (!options.coordinateAdapter) {
+      return cloneDrawing(drawing);
+    }
+
+    return cloneDrawing(options.coordinateAdapter.toScreen(cloneDrawing(drawing)));
+  }
+
+  function toScreenDrawings(sourceDrawings: DrawingObject[]): DrawingObject[] {
+    return sourceDrawings.map(toScreenDrawing);
+  }
+
+  function toDomainDrawing(drawing: DrawingObject): DrawingObject {
+    if (!options.coordinateAdapter) {
+      return cloneDrawing(drawing);
+    }
+
+    return cloneDrawing(options.coordinateAdapter.toDomain(cloneDrawing(drawing)));
   }
 
   function clearPreview(): void {
@@ -669,20 +748,25 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
 
     const nextDrawings = [...drawings];
     const pastedDrawings: DrawingObject[] = [];
+    let nextAvailableDrawingNumber = nextDrawingNumber;
 
     for (const sourceDrawing of sourceDrawings) {
-      const id = createDrawingId(nextDrawings, nextDrawingNumber);
-      nextDrawingNumber += 1;
+      const id = createDrawingId(nextDrawings, nextAvailableDrawingNumber);
+      nextAvailableDrawingNumber = Number(id.slice("drawing-".length)) + 1;
 
-      const pastedDrawing = moveDrawing(
-        { ...cloneDrawing(sourceDrawing), id },
-        offset.dx,
-        offset.dy
+      const pastedDrawing = toDomainDrawing(
+        moveDrawing(
+          { ...toScreenDrawing(sourceDrawing), id },
+          offset.dx,
+          offset.dy
+        )
       );
 
       nextDrawings.push(pastedDrawing);
       pastedDrawings.push(pastedDrawing);
     }
+
+    const projectedPastedDrawings = pastedDrawings.map(toScreenDrawing);
 
     commitSnapshot(
       label,
@@ -691,7 +775,8 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
         selectedDrawingIds: pastedDrawings.map((drawing) => drawing.id)
       },
       () => {
-        for (const drawing of pastedDrawings) {
+        nextDrawingNumber = nextAvailableDrawingNumber;
+        for (const drawing of projectedPastedDrawings) {
           emit({ type: "drawingCreated", drawing: cloneDrawing(drawing) });
         }
         emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
@@ -718,11 +803,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       return;
     }
 
+    const projectedUpdatedDrawings = updatedDrawings.map(toScreenDrawing);
+
     commitSnapshot(
       locked ? "lockDrawing" : "unlockDrawing",
       { drawings: nextDrawings, selectedDrawingIds },
       () => {
-        for (const drawing of updatedDrawings) {
+        for (const drawing of projectedUpdatedDrawings) {
           emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
         }
       }
@@ -732,6 +819,15 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   function setSelectedVisible(visible: boolean): void {
     mutateSelected(visible ? "showDrawing" : "hideDrawing", (drawing) =>
       drawing.visible === visible ? drawing : { ...drawing, visible }
+    );
+  }
+
+  function mutateSelectedGeometry(
+    label: string,
+    update: (drawing: DrawingObject) => DrawingObject
+  ): void {
+    mutateSelected(label, (drawing) =>
+      toDomainDrawing(update(toScreenDrawing(drawing)))
     );
   }
 
@@ -761,11 +857,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       return;
     }
 
+    const projectedUpdatedDrawings = updatedDrawings.map(toScreenDrawing);
+
     commitSnapshot(
       label,
       { drawings: nextDrawings, selectedDrawingIds },
       () => {
-        for (const drawing of updatedDrawings) {
+        for (const drawing of projectedUpdatedDrawings) {
           emit({ type: "drawingUpdated", drawing: cloneDrawing(drawing) });
         }
       }

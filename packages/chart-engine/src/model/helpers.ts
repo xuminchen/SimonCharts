@@ -2,6 +2,19 @@ import type { Candle, CandleSeries } from "./market";
 
 export function isValidCandle(candle: Candle): boolean {
   return (
+    Number.isFinite(candle.time) &&
+    Number.isFinite(candle.open) &&
+    Number.isFinite(candle.high) &&
+    Number.isFinite(candle.low) &&
+    Number.isFinite(candle.close) &&
+    Number.isFinite(candle.volume) &&
+    Number.isFinite(candle.turnover) &&
+    candle.open > 0 &&
+    candle.high > 0 &&
+    candle.low > 0 &&
+    candle.close > 0 &&
+    candle.volume >= 0 &&
+    candle.turnover >= 0 &&
     candle.low <= candle.open &&
     candle.low <= candle.high &&
     candle.low <= candle.close &&

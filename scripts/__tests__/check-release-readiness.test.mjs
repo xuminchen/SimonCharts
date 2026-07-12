@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const sourceScriptPath = path.join(testDir, "../check-release-readiness.mjs");
 const fixtureRoots = [];
-const expectedVersion = "1.0.0-rc.0";
+const expectedVersion = "1.0.0-rc.1";
 
 afterEach(async () => {
   await Promise.all(fixtureRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
@@ -22,7 +22,7 @@ describe("check-release-readiness", () => {
 
     const result = await runCheck(root);
 
-    expect(result.stdout).toContain("Release readiness check passed for @simoncharts/chart-engine@1.0.0-rc.0.");
+    expect(result.stdout).toContain("Release readiness check passed for @simoncharts/chart-engine@1.0.0-rc.1.");
     expect(result.stderr).toBe("");
   });
 

@@ -30,11 +30,13 @@ The package root is the public SDK entrypoint. Internal files under `dist/` or `
 The engine provides neutral contracts and behavior for:
 
 - market data models and viewport state
+- eight canonical timeframes and linear, log, and percentage price scales
 - built-in chart series render models and renderers
 - canvas static rendering and overlay layers
 - interaction state, crosshair state, and render scheduling
 - visual output renderers
 - drawing tools, drawing editor commands, hotkeys, magnet helpers, and serialization
+- canonical drawing projection and a same-history domain/screen coordinate adapter
 - layout snapshot serialization
 - extension registration for series, visual, drawing, and figure contributions
 
@@ -93,6 +95,12 @@ creation without adding history. Preview changes are also emitted as `drawingPre
 
 The editor supports creation, selection, drag, anchor editing where anchors are editable, style
 editing, text editing, z-order commands, copy, paste, duplicate, lock, hide, delete, undo, and redo.
+Hosts that edit projected screen anchors can provide `coordinateAdapter.toScreen()` with
+`projectDrawingObject()` and `coordinateAdapter.toDomain()` with `unprojectDrawingObject()`.
+The editor stores domain drawings in history and projects `getState()`, preview events, handles,
+selection, geometry edits, paste, and duplicate through the current adapter. Changing the adapter's
+viewport/scale context therefore reprojects reads without adding history or events. Persist the
+result of `toDomain()` rather than the projected `getState()` drawing.
 
 ## Extensions
 

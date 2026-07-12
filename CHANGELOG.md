@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0-rc.1 - 2026-07-11
+
+- Published exact manifest claims for eight timeframes, three price scale modes, drawing preview, continuous drawing, and checkpointed calculations.
+- Accepted percentage layout snapshots and tightened candle validation for finite values, price/volume signs, and OHLC bounds.
+- Routed Playground timeframe changes through new candle series and `setSeries()`, and routed all price scale choices through the canonical chart command.
+- Connected step and continuous pointer lifecycle, preview rendering, cancellation cleanup, shared magnet/pointer conversion, and canonical drawing projection in the Playground.
+- Added a clone-isolated drawing coordinate adapter so creation, body/anchor edits, resize, rotate, paste, duplicate, preview, hit-testing, and undo/redo share the current projection while history and persistence remain canonical.
+- Refreshed current package, consumer, host-smoke, release, and public API contracts for workspace readiness.
+
 ## 1.0.0-rc.0 - 2026-06-27
 
 - Added exact bounded JSON checkpoints for all 16 core indicators and five stateful synthetic series transforms.

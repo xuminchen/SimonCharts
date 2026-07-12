@@ -120,6 +120,18 @@ function unprojectAnchor(
   );
   const index = clampCandleIndex(rawIndex, context.series.candles.length);
   const y = anchor.y ?? context.plotArea.y;
+  const projectedCanonicalX =
+    typeof anchor.time === "number" && Number.isFinite(anchor.time)
+      ? indexToX(
+          resolveAnchorIndex(anchor, context.series),
+          context.viewport,
+          context.plotArea.x
+        )
+      : undefined;
+  const time =
+    anchor.x === projectedCanonicalX && typeof anchor.time === "number"
+      ? anchor.time
+      : context.series.candles[index]?.time;
   const projectedCanonicalY =
     typeof anchor.price === "number"
       ? priceToY(
@@ -135,7 +147,7 @@ function unprojectAnchor(
       : yToPrice(y, context.priceScale, context.plotArea.y, context.plotArea.height);
 
   return {
-    time: context.series.candles[index]?.time,
+    time,
     price
   };
 }

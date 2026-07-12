@@ -67,9 +67,12 @@ const manifest = createEngineCapabilityManifest();
 console.log(manifest.seriesTypes.length); // 17
 console.log(manifest.drawingTypes.length); // 63
 console.log(manifest.coreIndicatorIds.length); // 16
+console.log(manifest.timeframes); // 1m ... 1mo
+console.log(manifest.priceScaleModes); // linear, log, percentage
+console.log(manifest.calculationCapabilities); // checkpointed indicators and synthetic series
 ```
 
-The manifest is deterministic and host-independent. It summarizes package metadata, release channel, supported series types, built-in drawing types, built-in drawing tool summaries, core indicator ids, visual output renderer families, drawing editor capabilities, interaction capabilities, and extension contribution types.
+The manifest is deterministic and host-independent. It summarizes package metadata, release channel, canonical timeframes and price scale modes, supported series types, built-in drawing types, built-in drawing tool summaries, core indicator ids, visual output renderer families, drawing editor capabilities, interaction capabilities, checkpointed calculation capabilities, and extension contribution types. Capability requirement checks accept these same exact fields; no timeframe or scale aliases are published.
 
 Hosts can render the manifest in diagnostics, documentation, onboarding, and compatibility checks. Hosts still own product feature flags, permissions, persistence, routing, remote plugin loading, collaboration, and business workflows.
 
@@ -146,7 +149,7 @@ Drawing platform exports include:
 
 - figures: `FigureObject`, `FigureType`, `FigureStyle`, `createBuiltInFigureRenderers()`, `createFigureRendererRegistry()`, `getFigureBounds()`, `hitTestFigure()`
 - drawing tools: `drawingTypes`, `DrawingType`, `DrawingToolDefinition`, `builtInDrawingToolDefinitions`, `createDrawingToolRegistry()`
-- editor state: `createDrawingEditor()`, `DrawingEditor`, `DrawingEditorCommand`, `DrawingObjectManagerItem`
+- editor state: `createDrawingEditor()`, `DrawingEditor`, `DrawingEditorOptions.coordinateAdapter`, `DrawingEditorCoordinateAdapter`, `DrawingEditorCommand`, `DrawingObjectManagerItem`
 - interaction primitives: `getDrawingEditHandles()`, `getDrawingSelectionBounds()`, `getDrawingIdsInBounds()`, `normalizeDrawingSelectionBounds()`
 - body hit-test primitives: `hitTestDrawing()`, `hitTestDrawingAll()`, `DrawingHitTestMatch`, `DrawingHitTestOptions`, `DrawingPoint`
 - hover intent primitives: `getDrawingHoverState()`, `DrawingHoverState`, `DrawingHoverStateOptions`, `DrawingHoverTarget`, `DrawingHoverCursor`

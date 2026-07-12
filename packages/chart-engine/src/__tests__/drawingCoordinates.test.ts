@@ -337,7 +337,7 @@ describe("drawing coordinates", () => {
     }
   });
 
-  it("snaps an edited cross-timeframe anchor to the current series candle time", () => {
+  it("preserves unchanged cross-timeframe time and snaps only an actual x edit", () => {
     const weeklySeries: CandleSeries = {
       ...series,
       timeframe: "1w",
@@ -350,10 +350,31 @@ describe("drawing coordinates", () => {
       anchors: [{ time: 200, price: 200, index: 0 }]
     };
     const projected = projectDrawingObject(drawing, context);
+    const unchanged = unprojectDrawingObject(projected, context);
+    const microEdited = structuredClone(projected);
+    const crossCellEdited = structuredClone(projected);
+    const exact = projectDrawingObject(
+      {
+        id: "weekly-exact",
+        type: "trendLine",
+        anchors: [{ time: 260, price: 200 }]
+      },
+      context
+    );
 
-    const canonical = unprojectDrawingObject(projected, context);
+    microEdited.anchors[0].x = (microEdited.anchors[0].x ?? 0) + 0.01;
+    crossCellEdited.anchors[0].x = indexToX(0, context.viewport, context.plotArea.x);
 
-    expect(canonical.anchors).toEqual([{ time: 260, price: 200 }]);
+    expect(unchanged.anchors).toEqual([{ time: 200, price: 200 }]);
+    expect(unprojectDrawingObject(microEdited, context).anchors).toEqual([
+      { time: 260, price: 200 }
+    ]);
+    expect(unprojectDrawingObject(crossCellEdited, context).anchors).toEqual([
+      { time: 100, price: 200 }
+    ]);
+    expect(unprojectDrawingObject(exact, context).anchors).toEqual([
+      { time: 260, price: 200 }
+    ]);
   });
 
   it("clamps edited x to the first and last available candles", () => {
