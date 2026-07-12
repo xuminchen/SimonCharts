@@ -1,5 +1,7 @@
 import "./styles.css";
 
+export { createChartWorkspace } from "./createChartWorkspace";
+
 export type {
   AdjustMode,
   Candle,

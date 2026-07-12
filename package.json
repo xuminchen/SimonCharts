@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc -b packages/chart-engine packages/chart-workspace apps/playground",
+    "typecheck": "tsc -b packages/chart-engine packages/chart-workspace apps/playground apps/workspace-playground",
     "test": "vitest run",
     "test:watch": "vitest",
     "guard:engine-boundary": "node scripts/check-engine-boundary.mjs",
@@ -22,9 +22,11 @@
     "check:performance": "vitest run packages/chart-engine/src/__tests__/performanceBaseline.test.ts --reporter=dot",
     "check:release-gate": "node scripts/check-release-gate.mjs",
     "check:release-readiness": "node scripts/check-release-readiness.mjs",
-    "build": "npm run build -w @simoncharts/chart-engine && npm run build -w @simoncharts/chart-workspace && npm run build -w @simoncharts/playground",
+    "build": "npm run build -w @simoncharts/chart-engine && npm run build -w @simoncharts/chart-workspace && npm run build -w @simoncharts/playground && npm run build -w @simoncharts/workspace-playground",
     "dev": "npm run dev -w @simoncharts/playground",
-    "test:e2e": "playwright test"
+    "dev:workspace": "npm run dev -w @simoncharts/workspace-playground",
+    "test:e2e": "playwright test",
+    "test:workspace:e2e": "playwright test --project=workspace-playground"
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
