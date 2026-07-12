@@ -2,6 +2,7 @@ import type { CandleSeries } from "@simoncharts/chart-engine";
 import type { PagedSeriesStore, SeriesSelection } from "./pagedSeriesStore";
 
 export interface MaterializedSeries {
+  selection: SeriesSelection;
   series: CandleSeries;
   sourceIndexOffset: number;
   anchorTime?: number;
@@ -89,6 +90,7 @@ export function materializeSeriesAroundTime(options: MaterializeSeriesOptions): 
   };
 
   return {
+    selection: options.selection,
     series,
     sourceIndexOffset,
     ...(anchorTime === undefined ? {} : { anchorTime }),
