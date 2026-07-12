@@ -126,7 +126,7 @@ export function createChartWorkspace(
     onHistoryBoundary: (anchor) => controller?.handleHistoryBoundary(anchor),
     onCalculationStatusChanged: (status) => controller?.handleCalculationStatus(status),
     onDataWindowChanged: (snapshot) => controller?.handleDataWindow(snapshot),
-    onDrawingsChanged: (drawings) => controller?.handleDrawingsChanged(drawings),
+    onDrawingsChanged: (drawings, selectedDrawingIds) => controller?.handleDrawingsChanged(drawings, selectedDrawingIds),
     onDrawingHistoryChanged: (history) => controller?.handleDrawingHistoryChanged(history),
     onRenderError: (error) => controller?.handleRenderError(error)
   });

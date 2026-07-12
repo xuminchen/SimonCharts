@@ -89,7 +89,7 @@ export interface ChartEngineRuntimeOptions {
   onHistoryBoundary?: (anchorTime?: number) => void;
   onCalculationStatusChanged?: (status: CalculationStatus) => void;
   onDataWindowChanged?: (snapshot: DataWindowSnapshot | undefined) => void;
-  onDrawingsChanged?: (drawings: readonly DrawingObject[]) => void;
+  onDrawingsChanged?: (drawings: readonly DrawingObject[], selectedDrawingIds: readonly string[]) => void;
   onDrawingHistoryChanged?: (state: { canUndo: boolean; canRedo: boolean }) => void;
   onRenderError?: (error: unknown) => void;
 }
@@ -136,7 +136,10 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   });
   const emitDrawingState = (): void => {
     const state = drawingEditor.getState();
-    options.onDrawingsChanged?.(state.drawings.map((drawing) => unprojectDrawingObject(drawing, coordinateContext())));
+    options.onDrawingsChanged?.(
+      state.drawings.map((drawing) => unprojectDrawingObject(drawing, coordinateContext())),
+      state.selectedDrawingIds
+    );
     const capabilities = drawingEditor.getCapabilities();
     options.onDrawingHistoryChanged?.({ canUndo: capabilities.canUndo, canRedo: capabilities.canRedo });
   };

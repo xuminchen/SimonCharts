@@ -60,5 +60,18 @@
 .sc-bottom-tabs { display: flex; height: 32px; border-bottom: 1px solid var(--sc-border); }
 .sc-bottom-tabs button { color: var(--sc-muted); background: transparent; border: 0; padding: 0 14px; }
 .sc-bottom-tabs button[aria-selected="true"] { color: var(--sc-text); border-bottom: 2px solid var(--sc-accent); }
+.sc-bottom-content { height: calc(100% - 32px); overflow: auto; }
+.sc-object-manager { display: grid; align-content: start; }
+.sc-object-row { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, auto); gap: 4px; padding: 5px 10px; border-bottom: 1px solid var(--sc-border); }
+.sc-object-row[data-selected="true"] { background: rgba(98, 102, 241, 0.16); }
+.sc-object-row button { color: var(--sc-text); background: transparent; border: 1px solid transparent; text-align: left; }
+.sc-object-row button:not(:first-child) { color: var(--sc-muted); }
+.sc-property-editor { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; padding: 12px; }
+.sc-property-editor label { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 8px; color: var(--sc-muted); }
+.sc-property-editor input, .sc-property-editor select { min-width: 0; height: 28px; color: var(--sc-text); background: var(--sc-bg); border: 1px solid var(--sc-border); }
+.sc-panel-empty { padding: 0 12px; color: var(--sc-muted); }
+.sc-data-window { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1px; background: var(--sc-border); }
+.sc-data-window-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; background: var(--sc-surface); }
+.sc-data-window-row span { color: var(--sc-muted); }
 .sc-error-panel { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; color: var(--sc-text); background: var(--sc-bg); }
 .sc-error-panel[hidden] { display: none; }

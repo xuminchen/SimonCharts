@@ -99,7 +99,7 @@ export interface ChartWorkspaceController extends WorkspaceUiActions {
   handleHistoryBoundary(anchorTime?: number): void;
   handleCalculationStatus(status: CalculationStatus): void;
   handleDataWindow(snapshot: DataWindowSnapshot | undefined): void;
-  handleDrawingsChanged(drawings: readonly DrawingObject[]): void;
+  handleDrawingsChanged(drawings: readonly DrawingObject[], selectedDrawingIds?: readonly string[]): void;
   handleDrawingHistoryChanged(state: { canUndo: boolean; canRedo: boolean }): void;
   handleRenderError(error: unknown): void;
   destroy(): void;
@@ -391,9 +391,13 @@ export function createChartWorkspaceController(
       viewModel = { ...viewModel, ...(snapshot === undefined ? { dataWindow: undefined } : { dataWindow: snapshot }) };
       publish();
     },
-    handleDrawingsChanged(drawings) {
+    handleDrawingsChanged(drawings, selectedDrawingIds = []) {
       if (!active) return;
-      viewModel = { ...viewModel, drawings: drawings.map((drawing) => structuredClone(drawing)) };
+      viewModel = {
+        ...viewModel,
+        drawings: drawings.map((drawing) => structuredClone(drawing)),
+        selectedDrawingIds: [...selectedDrawingIds]
+      };
       dependencies.persistence.saveDrawings(state.symbol, state.adjustMode, viewModel.drawings);
       publish();
     },
