@@ -26,7 +26,20 @@ export function createFixtureDataSource(): ChartWorkspaceDataSource {
     },
     async loadSeries(_request, signal) {
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      window.__workspaceRequests ??= [];
+      window.__workspaceRequests.push({
+        symbolId: _request.symbol.id,
+        timeframe: _request.timeframe,
+        adjustMode: _request.adjustMode,
+        hasCursor: _request.beforeCursor !== undefined
+      });
       return { candles: candles(), hasMoreBefore: false, dataVersion: "fixture-v1" };
     }
   };
+}
+
+declare global {
+  interface Window {
+    __workspaceRequests?: Array<Record<string, unknown>>;
+  }
 }

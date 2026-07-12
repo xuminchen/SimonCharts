@@ -65,6 +65,9 @@ export interface WorkspaceViewModel {
 }
 
 export interface WorkspaceUiActions {
+  setSymbol(symbol: ChartSymbol): void;
+  setTimeframe(timeframe: Timeframe): void;
+  setAdjustMode(adjustMode: AdjustMode): void;
   searchSymbols(query: string): void;
   retrySearch(): void;
   loadMoreBefore(): void;

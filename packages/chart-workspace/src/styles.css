@@ -36,6 +36,12 @@
   border-bottom: 1px solid var(--sc-border);
   background: var(--sc-bg);
 }
+.sc-top-toolbar { gap: 8px; white-space: nowrap; }
+.sc-top-toolbar button, .sc-top-toolbar select, .sc-top-toolbar input { height: 28px; color: var(--sc-text); background: var(--sc-surface); border: 1px solid var(--sc-border); }
+.sc-symbol-search, .sc-indicator-manager, .sc-toolbar-settings { position: relative; }
+.sc-symbol-search-popup, .sc-indicator-popup, .sc-settings-popup { position: absolute; z-index: 10; top: 32px; left: 0; min-width: 220px; padding: 8px; background: var(--sc-surface); border: 1px solid var(--sc-border); }
+.sc-symbol-search-popup button, .sc-indicator-popup button { display: block; width: 100%; text-align: left; }
+.sc-indicator-legends { display: flex; gap: 4px; }
 
 .sc-chart-region { position: relative; min-height: 0; width: 100%; overflow: hidden; }
 .sc-chart-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }

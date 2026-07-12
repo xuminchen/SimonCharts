@@ -5,6 +5,7 @@ import type {
 import { createBottomPanel } from "./bottomPanel";
 import { createErrorPanel } from "./errorPanel";
 import { createTopToolbar } from "./topToolbar";
+import { createEngineCapabilityManifest } from "@simoncharts/chart-engine";
 
 export interface WorkspaceShell {
   readonly root: HTMLDivElement;
@@ -20,7 +21,7 @@ export function createWorkspaceShell(): WorkspaceShell {
   const root = document.createElement("div");
   root.className = "sc-workspace";
   root.dataset.state = "loading";
-  const toolbar = createTopToolbar();
+  const toolbar = createTopToolbar(createEngineCapabilityManifest());
   const chartRegion = document.createElement("div");
   chartRegion.className = "sc-chart-region";
   const staticCanvas = document.createElement("canvas");
@@ -48,6 +49,7 @@ export function createWorkspaceShell(): WorkspaceShell {
     staticCanvas,
     overlayCanvas,
     bind(actions) {
+      const unbindToolbar = toolbar.bind(actions);
       let startY = 0;
       let startHeight = 0;
       const move = (event: PointerEvent) => {
@@ -70,6 +72,7 @@ export function createWorkspaceShell(): WorkspaceShell {
       };
       resizer.addEventListener("pointerdown", down);
       const unbind = () => {
+        unbindToolbar();
         resizer.removeEventListener("pointerdown", down);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
