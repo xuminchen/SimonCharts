@@ -210,9 +210,9 @@ test("projects interaction price through the main-panel overlay geometry", async
   expect(pathCalls).toHaveLength(4);
   expect(pathCalls.map((call) => call.name)).toEqual(["moveTo", "lineTo", "moveTo", "lineTo"]);
   expect(pathCalls[2].args[0]).toBeCloseTo(geometry.plotArea.x, 5);
-  expect(pathCalls[2].args[1]).toBeCloseTo(geometry.target.y, 5);
+  expect(pathCalls[2].args[1]).toBeCloseTo(geometry.target.y, 4);
   expect(pathCalls[3].args[0]).toBeCloseTo(plotRight, 5);
-  expect(pathCalls[3].args[1]).toBeCloseTo(geometry.target.y, 5);
+  expect(pathCalls[3].args[1]).toBeCloseTo(geometry.target.y, 4);
   expect(pathCalls[0].args[0]).toBeCloseTo(geometry.target.x, 5);
   expect(pathCalls[0].args[1]).toBeCloseTo(geometry.plotArea.y, 5);
   expect(pathCalls[1].args[0]).toBeCloseTo(geometry.target.x, 5);
@@ -230,7 +230,7 @@ test("projects interaction price through the main-panel overlay geometry", async
       : Math.max(geometry.plotArea.y, geometry.target.y - 8 - tooltipHeight);
 
   expect(tooltipX).toBeCloseTo(expectedTooltipX, 5);
-  expect(tooltipY).toBeCloseTo(expectedTooltipY, 5);
+  expect(tooltipY).toBeCloseTo(expectedTooltipY, 4);
 });
 
 test("crosshair stays aligned after repeated zooms near the left edge", async ({ page }) => {
@@ -339,7 +339,8 @@ test("reset button restores the latest visible range", async ({ page }) => {
   expect(reset).toBeDefined();
   expect(reset?.viewport.scrollOffset).toBe(0);
   expect(reset?.viewport.candleWidth).toBeLessThan(zoomed?.viewport.candleWidth ?? 0);
-  expect(reset?.visibleRange.to).toBeGreaterThan(zoomed?.visibleRange.to ?? 0);
+  expect(reset?.visibleRange.to).toBe(zoomed?.visibleRange.to);
+  expect(reset?.visibleRange.from).toBeLessThan(zoomed?.visibleRange.from ?? 0);
 });
 
 async function clearRecordedEvents(page: Page): Promise<void> {

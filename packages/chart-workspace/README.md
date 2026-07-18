@@ -1,39 +1,149 @@
-# @simoncharts/chart-workspace
+# @simoncharts/charts
 
-Private, `UNLICENSED` browser chart workspace package for approved SimonCharts partners.
+Private, `UNLICENSED` embeddable Advanced Charts SDK for approved SimonCharts partners.
 
-## Install a delivered package
+The host owns authentication, routes, market-data rights, symbols, immutable snapshots, and business workflows. The SDK owns chart rendering, request coordination, validation, bounded history paging, optional technical tools, and browser preferences. It never fabricates candles or silently changes a requested data combination.
+
+## Install
 
 ```bash
-npm install ./simoncharts-chart-workspace-1.0.0-rc.0.tgz
+npm install ./simoncharts-charts-1.0.0-rc.18.tgz
 ```
 
-## Mount the workspace
+## Embed the default chart
+
+The default creates only timeframe, adjustment, and indicator controls. Symbol search, raw series selection, price-scale controls, drawing tools/history, settings, and the right inspector are not created. If the exact host capability matrix includes `1m`, the timeframe strip begins with an intraday close-line preset followed by the ordinary 1-minute candle control. Intraday exposes a 1–9 day selector, reuses the same real `1m` revision, does not imply live streaming, and does not persist a minimal chart's temporary line style.
 
 ```ts
-import {
-  createChartWorkspace,
-  type ChartWorkspaceDataSource
-} from "@simoncharts/chart-workspace";
-import "@simoncharts/chart-workspace/styles.css";
+import { createChart, type ChartDatafeed } from "@simoncharts/charts";
+import "@simoncharts/charts/styles.css";
 
-const dataSource: ChartWorkspaceDataSource = {
-  async searchSymbols(query, signal) {
-    return searchSymbolsFromHost(query, signal);
-  },
-  async loadSeries(request, signal) {
-    return loadSeriesFromHost(request, signal);
-  }
+const datafeed: ChartDatafeed = {
+  getCapabilities: (symbol, signal) => getCapabilitiesFromHost(symbol, signal),
+  searchSymbols: (query, signal) => searchSymbolsFromHost(query, signal),
+  loadSeries: (request, signal) => loadSeriesFromHost(request, signal)
 };
 
-const workspace = createChartWorkspace(container, {
-  workspaceId: "partner-chart",
+const chart = createChart(container, {
+  chartId: "review-detail",
+  persistenceScopeId: authenticatedUserId,
+  dataContextId: marketSnapshotRevision,
   initialSymbol,
-  dataSource
+  initialTimeframe: "1d",
+  initialAdjustMode: "forward",
+  dataCutoffTime: reviewCutoffEpochMilliseconds,
+  datafeed,
+  theme: "light",
+  locale: "zh-CN",
+  onError(error) {
+    showSafeChartMessage(error);
+  }
 });
 
-// Call when the host page unmounts.
-workspace.destroy();
+const unsubscribe = chart.subscribe((state) => updateHostState(state));
+unsubscribe();
+chart.destroy();
 ```
 
-The host supplies symbol search and cursor-paged candle data through the two public methods above.
+## Control the view and visible range
+
+The host can switch between the intraday close line and the ordinary timeframe view without changing the underlying `1m` revision. Visible-range values are Unix epoch milliseconds. A range request may load older cursor pages before it becomes visible; `getVisibleRange()` returns `undefined` while a new selection has no accepted materialized data. Intraday always fits its complete 1–9 day window, so wheel, drag, axis scaling, keyboard viewport commands, and `setVisibleRange()` do not zoom or pan that view.
+
+```ts
+chart.setVisibleRange({ from: rangeStartEpochMs, to: rangeEndEpochMs });
+chart.setView("intraday");
+chart.setIntradayDays(5);
+
+const unsubscribeEvents = chart.subscribeEvents((event) => {
+  if (event.type === "data-loaded") {
+    recordAcceptedRevision(event.dataVersion, event.phase); // initial | history
+  } else {
+    syncHostRange(event.range);
+  }
+});
+
+chart.resetToLatest();
+const visibleRange = chart.getVisibleRange();
+unsubscribeEvents();
+```
+
+Older pages are requested as the viewport demands them. Accepted history is prepended without moving the candle that was under the user's cursor, while the in-memory materialization remains bounded. `data-loaded` is emitted only after an accepted initial or history page has been materialized for the current symbol, timeframe, adjustment, cutoff, and `dataVersion`.
+
+### Intraday scale and day-count contract
+
+`getCapabilities()` may add cutoff-specific intraday scale metadata beside the exact series matrix:
+
+```ts
+{
+  series: [{ timeframe: "1m", adjustModes: ["none"] }],
+  intradayScale: {
+    previousClose: officialPreviousCloseAtCutoff,
+    priceLimitPercent: applicableDailyLimitPercent // omit when no fixed limit applies
+  }
+}
+```
+
+- `previousClose` is the official finite positive previous close for the symbol at the chart cutoff. `priceLimitPercent`, when present, is finite and within `(0, 100]`. The host owns board, risk-warning, listing-day, and rule-date decisions; the SDK does not guess them.
+- A one-day intraday view uses `previousClose` as `0%`. With `priceLimitPercent`, the right axis is fixed symmetrically to `-limit% … 0% … +limit%`; without it, the percentage axis auto-scales to the real data, which covers new or otherwise unrestricted symbols.
+- `setIntradayDays(days)` accepts an integer from 1 through 9 and updates `ChartState.intradayDays`. The visible selector calls the same API.
+- A 2–9 day view selects the latest requested number of real Shanghai trading-day keys in the accepted cursor chain. Its `0%` baseline is the final real `1m` close immediately before the earliest selected day, and its vertical scale is automatic so cumulative movement is not clipped by a one-day limit.
+- The SDK loads enough cursor history to identify the selected days and their preceding reference day, then fits all selected candles into the initial viewport. If the host has fewer real days, it displays only those days; it never creates calendar placeholders or synthetic candles.
+
+## Opt into the advanced workbench
+
+```ts
+import { advancedChartFeatures, createChart } from "@simoncharts/charts";
+
+const chart = createChart(container, {
+  chartId: "advanced-chart",
+  persistenceScopeId: authenticatedUserId,
+  dataContextId: marketSnapshotRevision,
+  initialSymbol,
+  datafeed,
+  features: advancedChartFeatures,
+  theme: "dark",
+  locale: "zh-CN"
+});
+```
+
+`ChartFeature` is a stable union of `symbol-search`, `timeframes`, `adjustment`, `series-type`, `price-scale`, `indicators`, `drawing-tools`, `drawing-history`, `settings`, and `bottom-panel`. Passing a feature controls construction: disabled controls are not mounted and do not bind listeners. `advancedChartFeatures` explicitly enables the complete 17-series, 16-indicator, 63-drawing, three-scale workbench.
+
+The advanced shell is chart-first: a 40 px market toolbar, fixed 44 px drawing rail, uninterrupted chart and native axes, collapsed 40 px object/property/data inspector, and 26 px status bar. The crosshair updates OHLC, volume, indicator rows, and price/time axis badges directly. Wheel/keyboard zoom, captured drag pan, price-axis and time-axis drag, double-click reset, drawing body/handle editing, chart/axis context menus, and native fullscreen are included. The inspector expands only on demand and reuses the existing versioned layout namespace.
+
+Charts intentionally does not create watchlists, news, broker/order/account panels, or multi-chart trading layouts. Those are host or Trading Platform responsibilities, not inert SDK controls.
+
+## Data contract
+
+- Capabilities are declared per timeframe as `{ timeframe, adjustModes }`; unsupported combinations are not rendered or requested.
+- `Candle.time` and `dataCutoffTime` use Unix epoch milliseconds.
+- The cutoff is included in every initial and history request; a page containing any future candle is rejected atomically.
+- Pages are strictly ascending, atomically validated, and tied to one `dataVersion` across the cursor chain.
+- Cursor paging can span trading days; intraday resolves the latest 1–9 available real Shanghai trading days plus the preceding reference close when available, while ordinary minute timeframes remain continuous across days.
+- The SDK does not aggregate, adjust, repair, or fill candles.
+- `AbortSignal` cancellation is normal control flow and is not surfaced as an error.
+
+Host adapters may throw `ChartDatafeedError` with a safe code (`NOT_CONFIGURED`, `UNAUTHORIZED`, `FORBIDDEN`, `RATE_LIMITED`, `NO_DATA`, or `UNAVAILABLE`), a user-facing message, and a recoverable flag. `onError` receives a normalized `ChartError`; known datafeed codes are available at `error.context?.datafeedCode`. Unknown upstream details are never exposed.
+
+## Persistence and lifecycle
+
+Layout, preferences, and indicators are isolated by `chartId + persistenceScopeId`. Drawings additionally include the required `dataContextId`, `symbol.id`, and adjustment mode. Candle history, credentials, and provider details are never stored. `destroy()` is idempotent, aborts pending work, clears subscriptions, and removes mounted DOM resources.
+
+## RC validation
+
+```bash
+npm run check:workspace-release-gate
+```
+
+The gate covers unit/type tests, runtime and declaration snapshots, package allowlisting, packed JavaScript/TypeScript consumers, and the complete advanced playground in Chrome and Edge. `npm run pack:workspace` is reserved for final orchestration and writes an immutable tarball plus SHA-256/SHA-512 sidecars.
+
+The previous rc.9 candidate passed `67 files / 1,050` repository tests, `12 files / 96` Charts tests, combined Chrome `91/91`, and the workspace Chrome/Edge matrix at `40/40` per browser. Its immutable SHA-256 is `ddc20fed0b8ea7f8813644ca188d595461bf49564fa113f32a4b31a9e29bf3d5`; TradingReviewSystem separately accepted the advanced and embedded product paths against the identical vendored bytes.
+
+rc.10 introduced the intraday scale and 2–9 day contracts above. Accepted rc.11 additionally preserves the reference-day baseline through bounded-cache reloads and fits a full nine-day A-share window at 390 px. Its immutable 32-file artifact passed `67 files / 1,058` repository tests, `12 files / 104` Charts tests, combined Chrome `92/92`, and Charts Chrome/Edge `41/41` per browser before byte-identical TradingReviewSystem acceptance. SHA-256 is `9b1243b1841448f34a49b100ad2ec8e4276a1a7002b07a69bc4bb9dee5986062`; SHA-512 is `3bf3fd836e7365c2a1f3434cb0f9fe9edca6b618fe01783be6540e1774decdf089673e5ff26a9cf23ec61f69a903e5fcfb56327b0df71e68ea2fe9904858d431`.
+
+Accepted rc.12 keeps ordinary K-line zoom/pan with the latest candle right-anchored, while one-to-nine-day intraday views always fit the complete real-data window and reject viewport zoom or pan. It also adds left-price/right-percentage axes, separate price and volume regions, direction-colored intraday lines, a chart-header day selector and OHLC summary, and Advanced Charts-style period and 17-type chart menus. Its immutable 32-file artifact passed `67 files / 1,068` repository tests, `12 files / 106` Charts tests, combined Chrome `92/92`, and Charts Chrome/Edge `41/41` per browser before byte-identical TradingReviewSystem acceptance. SHA-256 is `683050ed196ab30a757cfa863f823826872d373bf8f690125c1c4001d31e83e5`; SHA-512 is `fed1ffa05049cfacc04f2d9d0863399b68095fe662ad4ea1db05a70967f5caee4b2fb2530a65b5ef98da941e02ed41a0148a4a628250deb935ad86f716ec82fd`.
+
+Accepted rc.15 finalized the preceding time-axis scope. It keeps the rc.12 public behavior and completely clears any static date label intersecting the crosshair time badge, eliminating partial neighboring date fragments after K-line zoom. Its immutable 32-file artifact passed `67 files / 1,069` repository tests, `12 files / 106` Charts tests, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, five runtime exports, and four public declaration files before byte-identical TradingReviewSystem acceptance. SHA-256 is `08f6c652dab93c3aeb8ab832049218e78e387b1d7f6c7bc1d1797ff7a4a3bb87`; SHA-512 is `28a538f9556f5522bac437aba4b0384ff7e5e72bb52123f74c1fae0b01f3e776d6c973ba75fc33079c7e066538848abba50c3946cae258f5c81989ccfb7959b8`.
+
+Accepted rc.16 supersedes rc.15 only to constrain the center position of intraday dual-axis boundary labels, keeping the top and bottom price/percentage extremes fully visible. Its immutable 32-file artifact passed the unchanged `67 files / 1,069` repository tests, `12 files / 106` Charts tests, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, five runtime exports, and four public declaration files before byte-identical TradingReviewSystem acceptance. SHA-256 is `5e9f805c10eafa1fca09dfcee9850985aad1df6e116eea50a11963951a055baa`; SHA-512 is `92750a05e7cdc2f03f0a646200e17dd612c77fed0e5501b6f9c5c8f53fd1eb88d1b130a86433c7d44efab9fde09ee62f97eb04f6e8959e9bcaf26fc09e0b0cee`.
+
+Accepted rc.17 reserves a 34 px plot inset below the chart header so boundary-axis labels stay complete without overlapping OHLC. A latest viewport also remains exactly right-anchored during zoom (`to = lastIndex`, `scrollOffset = 0`); anchor-based zoom begins only after the user pans into history. Its immutable 32-file artifact passed `67 files / 1,070` repository tests, `12 files / 106` Charts tests, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, five runtime exports, and four public declaration files before byte-identical TradingReviewSystem acceptance. SHA-256 is `8f6a1be2e255d845da1a7d809c4a994a359c14a1798d52a92c117d7f076dba71`; SHA-512 is `dc3a3c526b2b10688f64984562e5f7612f4e1440ca4240d5581080c60b36c11260aa8972e98d8a197de57ba0b0f750a4bd33e356acba5779d35c6354610d6c88`.

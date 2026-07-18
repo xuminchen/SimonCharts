@@ -1,5 +1,7 @@
 # Chart Workspace Commercial Release Implementation Plan
 
+> 2026-07-18 状态：本文记录 `@simoncharts/chart-workspace@1.0.0-rc.1` 的历史发布实施。现行候选 `@simoncharts/charts@1.0.0-rc.18` 保留分时双轴/量价分区/完整窗口锁、时间轴修复和 Advanced Charts 类周期/图形菜单，并增加固定顺序的周期星标快捷栏；以 34 px 绘图区上边距保证边界刻度不与 OHLC 头重叠，并固定 latest 视口缩放的零偏移右锚定。现行入口是 `createChart(container, options)`，本文旧代码片段不得作为现行接口使用。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Convert the accepted workspace release candidate into an immutable, privately deliverable `@simoncharts/chart-workspace` `.tgz` backed by package, browser, performance, and real TradingReviewSystem evidence.
@@ -21,6 +23,16 @@
 - No runtime license key, domain/device lock, telemetry requirement, registry publish, or online validation is added.
 - `npm pack` is manual/private and must refuse to overwrite an existing versioned file.
 - Every task begins with a failing guard/test, ends with focused verification, and creates one reviewable commit.
+
+---
+
+## RC.11 Intraday Delta Gate
+
+- Public contract: `ChartDataCapabilities.intradayScale?: { previousClose, priceLimitPercent? }`, `IntradayDayCount`, `ChartState.intradayDays`, and `ChartInstance.setIntradayDays()` must appear in runtime and declaration snapshots and compile from the packed external consumer.
+- Scale behavior: one-day intraday must use the host cutoff-specific previous close; a supplied limit fixes a symmetric percentage axis, while an omitted limit auto-scales. Exchange-board and listing rules remain outside the SDK.
+- History behavior: 2 and 9 day cases must load real `1m` trading-day keys plus the preceding reference day, use that prior close as `0%`, and remain ready with fewer available days without fabricating data.
+- Viewport behavior: one-day and multi-day reset must fit the complete selected window, including dense 9-day candles in supported containers.
+- Release evidence: focused unit/type/browser checks, immutable package checks, and the TradingReviewSystem packed-host path completed before rc.11 checksums and acceptance counts were recorded.
 
 ---
 
@@ -324,7 +336,13 @@ const dataSource: ChartWorkspaceDataSource = {
 };
 
 declare const container: HTMLElement;
-const workspace = createChartWorkspace(container, { workspaceId: "consumer", initialSymbol: symbol, dataSource });
+const workspace = createChartWorkspace(container, {
+  workspaceId: "consumer",
+  persistenceScopeId: "consumer-user",
+  dataContextId: "consumer-snapshot",
+  initialSymbol: symbol,
+  dataSource
+});
 workspace.setTimeframe("1m");
 workspace.setAdjustMode("backward");
 workspace.destroy();
@@ -433,7 +451,7 @@ Keep the Phase 3 environment validation and do not start or mutate the host from
 
 - [ ] **Step 2: Expand authenticated core assertions to the full matrix**
 
-Require `TRADING_REVIEW_USERNAME` and `TRADING_REVIEW_PASSWORD`; log in through the real login form, navigate `/chart`, and assert the installed package UI. Use host API responses/request logs to cover search, initial page, earlier cursor, all eight stock timeframes under `none/forward/backward`, all eight index timeframes under `none`, index adjustment normalization, and safe unsupported-combination errors outside that approved matrix. Exercise one chart of each 17 types, all 16 indicators, all 63 drawing tools, all 3 scales, persistence reload, and navigation away cleanup. Any approved combination returning `CHART_COMBINATION_UNAVAILABLE` fails the release gate.
+Require `TRADING_REVIEW_USERNAME` and `TRADING_REVIEW_PASSWORD`; log in through the real login form, navigate `/chart`, and assert the installed package UI. Use host API responses/request logs to cover capability negotiation, search, initial page, earlier cursor, every host-declared exact timeframe/adjustment combination, index adjustment normalization, cutoff rejection, drawing data-context isolation, and safe unsupported-combination errors outside that matrix. Exercise one chart of each 17 types, all 16 indicators, all 63 drawing tools, all 3 scales, persistence reload, and navigation away cleanup. Any declared combination returning `CHART_COMBINATION_UNAVAILABLE` fails the release gate.
 
 Collect `pageerror` and console `error`; final assertion requires both arrays empty. Verify no network request contains `fake`, `fixture`, or a SimonCharts source path.
 

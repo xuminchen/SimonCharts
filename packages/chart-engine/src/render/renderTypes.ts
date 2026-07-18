@@ -12,8 +12,15 @@ import type { PriceScale } from "../viewport/priceScale";
 export interface ChartLayout {
   width: number;
   height: number;
+  leftAxisWidth: number;
   rightAxisWidth: number;
   bottomAxisHeight: number;
+  leftPriceAxisArea: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
   plotArea: {
     x: number;
     y: number;
@@ -21,6 +28,12 @@ export interface ChartLayout {
     height: number;
   };
   priceAxisArea: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  volumeArea: {
     x: number;
     y: number;
     width: number;
@@ -50,6 +63,7 @@ export interface RenderState {
   drawings?: DrawingObject[];
   selectedDrawingIds?: string[];
   hoveredDrawingId?: string;
+  intradayDays?: number;
 }
 
 export interface LayerRenderContext {

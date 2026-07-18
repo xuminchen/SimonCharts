@@ -85,6 +85,16 @@ describe("series page validation", () => {
     });
   });
 
+  it("atomically rejects any candle after the configured data cutoff", () => {
+    const page = { ...validPage, candles: [candle(100), candle(151)] };
+    expect(validateSeriesPage(page, { ...context, dataCutoffTime: 150 })).toMatchObject({
+      ok: false,
+      code: "CANDLE_AFTER_CUTOFF",
+      invalidIndex: 1
+    });
+    expect(page.candles).toHaveLength(2);
+  });
+
   it("rejects descending candle time", () => {
     const page = { ...validPage, candles: [candle(150), candle(100)] };
     expect(validateSeriesPage(page, context)).toMatchObject({

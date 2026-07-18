@@ -2,9 +2,24 @@ import {
   builtInDrawingToolDefinitions,
   type DrawingToolCategory
 } from "@simoncharts/chart-engine";
-import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartWorkspaceController";
+import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartController";
+import type { ChartLabels } from "./localization";
 
 const categories = [...new Set(builtInDrawingToolDefinitions.map((definition) => definition.category))];
+const categoryIcons: Readonly<Record<DrawingToolCategory, string>> = {
+  basic: "╱",
+  channel: "∥",
+  fibonacci: "Φ",
+  annotation: "T",
+  shape: "□",
+  path: "⌁",
+  position: "↕",
+  measurement: "↔",
+  gann: "G",
+  pitchfork: "Ψ",
+  pattern: "W",
+  forecast: "⋯"
+};
 
 export interface DrawingPalette {
   readonly element: HTMLDivElement;
@@ -12,19 +27,17 @@ export interface DrawingPalette {
   render(viewModel: WorkspaceViewModel): void;
 }
 
-export function createDrawingPalette(chartRegion: HTMLElement): DrawingPalette {
+export function createDrawingPalette(labels: ChartLabels): DrawingPalette {
   const element = document.createElement("div");
   element.className = "sc-drawing-palette";
   element.dataset.testid = "drawing-palette";
-  const header = document.createElement("div");
-  header.className = "sc-drawing-palette-header";
-  header.dataset.testid = "drawing-palette-drag-handle";
-  const grip = document.createElement("span");
-  grip.className = "sc-drawing-palette-grip";
-  grip.textContent = "⋮";
-  const expand = document.createElement("button");
-  expand.type = "button";
-  expand.dataset.testid = "drawing-palette-expand";
+  const select = document.createElement("button");
+  select.type = "button";
+  select.className = "sc-drawing-select";
+  select.dataset.testid = "drawing-palette-expand";
+  select.textContent = "↖";
+  select.title = labels.select;
+  select.setAttribute("aria-label", labels.select);
   const categoryHost = document.createElement("div");
   categoryHost.className = "sc-drawing-categories";
   for (const category of categories) {
@@ -32,29 +45,26 @@ export function createDrawingPalette(chartRegion: HTMLElement): DrawingPalette {
     button.type = "button";
     button.dataset.drawingCategory = category;
     button.dataset.testid = `drawing-category-${category}`;
-    button.textContent = category;
+    button.textContent = categoryIcons[category];
+    button.title = category;
+    button.setAttribute("aria-label", category);
+    button.setAttribute("aria-expanded", "false");
     categoryHost.append(button);
   }
   const popup = document.createElement("div");
   popup.className = "sc-drawing-tools-popup";
   popup.hidden = true;
-  header.append(grip, expand);
-  element.append(header, categoryHost, popup);
+  popup.setAttribute("role", "menu");
+  element.append(select, categoryHost, popup);
   let actions: WorkspaceUiActions | undefined;
   let current: WorkspaceViewModel["drawingPalette"] = { x: 12, y: 12, collapsed: true };
-  let drag: { pointerId: number; dx: number; dy: number } | undefined;
+  let activeTool = "select";
 
-  const clamp = (x: number, y: number) => ({
-    x: Math.max(0, Math.min(Math.max(0, chartRegion.clientWidth - element.offsetWidth), x)),
-    y: Math.max(0, Math.min(Math.max(0, chartRegion.clientHeight - element.offsetHeight), y))
-  });
-  const applyPosition = (x: number, y: number) => {
-    const next = clamp(x, y);
-    element.style.left = `${next.x}px`;
-    element.style.top = `${next.y}px`;
-    return next;
+  const closePopup = () => {
+    popup.hidden = true;
+    for (const button of categoryHost.querySelectorAll("button")) button.setAttribute("aria-expanded", "false");
   };
-  const showCategory = (category: DrawingToolCategory) => {
+  const showCategory = (category: DrawingToolCategory, anchor: HTMLElement) => {
     popup.replaceChildren();
     for (const definition of builtInDrawingToolDefinitions.filter((item) => item.category === category)) {
       const button = document.createElement("button");
@@ -62,71 +72,73 @@ export function createDrawingPalette(chartRegion: HTMLElement): DrawingPalette {
       button.dataset.drawingTool = definition.type;
       button.dataset.drawingMode = definition.drawingMode;
       button.dataset.anchorCount = String(definition.anchorCount);
+      button.setAttribute("role", "menuitem");
       button.textContent = definition.label;
       popup.append(button);
     }
+    for (const button of categoryHost.querySelectorAll("button")) {
+      button.setAttribute("aria-expanded", String(button === anchor));
+    }
     popup.hidden = false;
+    const top = Math.max(4, Math.min(anchor.offsetTop, element.clientHeight - popup.offsetHeight - 4));
+    popup.style.top = `${top}px`;
   };
 
   return {
     element,
     bind(nextActions) {
       actions = nextActions;
-      const expandClick = () => actions?.setDrawingPalette({ ...current, collapsed: !current.collapsed });
+      const selectClick = () => {
+        activeTool = "select";
+        closePopup();
+        actions?.setDrawingTool("select");
+      };
       const click = (event: Event) => {
         const target = event.target as HTMLElement;
-        const category = target.closest<HTMLElement>("[data-drawing-category]")?.dataset.drawingCategory as DrawingToolCategory | undefined;
-        if (category) { showCategory(category); return; }
-        const tool = target.closest<HTMLElement>("[data-drawing-tool]")?.dataset.drawingTool;
-        if (tool) {
-          const definition = builtInDrawingToolDefinitions.find((item) => item.type === tool);
-          if (!definition) return;
-          actions?.setDrawingTool(definition.type);
-          actions?.setDrawingPalette({ ...current, recentTool: definition.type });
-          popup.hidden = true;
+        const categoryButton = target.closest<HTMLElement>("[data-drawing-category]");
+        const category = categoryButton?.dataset.drawingCategory as DrawingToolCategory | undefined;
+        if (category && categoryButton) {
+          if (!popup.hidden && categoryButton.getAttribute("aria-expanded") === "true") closePopup();
+          else showCategory(category, categoryButton);
+          return;
         }
+        const tool = target.closest<HTMLElement>("[data-drawing-tool]")?.dataset.drawingTool;
+        if (!tool) return;
+        const definition = builtInDrawingToolDefinitions.find((item) => item.type === tool);
+        if (!definition) return;
+        activeTool = definition.type;
+        actions?.setDrawingTool(definition.type);
+        actions?.setDrawingPalette({ ...current, recentTool: definition.type });
+        closePopup();
       };
-      const down = (event: PointerEvent) => {
-        if ((event.target as HTMLElement).closest("button")) return;
-        drag = { pointerId: event.pointerId, dx: event.clientX - current.x, dy: event.clientY - current.y };
-        header.setPointerCapture?.(event.pointerId);
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", up);
+      const outside = (event: PointerEvent) => {
+        if (!element.contains(event.target as Node)) closePopup();
       };
-      const move = (event: PointerEvent) => {
-        if (!drag || drag.pointerId !== event.pointerId) return;
-        applyPosition(event.clientX - drag.dx, event.clientY - drag.dy);
+      const escape = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return;
+        activeTool = "select";
+        closePopup();
+        actions?.setDrawingTool("select");
       };
-      const up = (event: PointerEvent) => {
-        if (!drag || drag.pointerId !== event.pointerId) return;
-        const position = applyPosition(event.clientX - drag.dx, event.clientY - drag.dy);
-        drag = undefined;
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-        actions?.setDrawingPalette({ ...current, ...position });
-      };
-      const resize = () => {
-        const position = applyPosition(current.x, current.y);
-        if (position.x !== current.x || position.y !== current.y) actions?.setDrawingPalette({ ...current, ...position });
-      };
-      expand.addEventListener("click", expandClick);
+      select.addEventListener("click", selectClick);
       element.addEventListener("click", click);
-      header.addEventListener("pointerdown", down);
-      header.addEventListener("pointermove", move);
-      header.addEventListener("pointerup", up);
-      header.addEventListener("pointercancel", up);
-      window.addEventListener("resize", resize);
+      element.ownerDocument.addEventListener("pointerdown", outside);
+      element.ownerDocument.addEventListener("keydown", escape);
       return () => {
-        expand.removeEventListener("click", expandClick); element.removeEventListener("click", click);
-        header.removeEventListener("pointerdown", down); header.removeEventListener("pointermove", move); header.removeEventListener("pointerup", up); header.removeEventListener("pointercancel", up); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("resize", resize);
+        select.removeEventListener("click", selectClick);
+        element.removeEventListener("click", click);
+        element.ownerDocument.removeEventListener("pointerdown", outside);
+        element.ownerDocument.removeEventListener("keydown", escape);
       };
     },
     render(viewModel) {
       current = viewModel.drawingPalette;
-      applyPosition(current.x, current.y);
-      categoryHost.hidden = current.collapsed;
-      if (current.collapsed) popup.hidden = true;
-      expand.textContent = current.collapsed ? current.recentTool ?? "绘图" : "收起";
+      if (activeTool === "select" && current.recentTool === undefined) select.setAttribute("aria-pressed", "true");
+      else select.setAttribute("aria-pressed", String(activeTool === "select"));
+      for (const button of categoryHost.querySelectorAll<HTMLButtonElement>("button")) {
+        const recent = builtInDrawingToolDefinitions.find((definition) => definition.type === activeTool);
+        button.setAttribute("aria-pressed", String(recent?.category === button.dataset.drawingCategory));
+      }
     }
   };
 }

@@ -132,10 +132,13 @@ function createLayout(): ChartLayout {
   return {
     width: 160,
     height: 120,
+    leftAxisWidth: 0,
     rightAxisWidth: 40,
     bottomAxisHeight: 20,
+    leftPriceAxisArea: { x: 10, y: 5, width: 0, height: 90 },
     plotArea: { x: 10, y: 5, width: 110, height: 90 },
     priceAxisArea: { x: 120, y: 5, width: 40, height: 90 },
+    volumeArea: { x: 10, y: 95, width: 110, height: 0 },
     timeAxisArea: { x: 10, y: 95, width: 110, height: 20 }
   };
 }

@@ -25,6 +25,7 @@ interface DrawCall {
 
 class FakeCanvasContext {
   calls: DrawCall[] = [];
+  strokeStyles: string[] = [];
   private styleStack: Array<{
     fillStyle: string;
     strokeStyle: string;
@@ -58,6 +59,7 @@ class FakeCanvasContext {
   }
 
   stroke(): void {
+    this.strokeStyles.push(this.strokeStyle);
     this.record("stroke");
   }
 
@@ -146,10 +148,13 @@ function createLayout(): ChartLayout {
   return {
     width: 140,
     height: 100,
+    leftAxisWidth: 0,
     rightAxisWidth: 40,
     bottomAxisHeight: 20,
-    plotArea: { x: 0, y: 0, width: 100, height: 80 },
-    priceAxisArea: { x: 100, y: 0, width: 40, height: 80 },
+    leftPriceAxisArea: { x: 0, y: 0, width: 0, height: 56 },
+    plotArea: { x: 0, y: 0, width: 100, height: 56 },
+    priceAxisArea: { x: 100, y: 0, width: 40, height: 56 },
+    volumeArea: { x: 0, y: 64, width: 100, height: 16 },
     timeAxisArea: { x: 0, y: 80, width: 100, height: 20 }
   };
 }
@@ -262,6 +267,22 @@ describe("series renderers", () => {
     createSeriesLayer(registry).render(layerContext);
 
     expect((layerContext.context as unknown as FakeCanvasContext).calls.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    [16, "bullishCandle"],
+    [10, "bearishCandle"],
+    [13, "text"]
+  ] as const)("colors a percentage line from its last visible close (%s)", (close, color) => {
+    const series = createSeries();
+    series.candles[2] = { ...series.candles[2], close, high: Math.max(16, close), low: Math.min(10, close) };
+    const renderContext = createRenderContext("line", "percentage", series);
+
+    createSeriesLayer(createDefaultSeriesRendererRegistry()).render(renderContext);
+
+    expect((renderContext.context as unknown as FakeCanvasContext).strokeStyles).toEqual([
+      renderContext.state.theme.colors[color]
+    ]);
   });
 
   it("restores the caller canvas styles after direct renderer drawing", () => {

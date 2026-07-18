@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 async function drawTrendLine(page: Page): Promise<void> {
   await page.getByTestId("drawing-palette-expand").click();
   await page.locator('[data-drawing-category="basic"]').click();
-  await page.getByRole("button", { name: "Trend Line", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Trend Line", exact: true }).click();
   const canvas = page.locator("canvas.sc-overlay-canvas");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("canvas missing");
@@ -17,9 +17,9 @@ test("edits drawing objects and shows the runtime data window in the bottom work
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
   await drawTrendLine(page);
 
-  await page.getByRole("button", { name: "对象", exact: true }).click();
+  await page.getByRole("tab", { name: "对象", exact: true }).click();
   await page.getByRole("button", { name: /trendLine/ }).click();
-  await page.getByRole("button", { name: "属性", exact: true }).click();
+  await page.getByRole("tab", { name: "属性", exact: true }).click();
   await page.getByLabel("Color").fill("#f04455");
   await page.getByLabel("Color").press("Enter");
 
@@ -53,7 +53,7 @@ test("edits drawing objects and shows the runtime data window in the bottom work
   if (!box) throw new Error("canvas missing");
   await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.45);
 
-  await page.getByRole("button", { name: "数据窗口", exact: true }).click();
+  await page.getByRole("tab", { name: "数据窗口", exact: true }).click();
   await expect(page.getByTestId("data-window-open")).not.toHaveText("--");
   await expect(page.getByTestId("data-window-indicator-MA")).not.toHaveText("--");
 });

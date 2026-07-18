@@ -1,5 +1,7 @@
 # SimonCharts Commercial Workspace SDK Implementation Roadmap
 
+> 2026-07-18 状态：本路线图的 Workspace 默认产品形态已由 `1.0.0-rc.2` 完成重置；当前 `@simoncharts/charts@1.0.0-rc.18` 保留分时双轴、独立量区、完整窗口锁、K 线右锚定、紧凑时间轴、最新日 OHLC 和 Advanced Charts 类周期/图形菜单，并增加固定顺序的周期星标快捷栏；完成时间标签碰撞与双轴边界裁切修复，并以 34 px 绘图区上边距隔离 OHLC 头；latest 视口缩放固定 `to = lastIndex`、`scrollOffset = 0`，只有向历史平移后才使用锚点缩放。默认仍仅创建周期、复权和指标且不触碰 drawings 持久化，完整能力仅通过 `advancedChartFeatures` 显式开启。既有 Engine、数据一致性、cutoff、持久化和发布证据任务继续有效，旧包名/API 不再有效。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each linked plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the approved private commercial `@simoncharts/chart-workspace` `.tgz`, with a complete browser workbench and TradingReviewSystem `/chart` as the first real host.
@@ -16,12 +18,16 @@
 - Timeframes: `1m`, `5m`, `15m`, `30m`, `60m`, `1d`, `1w`, `1mo`.
 - Stock adjustment modes: `none`, `forward`, `backward`; stock default is `forward`.
 - Index adjustment mode: `none` only; invalid index adjustment is normalized without a request or error.
+- Engine/Workspace retain the complete technical matrix. Each real host declares an exact per-timeframe adjustment subset through `getCapabilities`; host acceptance covers every declared real combination, not an assumed Cartesian product or mandatory full data matrix.
 - Product capability: 17 chart types, 16 built-in indicators, and all 63 built-in drawing tools.
 - Price scales: `linear`, `log`, and `percentage`; default is `linear`.
+- Intraday scale metadata is host-owned and cutoff-specific: `previousClose` supplies `0%`; optional `priceLimitPercent` fixes the one-day symmetric range, while omission keeps the axis automatic for unrestricted symbols.
+- Intraday day count is 1–9 over real `1m` trading-day keys. Multi-day uses the close before the earliest selected day, fits the complete available window, and never fabricates missing days or candles.
 - Data must come from the host data source exactly as requested; never synthesize, interpolate, repair, or fill candles.
+- Host adapters use the public safe `ChartDataSourceError` contract when configuration, authorization, quota, no-data, or availability details should survive SDK normalization; unknown upstream failures remain generic.
 - History is cursor-paged and continuously accessible; candle payload cache and engine materialization remain bounded.
-- Persistence is browser `localStorage` only for layout, UI preferences, indicators, and drawings; never persist candle history or credentials.
-- UI layout: compact top toolbar, one uninterrupted chart area, floating draggable/collapsible drawing palette, horizontal bottom object/property/data panel, no permanent right sidebar.
+- Persistence is browser `localStorage` only for layout, UI preferences, indicators, and drawings; drawings require an additional host data-context identity so different revisions/cutoffs cannot share annotations. Never persist candle history or credentials.
+- UI layout: compact top toolbar, fixed drawing rail, one uninterrupted chart area, collapsed right object/property/data inspector, and compact status bar.
 - Styling: no Shadow DOM; root `.sc-workspace`, internal `sc-` class prefix, documented CSS variables, dark terminal defaults.
 - Browser scope: desktop Chrome and Edge current and previous major versions; minimum width 1280 px.
 - Performance: response-to-usable-frame at most 100 ms excluding network; pan/zoom/crosshair p95 at most 16.7 ms; crosshair movement must not redraw static layers.
@@ -65,13 +71,13 @@ npm run build
 PLAYWRIGHT_CHANNEL=chrome npm run test:workspace:e2e
 ```
 
-Required result: the public API, data coordinator, bounded store, persistence, runtime, complete UI, 17/16/63 capability matrix, error states, and performance fixtures work in the in-repo harness.
+Required result: the public API, data coordinator, bounded store, persistence, runtime, complete UI, 17/16/63 capability matrix, host-defined intraday scales, 1–9 day real-data materialization, error states, and performance fixtures work in the in-repo harness.
 
 ### Phase 3: TradingReviewSystem Reference Host
 
 Plan: `docs/superpowers/plans/2026-07-11-chart-workspace-trading-review-system-implementation-plan.md`
 
-Entry condition: a Phase 2 release-candidate `.tgz` exists; the host must install that artifact, not a source directory. The operator must also supply an authorized provider/snapshot service that covers the approved exact matrix and can honor one immutable/revision-addressable snapshot across cursor pages.
+Entry condition: a Phase 2 release-candidate `.tgz` exists; the host must install that artifact, not a source directory. The operator must also supply an authorized provider/snapshot service that covers the host's declared exact subset and can honor one immutable/revision-addressable snapshot across cursor pages.
 
 Exit gate:
 
@@ -86,7 +92,7 @@ cd /Users/xuminchen/Desktop/SimonCharts
 TRADING_REVIEW_FRONTEND_URL=http://127.0.0.1:3000 TRADING_REVIEW_USERNAME="$TRADING_REVIEW_USERNAME" TRADING_REVIEW_PASSWORD="$TRADING_REVIEW_PASSWORD" PLAYWRIGHT_CHANNEL=chrome npm run check:trading-review-host
 ```
 
-Required result: authenticated `/api/chart/symbols`, `/api/chart/series`, and full-screen `/chart` consume the packed workspace with real provider data and no engine/source imports. Phase 3 runs an automated authenticated Chrome core path; Phase 4 expands the same spec to the complete capability and four-browser gate.
+Required result: authenticated chart capabilities, `/api/chart/symbols`, `/api/chart/series`, and full-screen `/chart` consume the packed workspace with real provider data and no engine/source imports. Automated acceptance exercises every host-declared exact combination and verifies unsupported combinations stay absent; browser expansion does not require the host to license the Engine's full data matrix.
 
 ### Phase 4: Commercial Artifact And Release Gate
 
@@ -102,13 +108,17 @@ npm run pack:workspace
 
 Required result: clean build, all engine/workspace tests, capability and performance matrices, Chrome/Edge current/previous evidence, isolated `.tgz` runtime/type consumers, automated TradingReviewSystem host checks, artifact allowlist, and immutable SemVer metadata all pass before the final versioned `.tgz` is created.
 
+The `1.0.0-rc.1` package gate runs the complete workspace suite against the installed current Chrome and Edge channels, then creates an overwrite-safe tarball with SHA-256 and SHA-512 sidecars under `dist/packages/`. Stable `1.0.0` promotion still requires the separate current/previous-browser evidence and real TradingReviewSystem provider acceptance defined above; the RC artifact does not claim those stable gates prematurely.
+
+Commercial automation is split deliberately: `check:commercial-package-gate` composes the Engine full gate and Workspace gate before an RC is packed; `check:commercial-release-gate` adds the authenticated TradingReviewSystem check after that exact candidate has been installed by the host.
+
 ## Specification Coverage Index
 
 | Approved specification area | Implementation ownership |
 |---|---|
 | Product boundary, private distribution, stable artifact | Roadmap constraints; Commercial Release Tasks 1–10 |
 | Engine timeframes, scales, checkpointed calculations, commands, drawing lifecycle/projection | Engine Readiness Tasks 1–8 |
-| Public workspace API and lifecycle | Workspace Tasks 1, 9, 13 |
+| Public workspace API, intraday day control, and lifecycle | Workspace Tasks 1, 9, 13; rc.11 delta gate |
 | Atomic cursor data, bounded history, warmup/materialization | Workspace Tasks 2–5 |
 | Persistence, errors, retry, teardown | Workspace Tasks 6–8, 13–14 |
 | Top/full-chart/floating-palette/bottom-panel UI | Workspace Tasks 9–12 |
@@ -121,8 +131,10 @@ Required result: clean build, all engine/workspace tests, capability and perform
 
 - Stop Phase 1 if an engine capability still has a declared UI or command surface with no real effect.
 - Stop Phase 2 if any displayed candle was not supplied by `ChartWorkspaceDataSource` or if candle history is written to storage.
+- Stop Phase 2 if multi-day intraday fills missing trading days, applies a one-day limit to a multi-day window, or cannot fit every accepted selected-day candle into its reset viewport.
+- Stop Phase 2 if any initial or cursor page contains a candle later than `dataCutoffTime`; the SDK must reject the whole page without changing trusted data.
 - Stop Phase 3 if the configured market provider cannot return the exact requested timeframe/adjustment; return a safe capability error instead of fabricating data.
 - Stop Phase 3 if provider pages cannot remain bound to one revision/cutoff for the full cursor chain.
-- Stop Phase 4 if the configured and commercially authorized provider set does not cover the approved exact host acceptance matrix.
+- Stop Phase 4 if the configured and commercially authorized provider set does not cover every combination the host declares through `getCapabilities`.
 - Stop Phase 4 if the host imports `@simoncharts/chart-engine`, a package internal subpath, or a SimonCharts source path.
 - Do not advance a phase on partial test success or manual visual confidence alone.

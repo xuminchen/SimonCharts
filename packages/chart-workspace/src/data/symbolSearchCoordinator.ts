@@ -1,4 +1,4 @@
-import type { ChartSymbol, ChartWorkspaceDataSource } from "../contracts";
+import type { ChartDatafeed, ChartSymbol } from "../contracts";
 
 export type SymbolSearchCoordinatorEvent =
   | { type: "results"; query: string; symbols: readonly Readonly<ChartSymbol>[] }
@@ -10,7 +10,7 @@ export interface SymbolSearchCoordinator {
 }
 
 export interface SymbolSearchCoordinatorOptions {
-  readonly dataSource: ChartWorkspaceDataSource;
+  readonly dataSource: ChartDatafeed;
   readonly onEvent: (event: SymbolSearchCoordinatorEvent) => void;
 }
 

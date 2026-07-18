@@ -3,6 +3,7 @@ import type { Candle, SeriesPage } from "../contracts";
 export type SeriesPageValidationCode =
   | "EMPTY_DATA_VERSION"
   | "INVALID_CANDLE"
+  | "CANDLE_AFTER_CUTOFF"
   | "DUPLICATE_TIME"
   | "NON_INCREASING_TIME"
   | "MISSING_CURSOR"
@@ -20,6 +21,7 @@ export interface SeriesPageValidationContext {
   readonly requestCursor?: string;
   readonly seenCursors: ReadonlySet<string>;
   readonly currentEarliestTime?: number;
+  readonly dataCutoffTime?: number;
 }
 
 export type SeriesPageValidationResult =
@@ -72,6 +74,18 @@ export function validateSeriesPage(
   for (let index = 0; index < page.candles.length; index += 1) {
     if (!isValidCandle(page.candles[index])) {
       return invalid("INVALID_CANDLE", "Series page contains an invalid candle.", index);
+    }
+  }
+
+  if (context.dataCutoffTime !== undefined) {
+    for (let index = 0; index < page.candles.length; index += 1) {
+      if (page.candles[index].time > context.dataCutoffTime) {
+        return invalid(
+          "CANDLE_AFTER_CUTOFF",
+          "Series page contains a candle after the configured data cutoff.",
+          index
+        );
+      }
     }
   }
 

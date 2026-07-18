@@ -1,6 +1,73 @@
 # SimonCharts Commercial Chart Workspace SDK Design
 
-> 状态：产品与技术设计已确认，本文等待用户书面规格复核。复核完成前不进入实现计划或编码。
+## 0. RC.17 现行产品合同（2026-07-18，优先于下文历史合同）
+
+本规格原先把合作方产品定义为默认全功能 Workspace。该形态已被真实复盘宿主否决：工具复杂度过高，图表与业务动作割裂。`1.0.0-rc.2` 至 `rc.8` 完成嵌入式产品重置、分时/连续历史、量柱着色、宿主 view/range/event 合同与并发隔离；`rc.9` 把显式 advanced 模式重建为 Advanced Charts 类图表工作台；`rc.10` 补齐分时涨跌幅坐标和 2–9 日真实多日分时；`rc.11` 修正缓存淘汰基准与窄屏 fit；`rc.12` 完成分时双轴、量价分区、禁缩放、K 线右锚定、时间命中/标签修复以及 Advanced Charts 类周期和图形菜单；`rc.15` 消除十字光标时间徽标与静态日期相交时遗留的局部日期碎片；`rc.16` 限制分时双轴上下边界刻度的中心位置；当前 `rc.17` 为图表头预留 34 px 绘图区上边距，并收紧 latest 视口缩放右锚定语义。下文凡与本节冲突的旧包名/API、默认完整工作台、悬浮绘图窗、横向底部面板和 1280 px 最小宽度描述均视为历史记录，不再是现行合同。
+
+现行定位是 Advanced Charts 类可嵌入 SDK：
+
+```ts
+import {
+  createChart,
+  advancedChartFeatures,
+  type ChartDatafeed,
+  type ChartOptions,
+  type ChartInstance
+} from "@simoncharts/charts";
+
+const chart: ChartInstance = createChart(container, {
+  chartId: "review-detail",
+  persistenceScopeId: userId,
+  dataContextId: snapshotRevision,
+  initialSymbol,
+  datafeed,
+  theme: "light",
+  locale: "zh-CN"
+});
+```
+
+现行分时公开合同：
+
+```ts
+export type IntradayDayCount = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
+export interface ChartIntradayScale {
+  readonly previousClose: number;
+  readonly priceLimitPercent?: number;
+}
+
+export interface ChartDataCapabilities {
+  readonly series: readonly ChartDataSeriesCapability[];
+  readonly intradayScale?: ChartIntradayScale;
+}
+
+chart.setView("intraday");
+chart.setIntradayDays(5);
+```
+
+- 唯一公开创建入口是 `createChart(container, options)`；不提供旧 API 兼容层。
+- 公开主类型是 `ChartDatafeed`、`ChartOptions`、`ChartState`、`ChartInstance`，错误类型是 `ChartDatafeedError` 与 `ChartError`。
+- 默认 features 精确为 `timeframes`、`adjustment`、`indicators`；宿主负责选股和业务流程。
+- `ChartFeature` 稳定集合为 `symbol-search`、`timeframes`、`adjustment`、`series-type`、`price-scale`、`indicators`、`drawing-tools`、`drawing-history`、`settings`、`bottom-panel`。
+- feature 控制真实 DOM 构造和事件绑定；关闭的工具不得创建后隐藏。默认不得出现原始图表枚举、固定绘图轨、撤销重做、设置或右侧检查器。
+- `advancedChartFeatures` 是显式完整工作台开关，继续覆盖 17 种图表、16 个指标、63 个绘图和 3 种价格刻度。
+- `theme` 稳定支持 `dark | light`，`locale` 稳定支持 `zh-CN | en-US`，图表必须随容器响应式工作。
+- cutoff、dataVersion、分页、持久化隔离、安全错误、取消和销毁合同全部沿用。
+- 周期组在 capability 含 `1m` 时按 `分时 / 1分 / 5分 / 15分 / 30分 / 60分 / 日 / 周 / 月` 呈现；`分时`仅把同一 `1m` revision 临时绘成 close 折线，普通 `1分`仍为 K 线。最简模式不得持久化该临时 line，高级模式的手工系列类型选择继续持久化。
+- `ChartState.view` 明确区分 `intraday | timeframe`，`ChartState.intradayDays` 使用 `IntradayDayCount`；宿主可用 `setView`、`setIntradayDays`、`getVisibleRange`、`setVisibleRange`、`resetToLatest` 和 `subscribeEvents` 与业务状态联动。
+- 宿主通过 capability 的 `intradayScale` 返回当前 symbol 与 cutoff 下有限且大于零的官方 `previousClose`；`priceLimitPercent` 存在时必须在 `(0, 100]` 内并表示当前交易日适用的固定涨跌幅，不存在时表示不应用固定幅度。板块、风险警示、上市日和规则生效日判断均属于宿主，SDK 不硬编码交易所规则。
+- 单日分时以宿主 `previousClose` 为 `0%`；有 `priceLimitPercent` 时纵轴固定对称显示 `-limit% … 0% … +limit%`，未提供幅度时按真实行情自动缩放，覆盖新股等无固定幅度场景。
+- 分时左轴显示真实价格、右轴显示相对区间基准的涨跌幅；主线按区间末值相对基准统一显示上涨红、下跌绿、平盘中性色。1–9 日分时始终完整 fit，用户滚轮、拖拽、价格/时间轴、键盘或宿主 `setVisibleRange` 均不得缩放或平移分时窗口。
+- 普通分钟周期按视口需求跨交易日连续分页；多日分时从同一真实 `1m` revision 解析最新 2–9 个交易日，以所选最早交易日前一真实交易日的最后一根分钟收盘为 `0%`，纵轴自动缩放，并在初次材料化后 fit 全部所选 K 线。历史 prepend 不得改变用户可见锚点或蜡烛宽度。
+- SDK 为多日窗口加载足以识别 N 个目标交易日及其前一基准日的游标历史；宿主实际数据不足 N 日时只展示现有真实交易日，不填充自然日、不插值、不复制或合成 K 线。
+- advanced 模式的固定信息架构为 `40px 顶栏 / 44px 左绘图轨 / 中央图表 / 默认折叠的 40px 右检查器 / 26px 状态栏`；绘图区在图表头下预留 34 px 上边距，边界刻度必须完整且不得与 OHLC 头重叠；右检查器只承载对象、属性和数据窗口。
+- 普通 K 线位于 latest 视口时，任何缩放都保持 `to = lastIndex`、`scrollOffset = 0`；只有用户先向历史平移后，缩放才围绕交互锚点保持历史位置。
+- 十字光标必须联动 OHLC、成交量、指标值和价格/时间轴标签；平移保持同一捕获手势，滚轮/键盘缩放、价格轴纵拖、时间轴横拖、双击复位、绘图命中/整体/锚点编辑、右键菜单和原生全屏均为 SDK 行为。
+- Charts 不构造观察列表、资讯、经纪商、订单、账户或多图交易布局；这些属于宿主或 Trading Platform 产品面。
+
+当前交付候选为 `@simoncharts/charts@1.0.0-rc.18`。默认嵌入模式用于 TradingReviewSystem 业务详情；独立高级图表页必须显式传入 `advancedChartFeatures`。
+
+> 状态：rc.17 已完成不可变发布、package/browser 与 TradingReviewSystem 真实宿主验收。32 文件制品 SHA-256 为 `8f6a1be2e255d845da1a7d809c4a994a359c14a1798d52a92c117d7f076dba71`，SHA-512 为 `dc3a3c526b2b10688f64984562e5f7612f4e1440ca4240d5581080c60b36c11260aa8972e98d8a197de57ba0b0f750a4bd33e356acba5779d35c6354610d6c88`；全仓 67 文件/1,070 项、Charts 12 文件/106 项、合并 Chrome 92 项、Charts Chrome/Edge 各 41 项、5 个 runtime exports 与 4 个 declarations 通过。rc.10 至 rc.16 均作为被最终复核取代的不可变历史候选保留。
 
 ## 1. 背景与问题
 
@@ -18,13 +85,13 @@ SimonCharts 当前已经具备一套宿主无关的金融图表内核：17 种�
 交付私下分发的商业包 `@simoncharts/chart-workspace`，让合作方完成以下三步即可得到完整图表工作台：
 
 1. 从本地 `.tgz` 安装固定版本。
-2. 实现两项数据源方法并引入默认样式。
+2. 实现能力声明、标的搜索和序列加载三项数据源方法并引入默认样式。
 3. 调用 `createChartWorkspace(container, options)`。
 
 完成后的工作台必须：
 
 - 在桌面 Chromium 浏览器中提供专业、紧凑的暗色行情终端界面。
-- 支持 A 股个股和主要指数，以及全部已确认周期、复权、图表、指标和绘图能力。
+- Engine 和 Workspace 保留全部已确认周期、图表、指标和绘图技术能力；每个真实宿主只暴露其 `getCapabilities` 精确声明且有授权数据支撑的周期/复权子集。
 - 按需分页访问数据源的全部历史，不预载全部历史，也不生成任何虚假行情。
 - 将布局、指标参数、绘图和 UI 偏好仅保存在当前浏览器。
 - 保持宿主无关，不包含 TradingReviewSystem 的认证、路由、后端或业务模型。
@@ -118,7 +185,10 @@ import "@simoncharts/chart-workspace/styles.css";
 
 const workspace = createChartWorkspace(container, {
   workspaceId: "trading-review-system",
+  persistenceScopeId: authenticatedUserId,
+  dataContextId: chartSnapshotRevision,
   initialSymbol,
+  dataCutoffTime: reviewCutoffEpochMilliseconds,
   dataSource,
 });
 
@@ -143,6 +213,15 @@ export type Timeframe =
 
 export type AdjustMode = "none" | "forward" | "backward";
 
+export interface ChartDataSeriesCapability {
+  timeframe: Timeframe;
+  adjustModes: readonly AdjustMode[];
+}
+
+export interface ChartDataCapabilities {
+  series: readonly ChartDataSeriesCapability[];
+}
+
 export interface ChartSymbol {
   id: string;
   code: string;
@@ -166,6 +245,7 @@ export interface SeriesRequest {
   timeframe: Timeframe;
   adjustMode: AdjustMode;
   beforeCursor?: string;
+  dataCutoffTime?: number;
 }
 
 export interface SeriesPage {
@@ -176,6 +256,11 @@ export interface SeriesPage {
 }
 
 export interface ChartWorkspaceDataSource {
+  getCapabilities(
+    symbol: ChartSymbol,
+    signal: AbortSignal,
+  ): Promise<ChartDataCapabilities>;
+
   searchSymbols(
     query: string,
     signal: AbortSignal,
@@ -192,6 +277,8 @@ export interface ChartWorkspaceDataSource {
 
 - `ChartSymbol.id` 是宿主范围内稳定且唯一的标识；workspace 不解析供应商代码。
 - `time` 使用 Unix epoch milliseconds；显示时按 `Asia/Shanghai` 交易时区格式化。
+- `getCapabilities` 按周期声明精确复权集合，不使用两个独立数组形成笛卡尔积。能力未加载完成前不展示或请求任何行情组合；切换标的时取消旧能力与行情请求。
+- `dataCutoffTime` 与 `time` 使用相同单位；提供后必须进入同一 workspace 实例的每个首屏和历史请求。SDK 同时校验响应，任一 K 线晚于截止时间时原子拒绝整页，首屏不进入可信状态，历史页不改变已有可信图形。
 - 每页 `candles` 按时间严格升序且页内时间唯一。页面是原子合并单位：任一 K 线、页内重复、顺序或分页协议无效时拒绝整页，不过滤、修补或猜测数据。相邻页边界如包含同一时间，只在 OHLCV 和成交额完全一致时去重；数值冲突则拒绝新页。
 - `beforeCursor` 是宿主定义的不透明游标。首个请求不传游标；向更早历史翻页时原样回传上页游标。
 - `hasMoreBefore === true` 时，响应必须提供非空 `beforeCursor`，且它不能等于本次请求游标，也不能在当前分页链中重复出现。对于携带请求游标的历史页，页面必须至少包含一个早于当前最早 K 线的新时间点。违反任一条件即按无效整页处理，防止无限分页。
@@ -210,10 +297,13 @@ export function createChartWorkspace(
 
 export interface ChartWorkspaceOptions {
   workspaceId: string;
+  persistenceScopeId: string;
+  dataContextId: string;
   initialSymbol: ChartSymbol;
   dataSource: ChartWorkspaceDataSource;
   initialTimeframe?: Timeframe;
   initialAdjustMode?: AdjustMode;
+  dataCutoffTime?: number;
   onError?: (error: ChartWorkspaceError) => void;
 }
 
@@ -222,7 +312,12 @@ export interface ChartWorkspaceState {
   timeframe: Timeframe;
   adjustMode: AdjustMode;
   loading: boolean;
+  capabilities?: ChartDataCapabilities;
 }
+
+export type ChartWorkspaceStateListener = (
+  state: Readonly<ChartWorkspaceState>,
+) => void;
 
 export interface ChartWorkspace {
   getState(): Readonly<ChartWorkspaceState>;
@@ -230,19 +325,22 @@ export interface ChartWorkspace {
   setTimeframe(timeframe: Timeframe): void;
   setAdjustMode(adjustMode: AdjustMode): void;
   retry(): void;
+  subscribe(listener: ChartWorkspaceStateListener): () => void;
   destroy(): void;
 }
 ```
 
 默认值与约束：
 
-- 默认周期为 `1d`。
-- A 股个股默认使用 `forward`；指数只允许 `none`，复权控件在指数状态下禁用。
+- 默认优先周期为 `1d`；宿主未声明时使用声明中的第一个周期。
+- A 股个股默认优先使用 `forward`；当前周期未声明时依次选择 `none` 和第一个合法值。指数只允许 `none`。
 - 如果宿主为指数传入其他复权值，workspace 归一化为 `none`，不显示错误，也不向数据源发送无效组合。
-- `workspaceId` 只用于隔离浏览器本地状态，不作为账号、权限或许可证标识。
+- 布局、偏好和指标以 `workspaceId + persistenceScopeId` 隔离；绘图额外加入必填 `dataContextId`。三者都不作为权限或许可证标识。
+- `dataContextId` 是宿主提供的非敏感、不透明行情上下文标识。快照 revision 或历史截止上下文变化时必须变化，避免历史图形与当前行情图形串用；它不影响布局、偏好或指标。
 - `setSymbol`、`setTimeframe` 和 `setAdjustMode` 先归一化输入；只有有效的标的、周期、复权组合发生变化时才产生新请求代际并取消旧请求。
 - `retry()` 只重试当前 generation 的可恢复阻断操作：初始数据失败时重新请求首个无游标页面，渲染失败时用当前可信数据重建图形运行时。搜索和历史页失败由各自 UI 的重试操作处理；无可恢复阻断错误时 `retry()` 不执行任何操作。
 - `destroy` 必须可重复调用，并同步移除 DOM、事件监听、观察器和计时器，同时取消未完成请求。
+- `subscribe` 只通知订阅后的公开状态变化；初值由 `getState()` 获取。退订和 `destroy` 都必须停止后续通知。
 - 所有公开类型从 workspace 包根入口导出；合作方不从内部路径导入。
 
 ## 6. 工作台 UI 与交互
@@ -339,7 +437,8 @@ SDK 永远不使用随机数、摘要值扩展、插值或占位 K 线填补缺�
 
 - 每次标的、周期或复权变化都会增加 request generation，并通过 `AbortController` 取消上一代请求。
 - 只有当前 generation 的响应可以进入校验和状态提交；晚到的过期响应直接忽略。
-- 同一游标同一时刻最多有一个请求，避免重复翻页。
+- pending 游标必须绑定 generation 和具体 AbortController；旧代请求即使忽略取消并在新代之后才结束，也不得清除新代同名游标的 pending owner。
+- 当前 generation 的初始页通过校验并提交前禁止历史请求，不能从上一标的残留 store 读取游标。同一代同一游标同一时刻最多有一个请求。
 - OHLC 必须是大于零的有限数值且满足 `low <= min(open, close) <= max(open, close) <= high`；时间必须有限、唯一且严格升序；volume 和 turnover 必须为有限非负数。
 - 初始页为空或无效属于阻断错误；后续页无效属于非阻断错误，整页不合并并保留已经可信的数据。
 - `dataVersion` 变化时取消当前分页链，从最新页重建；新快照可用前保留旧可信画面并显示刷新状态。
@@ -362,7 +461,7 @@ SDK 永远不使用随机数、摘要值扩展、插值或占位 K 线填补缺�
 - 指标：已启用指标、参数、样式、面板与显隐状态。
 - 绘图：对象、属性和层级顺序。
 
-绘图按 `workspaceId + symbol.id + adjustMode` 隔离，并在同一复权模式的所有周期之间共享。指数固定使用 `none`。行情历史、搜索结果、访问令牌和供应商信息绝不写入 localStorage。
+绘图按 `workspaceId + persistenceScopeId + dataContextId + symbol.id + adjustMode` 隔离，并只在同一数据上下文、同一复权模式的所有周期之间共享。指数固定使用 `none`。行情历史、搜索结果、访问令牌和供应商信息绝不写入 localStorage。
 
 读取到损坏状态或不匹配的 schema version 时，丢弃对应命名空间并恢复默认值，不实现跨版本兼容迁移，也不阻断可信行情显示；同时产生非阻断存储错误供 UI 和 `onError` 观察。
 
@@ -395,6 +494,20 @@ export interface ChartWorkspaceError {
   message: string;
   context?: Readonly<Record<string, unknown>>;
 }
+
+export type ChartDataSourceErrorCode =
+  | "NOT_CONFIGURED"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "RATE_LIMITED"
+  | "NO_DATA"
+  | "UNAVAILABLE";
+
+export class ChartDataSourceError extends Error {
+  readonly code: ChartDataSourceErrorCode;
+  readonly recoverable: boolean;
+  constructor(code: ChartDataSourceErrorCode, message: string, recoverable: boolean);
+}
 ```
 
 错误呈现分为两级：
@@ -407,12 +520,14 @@ export interface ChartWorkspaceError {
 
 错误上下文只允许包含安全的标的 id、周期、复权、游标存在性和校验统计；不得包含供应商密钥、认证头、签名、内部 URL 或原始响应正文。
 
+宿主 DataSource 可以抛出 `ChartDataSourceError`，其中 message 必须是可直接面向用户的安全文案。Workspace 保留该 message、recoverable 和 `dataSourceCode`，同时仍归一到 `search`、`initial-data` 或 `history-data` 的 SDK 错误 scope。未知异常继续使用通用 SDK 文案，绝不透传原始上游错误正文。
+
 ## 11. TradingReviewSystem 首个真实宿主
 
 TradingReviewSystem 新增独立 `/chart` 页面作为 reference host：
 
 - 页面负责认证、路由和 workspace 容器生命周期。
-- 后端提供通用标的搜索和按游标分页的序列能力，覆盖 A 股个股与主要指数、8 个周期以及个股 3 种复权。
+- 后端提供通用能力声明、标的搜索和按游标分页的序列能力。首期必须以真实数据覆盖 TradingReviewSystem 声明的精确子集；后续可以独立扩展，不能为满足完整矩阵声明虚假能力。
 - 前端适配器把后端响应转换成 `ChartWorkspaceDataSource`，不把 TradingReviewSystem 模型泄漏进 SDK。
 - 页面只从安装的 `@simoncharts/chart-workspace` 包根入口导入，不引用 SimonCharts 源码、engine 内部路径或 workspace 私有模块。
 - 过去根据行情摘要合成 36 根 K 线的原型不复用；真实页面只显示后端返回并通过校验的数据。
@@ -433,7 +548,7 @@ reference host 是包边界和真实集成验收，不会把 TradingReviewSystem
 - 16 个指标：添加、参数、主/副图输出、显隐、数据窗口、序列化和恢复。
 - 63 个绘图工具：创建、预览、完成、渲染、命中、选择、属性编辑、删除、撤销/重做、序列化和恢复。
 - 连续绘图工具额外覆盖完整 pointer down/move/up/cancel 生命周期。
-- 8 个周期和 3 个个股复权模式均有数据请求与状态切换覆盖；指数只允许不复权。
+- in-repo fixture 覆盖 8 个周期和 3 个个股复权模式；真实宿主覆盖其 `getCapabilities` 声明的每个精确组合，并额外验证非笛卡尔矩阵不会暴露或请求不存在的组合。指数只允许不复权。
 - linear、log 和 percentage 三种价格刻度覆盖轴标签、自动缩放、系列、指标、十字光标、命中与绘图编辑。
 
 ### 12.3 浏览器和真实宿主
@@ -441,7 +556,7 @@ reference host 是包边界和真实集成验收，不会把 TradingReviewSystem
 - Playwright 覆盖完整工作台关键路径、悬浮绘图栏、下方面板、分页、错误与恢复。
 - 正式浏览器范围：桌面 Chrome 和 Edge 当前版本及前一主版本，最小宽度 1280 px。
 - 独立外部 reference fixture 从生成的 `.tgz` 安装并运行，不允许 workspace 源码导入。
-- TradingReviewSystem `/chart` 使用真实后端数据完成搜索、首屏、连续历史、周期、复权、指标、绘图、刷新恢复和页面卸载验收。
+- TradingReviewSystem `/chart` 使用真实后端数据完成能力声明、搜索、首屏、连续历史、已声明周期/复权、指标、绘图、刷新恢复和页面卸载验收。
 - 所有浏览器验收过程中不得出现未处理异常、console error、明显溢出或不可访问控件。
 
 ### 12.4 性能预算
@@ -465,12 +580,16 @@ reference host 是包边界和真实集成验收，不会把 TradingReviewSystem
 
 只有全部门禁通过的不可变文件才可人工交付；修复后必须增加版本号并生成新包，不覆盖已交付文件。
 
+RC 打包命令在生成文件前重新执行 Workspace 门禁，并在 `dist/packages/` 写入版本化 `.tgz` 与 SHA-256/SHA-512 校验文件；任一目标文件已存在时必须立即拒绝覆盖。RC 自动门禁覆盖本机已安装的当前 Chrome 与 Edge，稳定版仍需补齐本节规定的当前版和前一主版本证据以及真实宿主验收。
+
+发布编排明确分两层：package-only 门禁串行执行 Engine 完整门禁和 Workspace 包/浏览器门禁，不依赖宿主；final 门禁在其后追加已安装同一候选 `.tgz` 的 TradingReviewSystem 鉴权宿主验收。最终商业验收不得用 package-only 结果替代，打包流程也不得循环等待尚未安装该候选包的宿主。
+
 ## 13. 完成定义
 
 v1 只有同时满足以下条件才算完成：
 
 - 合作方只使用 workspace 包、默认 CSS、数据源适配器和一行挂载调用即可得到完整 UI。
-- A 股个股与主要指数、8 个周期、复权规则、17 种图表、16 个指标和 63 个绘图工具均在正式 UI 中真实可用。
+- Engine/Workspace 的 8 个周期、17 种图表、16 个指标和 63 个绘图工具通过完整技术矩阵；真实宿主仅对其声明且有真实数据支撑的周期/复权精确子集负责。
 - 用户可以按需访问数据源提供的全部历史，内存保持有界，且不存在虚假 K 线。
 - 顶部工具栏、整块图形面板、图内悬浮绘图栏和底部横向属性区域符合已确认布局与暗色风格。
 - 浏览器持久化范围、绘图隔离规则、错误分级和销毁语义全部通过自动化验证。

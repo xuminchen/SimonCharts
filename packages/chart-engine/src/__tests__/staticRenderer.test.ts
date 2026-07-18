@@ -28,6 +28,7 @@ interface DrawCall {
 
 class FakeCanvasContext {
   calls: DrawCall[] = [];
+  fillRectStyles: string[] = [];
 
   fillStyle = "";
   strokeStyle = "";
@@ -53,6 +54,7 @@ class FakeCanvasContext {
   }
 
   fillRect(x: number, y: number, width: number, height: number): void {
+    this.fillRectStyles.push(this.fillStyle);
     this.record("fillRect", x, y, width, height);
   }
 
@@ -119,10 +121,13 @@ function createLayout(): ChartLayout {
   return {
     width: 140,
     height: 100,
+    leftAxisWidth: 0,
     rightAxisWidth: 40,
     bottomAxisHeight: 20,
-    plotArea: { x: 0, y: 0, width: 100, height: 80 },
-    priceAxisArea: { x: 100, y: 0, width: 40, height: 80 },
+    leftPriceAxisArea: { x: 0, y: 0, width: 0, height: 56 },
+    plotArea: { x: 0, y: 0, width: 100, height: 56 },
+    priceAxisArea: { x: 100, y: 0, width: 40, height: 56 },
+    volumeArea: { x: 0, y: 64, width: 100, height: 16 },
     timeAxisArea: { x: 0, y: 80, width: 100, height: 20 }
   };
 }
@@ -336,6 +341,16 @@ describe("static renderer", () => {
       createState({
         series,
         viewport,
+        layout: {
+          ...createLayout(),
+          width: 380,
+          leftAxisWidth: 40,
+          leftPriceAxisArea: { x: 0, y: 0, width: 40, height: 80 },
+          plotArea: { x: 40, y: 0, width: 300, height: 80 },
+          priceAxisArea: { x: 340, y: 0, width: 40, height: 80 },
+          volumeArea: { x: 40, y: 80, width: 300, height: 0 },
+          timeAxisArea: { x: 40, y: 80, width: 300, height: 20 }
+        },
         formatTime: (time, timeframe) => `SH:${time}:${timeframe}`
       })
     );
@@ -343,10 +358,86 @@ describe("static renderer", () => {
     createAxisLayer().render(renderContext);
 
     const labels = callsNamed(renderContext, "fillText").map((call) => call.args[0]);
+    const priceAxisLabels = callsNamed(renderContext, "fillText").filter((call) => {
+      const x = Number(call.args[1]);
+      return x === 8 || x === 348;
+    });
 
     expect(labels.some((label) => String(label).endsWith("%"))).toBe(true);
-    expect(labels).toContain("SH:2:1m");
+    expect(labels.some((label) => !String(label).endsWith("%") && /^\d+(\.\d+)?$/.test(String(label)))).toBe(true);
     expect(labels).toContain("SH:4:1m");
+    expect(priceAxisLabels.every((call) => Number(call.args[2]) >= 6)).toBe(true);
+    expect(priceAxisLabels.every((call) => Number(call.args[2]) <= 74)).toBe(true);
+  });
+
+  it("colors the current-price line from the previous close, not the current open", () => {
+    const series = createSeries();
+    series.candles[5] = {
+      ...series.candles[5],
+      open: 20,
+      high: 21,
+      close: 17
+    };
+    const viewport = createViewport({ from: 3, to: 5 });
+    const renderContext = createRenderContext(createState({ series, viewport }));
+
+    createAxisLayer().render(renderContext);
+
+    expect((renderContext.context as unknown as FakeCanvasContext).fillRectStyles).toEqual([
+      "#16a34a"
+    ]);
+    expect(callsNamed(renderContext, "setLineDash")).toEqual([
+      { name: "setLineDash", args: [[4, 4]] },
+      { name: "setLineDash", args: [[]] }
+    ]);
+  });
+
+  it.each([
+    [1, /^09:\d{2}$/],
+    [2, /^07-(16|17)$/]
+  ] as const)("compacts and deconflicts %s-day intraday time labels", (intradayDays, pattern) => {
+    const series: CandleSeries = {
+      ...createSeries(),
+      timeframe: "1m",
+      candles: Array.from({ length: 12 }, (_, index) => ({
+        time: index,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10,
+        volume: 1,
+        turnover: 10
+      }))
+    };
+    const viewport = createViewport({ from: 0, to: 11 });
+    const renderContext = createRenderContext(createState({
+      series,
+      viewport,
+      intradayDays,
+      layout: {
+        ...createLayout(),
+        width: 300,
+        plotArea: { x: 0, y: 0, width: 260, height: 56 },
+        priceAxisArea: { x: 260, y: 0, width: 40, height: 56 },
+        volumeArea: { x: 0, y: 64, width: 260, height: 16 },
+        timeAxisArea: { x: 0, y: 80, width: 260, height: 20 }
+      },
+      formatTime: (time) => `2026-07-${time < 6 ? "16" : "17"} 09:${String(30 + time).padStart(2, "0")}`
+    }));
+
+    createAxisLayer().render(renderContext);
+
+    const labels = callsNamed(renderContext, "fillText")
+      .filter((call) => call.args[2] === 88)
+      .map((call) => ({ label: String(call.args[0]), x: Number(call.args[1]) }));
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels.every(({ label }) => pattern.test(label))).toBe(true);
+    for (let index = 1; index < labels.length; index += 1) {
+      const previous = labels[index - 1];
+      const current = labels[index];
+      expect(current.x - current.label.length * 3.6)
+        .toBeGreaterThanOrEqual(previous.x + previous.label.length * 3.6 + 8);
+    }
   });
 
   it.each(["linear", "log", "percentage"] as const)(
@@ -451,12 +542,25 @@ describe("static renderer", () => {
     expect(callsNamed(renderContext, "stroke")).toHaveLength(3);
   });
 
-  it("draws one volume bar per visible candle", () => {
+  it("draws one volume bar per visible candle using its price direction color", () => {
     const renderContext = createRenderContext();
 
     createVolumeLayer().render(renderContext);
 
     expect(callsNamed(renderContext, "fillRect")).toHaveLength(3);
+    expect((renderContext.context as unknown as FakeCanvasContext).fillRectStyles).toEqual([
+      "#dc2626",
+      "#16a34a",
+      "#16a34a"
+    ]);
+    for (const call of callsNamed(renderContext, "fillRect")) {
+      const y = Number(call.args[1]);
+      const height = Number(call.args[3]);
+      expect(y).toBeGreaterThanOrEqual(renderContext.state.layout.volumeArea.y);
+      expect(y + height).toBeLessThanOrEqual(
+        renderContext.state.layout.volumeArea.y + renderContext.state.layout.volumeArea.height
+      );
+    }
   });
 
   it("skips undefined moving average values and draws continuous defined segments", () => {

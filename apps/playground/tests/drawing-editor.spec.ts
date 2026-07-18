@@ -73,6 +73,15 @@ function getInitialDrawingCoordinateContext(
   return getDrawingCoordinateContext(width, height);
 }
 
+function getRightAlignedDataOffset(width: number, height: number): number {
+  const context = getInitialDrawingCoordinateContext(width, height);
+
+  return Math.max(
+    0,
+    -context.viewport.visibleRange.from * context.viewport.candleWidth
+  );
+}
+
 function getDrawingCoordinateContext(
   width: number,
   height: number,
@@ -246,22 +255,24 @@ test("drags selected drawing anchor handles through engine operation flow", asyn
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
   await page.getByTestId("drawing-tool-select").click();
-  await page.mouse.click(box.x + 180, box.y + 210);
+  await page.mouse.click(box.x + dataOffset + 180, box.y + 210);
 
   await expect(page.getByTestId("drawing-handle-count")).toHaveText("11 handles");
-  await page.mouse.move(box.x + 120, box.y + 180);
+  await page.mouse.move(box.x + dataOffset + 120, box.y + 180);
   await page.mouse.down();
-  await page.mouse.move(box.x + 140, box.y + 200);
+  await page.mouse.move(box.x + dataOffset + 140, box.y + 200);
   await page.mouse.up();
 
   const firstAnchor = (await getDrawingExport(page)).drawings[0].anchors[0];
   const projectedFirstAnchor = projectExportedAnchor(firstAnchor, box.width, box.height);
 
-  expectPointToEqual(projectedFirstAnchor as Point, { x: 140, y: 200 });
+  expectPointToEqual(projectedFirstAnchor as Point, { x: dataOffset + 140, y: 200 });
 });
 
 test("snaps new drawing anchors to existing drawing anchors", async ({ page }) => {
@@ -310,7 +321,7 @@ test("snaps drawing creation to visible candle OHLC targets", async ({ page }) =
   }
 
   const target = getVisibleHighTarget(box.width, box.height);
-  const rawClickPoint = { x: target.x + 4, y: target.y + 3 };
+  const rawClickPoint = { x: target.x + 3, y: target.y + 3 };
 
   await page.getByTestId("drawing-tool-trendLine").click();
   await page.mouse.click(box.x + rawClickPoint.x, box.y + rawClickPoint.y);
@@ -333,21 +344,23 @@ test("snaps selected anchor handle drags to another drawing anchor", async ({ pa
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
-  await page.mouse.click(box.x + 320, box.y + 200);
-  await page.mouse.click(box.x + 440, box.y + 260);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 320, box.y + 200);
+  await page.mouse.click(box.x + dataOffset + 440, box.y + 260);
   await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
 
   const targetAnchor = (await getDrawingExport(page)).drawings[1].anchors[0];
   const projectedTargetAnchor = projectExportedAnchor(targetAnchor, box.width, box.height);
 
   await page.getByTestId("drawing-tool-select").click();
-  await page.mouse.click(box.x + 180, box.y + 210);
+  await page.mouse.click(box.x + dataOffset + 180, box.y + 210);
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
 
-  await page.mouse.move(box.x + 120, box.y + 180);
+  await page.mouse.move(box.x + dataOffset + 120, box.y + 180);
   await page.mouse.down();
   await page.mouse.move(
     box.x + (projectedTargetAnchor.x ?? 0) + 4,
@@ -375,21 +388,26 @@ test("drawing hover updates cursor diagnostics and hovered render state", async 
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
   await page.getByTestId("drawing-tool-select").click();
 
-  await page.mouse.move(box.x + 180, box.y + 206);
+  await page.mouse.move(box.x + dataOffset + 180, box.y + 206);
   await expect(page.getByTestId("cursor-state")).toHaveText("drawing");
 
-  await page.mouse.move(box.x + Math.min(box.width - 40, 520), box.y + 180);
+  await page.mouse.move(
+    box.x + Math.min(box.width - 400, dataOffset + 600),
+    box.y + 180
+  );
   await expect(page.getByTestId("cursor-state")).toHaveText("crosshair");
 
-  await page.mouse.click(box.x + 180, box.y + 206);
+  await page.mouse.click(box.x + dataOffset + 180, box.y + 206);
   await expect(page.getByTestId("drawing-handle-count")).toHaveText("11 handles");
 
-  await page.mouse.move(box.x + 260, box.y + 210);
+  await page.mouse.move(box.x + dataOffset + 260, box.y + 210);
   await expect(page.getByTestId("cursor-state")).toHaveText("resize");
 });
 
@@ -402,11 +420,13 @@ test("body drag commits one undoable drawing move command", async ({ page }) => 
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
   await page.getByTestId("drawing-tool-select").click();
-  await page.mouse.click(box.x + 150, box.y + 193);
+  await page.mouse.click(box.x + dataOffset + 150, box.y + 193);
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
 
   const getAnchors = async (): Promise<ExportedAnchor[]> => {
@@ -423,11 +443,11 @@ test("body drag commits one undoable drawing move command", async ({ page }) => 
     box.height
   );
 
-  await page.mouse.move(box.x + 160, box.y + 197);
+  await page.mouse.move(box.x + dataOffset + 160, box.y + 197);
   await page.mouse.down();
-  await page.mouse.move(box.x + 170, box.y + 207);
-  await page.mouse.move(box.x + 180, box.y + 217);
-  await page.mouse.move(box.x + 190, box.y + 227);
+  await page.mouse.move(box.x + dataOffset + 170, box.y + 207);
+  await page.mouse.move(box.x + dataOffset + 180, box.y + 217);
+  await page.mouse.move(box.x + dataOffset + 190, box.y + 227);
   await page.mouse.up();
 
   const movedScreenAnchors = originalScreenAnchors.map((anchor) => ({
@@ -460,11 +480,13 @@ test("committed body, resize, and rotate edits keep canonical projection through
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
   await page.getByTestId("drawing-tool-select").click();
-  await page.mouse.click(box.x + 150, box.y + 193);
+  await page.mouse.click(box.x + dataOffset + 150, box.y + 193);
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
 
   const readAnchors = async (): Promise<ExportedAnchor[]> =>
@@ -475,9 +497,9 @@ test("committed body, resize, and rotate edits keep canonical projection through
   const originalCanonical = originalAnchors.map(({ time, price }) => ({ time, price }));
   const originalPixels = await readPixels();
 
-  await page.mouse.move(box.x + 160, box.y + 197);
+  await page.mouse.move(box.x + dataOffset + 160, box.y + 197);
   await page.mouse.down();
-  await page.mouse.move(box.x + 190, box.y + 227);
+  await page.mouse.move(box.x + dataOffset + 190, box.y + 227);
   await page.mouse.up();
 
   const movedAnchors = await readAnchors();
@@ -555,9 +577,11 @@ test("uses the current projection for hit testing and body drag after scale and 
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
   await page.getByTestId("drawing-tool-select").click();
 
   const original = (await getDrawingExport(page)).drawings[0];
@@ -686,18 +710,20 @@ test("selects topmost drawing for equal-distance overlapping body hits", async (
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
   await expect(page.getByTestId("drawing-count")).toHaveText("2 drawings");
 
   await page.locator("[data-drawing-id='drawing-1']").click();
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-1");
 
   await page.getByTestId("drawing-tool-select").click();
-  await page.mouse.click(box.x + 150, box.y + 193);
+  await page.mouse.click(box.x + dataOffset + 150, box.y + 193);
 
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: drawing-2");
 });
@@ -711,17 +737,19 @@ test("body drag preserves multi-selection and moves selected drawings together",
     throw new Error("overlay missing");
   }
 
+  const dataOffset = getRightAlignedDataOffset(box.width, box.height);
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
-  await page.mouse.click(box.x + 300, box.y + 200);
-  await page.mouse.click(box.x + 440, box.y + 260);
+  await page.mouse.click(box.x + dataOffset + 120, box.y + 180);
+  await page.mouse.click(box.x + dataOffset + 260, box.y + 240);
+  await page.mouse.click(box.x + dataOffset + 300, box.y + 200);
+  await page.mouse.click(box.x + dataOffset + 440, box.y + 260);
   await page.getByTestId("drawing-tool-select").click();
 
   await page.keyboard.down("Shift");
-  await page.mouse.move(box.x + 100, box.y + 150);
+  await page.mouse.move(box.x + dataOffset + 100, box.y + 150);
   await page.mouse.down();
-  await page.mouse.move(box.x + 460, box.y + 280);
+  await page.mouse.move(box.x + dataOffset + 460, box.y + 280);
   await page.mouse.up();
   await page.keyboard.up("Shift");
 
@@ -736,11 +764,11 @@ test("body drag preserves multi-selection and moves selected drawings together",
   };
   const originalDrawings = await getDrawings();
 
-  await page.mouse.move(box.x + 180, box.y + 206);
+  await page.mouse.move(box.x + dataOffset + 180, box.y + 206);
   await page.mouse.down();
-  await page.mouse.move(box.x + 190, box.y + 216);
-  await page.mouse.move(box.x + 200, box.y + 226);
-  await page.mouse.move(box.x + 210, box.y + 236);
+  await page.mouse.move(box.x + dataOffset + 190, box.y + 216);
+  await page.mouse.move(box.x + dataOffset + 200, box.y + 226);
+  await page.mouse.move(box.x + dataOffset + 210, box.y + 236);
   await page.mouse.up();
 
   const movedDrawings = originalDrawings.map((drawing) => {

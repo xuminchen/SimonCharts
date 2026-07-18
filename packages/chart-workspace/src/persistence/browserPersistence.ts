@@ -8,8 +8,8 @@ import {
   type PriceScaleMode,
   type SeriesType
 } from "@simoncharts/chart-engine";
-import type { AdjustMode, ChartSymbol } from "../contracts";
-import { createWorkspaceError, type ChartWorkspaceError } from "../errors";
+import type { AdjustMode, ChartSymbol, Timeframe } from "../contracts";
+import { createChartError, type ChartError } from "../errors";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
 
 const schemaVersion = 1;
@@ -32,24 +32,36 @@ export interface WorkspaceLayoutState {
   readonly drawingPalette: DrawingPaletteState;
 }
 
+export type FavoriteTimeframe = Timeframe | "intraday";
+
 export interface WorkspacePreferences {
   readonly seriesType: SeriesType;
   readonly priceScaleMode: PriceScaleMode;
   readonly gridVisible: boolean;
+  readonly favoriteTimeframes: readonly FavoriteTimeframe[];
 }
 
+type StoredWorkspacePreferences = Omit<WorkspacePreferences, "favoriteTimeframes"> & {
+  readonly favoriteTimeframes?: readonly FavoriteTimeframe[];
+};
+
+const favoriteTimeframeValues: readonly FavoriteTimeframe[] = [
+  "1m", "5m", "15m", "30m", "60m", "1d", "1w", "1mo", "intraday"
+];
+
 export const defaultLayoutState: WorkspaceLayoutState = Object.freeze({
-  bottomPanel: Object.freeze({ height: 240, collapsed: false, activeTab: "objects" }),
+  bottomPanel: Object.freeze({ height: 300, collapsed: true, activeTab: "objects" }),
   drawingPalette: Object.freeze({ x: 12, y: 12, collapsed: true })
 });
 
 export const defaultPreferences: WorkspacePreferences = Object.freeze({
   seriesType: "candles",
   priceScaleMode: "linear",
-  gridVisible: true
+  gridVisible: true,
+  favoriteTimeframes: Object.freeze<FavoriteTimeframe[]>(["15m", "60m", "1d", "intraday"])
 });
 
-export type BrowserPersistenceErrorHandler = (error: ChartWorkspaceError) => void;
+export type BrowserPersistenceErrorHandler = (error: ChartError) => void;
 
 export interface BrowserPersistence {
   loadLayout(): WorkspaceLayoutState;
@@ -89,12 +101,20 @@ function isLayout(value: unknown): value is WorkspaceLayoutState {
   );
 }
 
-function isPreferences(value: unknown): value is WorkspacePreferences {
+function isPreferences(value: unknown): value is StoredWorkspacePreferences {
+  const favoriteTimeframes = isRecord(value) ? value.favoriteTimeframes : undefined;
   return (
     isRecord(value) &&
     supportedSeriesTypes.includes(value.seriesType as SeriesType) &&
     supportedPriceScaleModes.includes(value.priceScaleMode as PriceScaleMode) &&
-    typeof value.gridVisible === "boolean"
+    typeof value.gridVisible === "boolean" &&
+    (favoriteTimeframes === undefined || (
+      Array.isArray(favoriteTimeframes) &&
+      favoriteTimeframes.every((timeframe) =>
+        favoriteTimeframeValues.includes(timeframe as FavoriteTimeframe)
+      ) &&
+      new Set(favoriteTimeframes).size === favoriteTimeframes.length
+    ))
   );
 }
 
@@ -119,20 +139,23 @@ function clone<T>(value: T): T {
 }
 
 export function createBrowserPersistence(
-  workspaceId: string,
+  chartId: string,
+  persistenceScopeId: string,
+  dataContextId: string,
   storage: Storage,
   onError: BrowserPersistenceErrorHandler
 ): BrowserPersistence {
-  const prefix = `simoncharts:workspace:v${schemaVersion}:${encodeURIComponent(workspaceId)}`;
+  const prefix = `simoncharts:workspace:v${schemaVersion}:${encodeURIComponent(chartId)}:${encodeURIComponent(persistenceScopeId)}`;
   const layoutKey = `${prefix}:layout`;
   const preferencesKey = `${prefix}:preferences`;
   const indicatorsKey = `${prefix}:indicators`;
+  const drawingPrefix = `${prefix}:drawings:${encodeURIComponent(dataContextId)}`;
   const drawingKey = (symbolId: string, adjustMode: AdjustMode) =>
-    `${prefix}:drawings:${encodeURIComponent(symbolId)}:${adjustMode}`;
+    `${drawingPrefix}:${encodeURIComponent(symbolId)}:${adjustMode}`;
 
   const reportReadError = (): void =>
     onError(
-      createWorkspaceError(
+      createChartError(
         "STORAGE_READ_FAILED",
         "storage",
         true,
@@ -141,7 +164,7 @@ export function createBrowserPersistence(
     );
   const reportWriteError = (): void =>
     onError(
-      createWorkspaceError(
+      createChartError(
         "STORAGE_WRITE_FAILED",
         "storage",
         true,
@@ -185,7 +208,13 @@ export function createBrowserPersistence(
   return {
     loadLayout: () => read(layoutKey, defaultLayoutState, isLayout),
     saveLayout: (value) => write(layoutKey, value),
-    loadPreferences: () => read(preferencesKey, defaultPreferences, isPreferences),
+    loadPreferences: () => {
+      const stored = read<StoredWorkspacePreferences>(preferencesKey, defaultPreferences, isPreferences);
+      return {
+        ...stored,
+        favoriteTimeframes: stored.favoriteTimeframes ?? defaultPreferences.favoriteTimeframes
+      };
+    },
     savePreferences: (value) => write(preferencesKey, value),
     loadIndicators: () => read(indicatorsKey, [] as readonly IndicatorConfig[], isIndicators),
     saveIndicators: (value) => write(indicatorsKey, value),

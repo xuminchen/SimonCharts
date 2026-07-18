@@ -4,6 +4,12 @@ import type { ValidatedSeriesPage } from "./seriesPageValidation";
 export const defaultMaxCachedPages = 128;
 export const defaultMaxEstimatedBytes = 64 * 1024 * 1024;
 const estimatedBytesPerCandle = 64;
+const dayMilliseconds = 24 * 60 * 60 * 1_000;
+const shanghaiOffsetMilliseconds = 8 * 60 * 60 * 1_000;
+
+export function shanghaiTradingDayKey(time: number): number {
+  return Math.floor((time + shanghaiOffsetMilliseconds) / dayMilliseconds);
+}
 
 export interface SeriesSelection {
   readonly symbol: ChartSymbol;
@@ -18,7 +24,10 @@ export interface PageDescriptor {
   dataVersion: string;
   minTime: number;
   maxTime: number;
+  sourceCandleCount: number;
   candleCount: number;
+  tradingDayKeys: readonly number[];
+  excludedOverlapTimes: readonly number[];
   candles?: readonly Candle[];
   lastAccess: number;
   estimatedBytes: number;
@@ -47,7 +56,8 @@ export type PageMergeResult =
         | "STORE_NOT_INITIALIZED"
         | "DATA_VERSION_MISMATCH"
         | "UNEXPECTED_CURSOR"
-        | "CONFLICTING_BOUNDARY_CANDLE";
+        | "CONFLICTING_BOUNDARY_CANDLE"
+        | "RELOAD_DESCRIPTOR_MISMATCH";
       message: string;
     };
 
@@ -90,6 +100,10 @@ function cloneDescriptor(descriptor: PageDescriptor): PageDescriptor {
     ...descriptor,
     ...(descriptor.candles === undefined ? {} : { candles: descriptor.candles })
   });
+}
+
+function sameNumbers(left: readonly number[], right: readonly number[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 export function createPagedSeriesStore(
@@ -156,6 +170,7 @@ export function createPagedSeriesStore(
         (descriptor) => descriptor.requestCursor === requestCursor
       );
       const isReload = existingIndex >= 0;
+      const existingDescriptor = descriptors[existingIndex];
       const expectedCursor = descriptors.at(-1)?.beforeCursor;
       if (!isReload && descriptors.length > 0 && requestCursor !== expectedCursor) {
         return {
@@ -172,14 +187,18 @@ export function createPagedSeriesStore(
         };
       }
 
-      const existingCandles = new Map<number, Candle>();
-      for (const descriptor of descriptors) {
-        if (isReload && descriptor === descriptors[existingIndex]) continue;
-        for (const item of descriptor.candles ?? []) existingCandles.set(item.time, item);
+      const trustedCandles = new Map<number, Candle>();
+      const deduplicationCandles = new Map<number, Candle>();
+      for (const [index, descriptor] of descriptors.entries()) {
+        if (isReload && index === existingIndex) continue;
+        for (const item of descriptor.candles ?? []) {
+          trustedCandles.set(item.time, item);
+          if (!isReload || index < existingIndex) deduplicationCandles.set(item.time, item);
+        }
       }
 
       for (const item of page.candles) {
-        const duplicate = existingCandles.get(item.time);
+        const duplicate = trustedCandles.get(item.time);
         if (duplicate !== undefined && !sameCandle(duplicate, item)) {
           return {
             ok: false,
@@ -189,11 +208,41 @@ export function createPagedSeriesStore(
         }
       }
 
+      const excludedOverlapTimes = isReload && existingDescriptor !== undefined
+        ? existingDescriptor.excludedOverlapTimes
+        : Object.freeze(
+            page.candles
+              .filter((item) => deduplicationCandles.has(item.time))
+              .map((item) => item.time)
+          );
+      const excludedTimeSet = new Set(excludedOverlapTimes);
+      const tradingDayKeys = Object.freeze([
+        ...new Set(page.candles.map((item) => shanghaiTradingDayKey(item.time)))
+      ].sort((left, right) => left - right));
       const candles = Object.freeze(
         page.candles
-          .filter((item) => !existingCandles.has(item.time))
+          .filter((item) => !excludedTimeSet.has(item.time))
           .map((item) => cloneCandle(item))
       );
+      if (
+        isReload &&
+        existingDescriptor !== undefined &&
+        (
+          page.beforeCursor !== existingDescriptor.beforeCursor ||
+          page.hasMoreBefore !== existingDescriptor.hasMoreBefore ||
+          page.candles.length !== existingDescriptor.sourceCandleCount ||
+          candles.length !== existingDescriptor.candleCount ||
+          !sameNumbers(tradingDayKeys, existingDescriptor.tradingDayKeys) ||
+          page.candles[0]?.time !== existingDescriptor.minTime ||
+          page.candles.at(-1)?.time !== existingDescriptor.maxTime
+        )
+      ) {
+        return {
+          ok: false,
+          code: "RELOAD_DESCRIPTOR_MISMATCH",
+          message: "Reloaded series page does not match its trusted descriptor boundary."
+        };
+      }
       const descriptor: PageDescriptor = {
         ...(requestCursor === undefined ? {} : { requestCursor }),
         ...(page.beforeCursor === undefined ? {} : { beforeCursor: page.beforeCursor }),
@@ -201,7 +250,10 @@ export function createPagedSeriesStore(
         dataVersion: page.dataVersion,
         minTime: page.candles[0]?.time ?? Number.POSITIVE_INFINITY,
         maxTime: page.candles.at(-1)?.time ?? Number.NEGATIVE_INFINITY,
+        sourceCandleCount: page.candles.length,
         candleCount: candles.length,
+        tradingDayKeys,
+        excludedOverlapTimes,
         candles,
         lastAccess: ++accessClock,
         estimatedBytes: candles.length * estimatedBytesPerCandle

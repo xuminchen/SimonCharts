@@ -1,48 +1,60 @@
 import type { DrawingObject } from "@simoncharts/chart-engine";
-import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartWorkspaceController";
+import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartController";
 import type { BottomPanelState } from "../persistence/browserPersistence";
+import type { DataWindowSnapshot } from "../runtime/chartEngineRuntime";
 import { createDataWindow } from "./dataWindow";
+import type { ChartLabels } from "./localization";
 import { createPropertyEditor } from "./propertyEditor";
 
 export interface BottomPanel {
   readonly element: HTMLDivElement;
   bind(actions: WorkspaceUiActions): () => void;
   render(viewModel: WorkspaceViewModel): void;
+  renderDataWindow(snapshot: DataWindowSnapshot | undefined): void;
 }
-
-const tabs = [
-  { id: "objects", label: "对象" },
-  { id: "properties", label: "属性" },
-  { id: "data", label: "数据窗口" }
-] as const;
 
 function selectedDrawing(viewModel: WorkspaceViewModel): DrawingObject | undefined {
   const selectedId = viewModel.selectedDrawingIds[0];
   return viewModel.drawings.find((drawing) => drawing.id === selectedId);
 }
 
-export function createBottomPanel(): BottomPanel {
+export function createBottomPanel(labels: ChartLabels): BottomPanel {
+  const tabs = [
+    { id: "objects", label: labels.objects, icon: "☷" },
+    { id: "properties", label: labels.properties, icon: "≡" },
+    { id: "data", label: labels.dataWindow, icon: "▤" }
+  ] as const;
   const element = document.createElement("div");
-  element.className = "sc-bottom-panel";
+  element.className = "sc-bottom-panel sc-right-sidebar";
+  element.dataset.testid = "right-inspector";
   const tabList = document.createElement("div");
-  tabList.className = "sc-bottom-tabs";
+  tabList.className = "sc-bottom-tabs sc-inspector-rail";
+  tabList.setAttribute("role", "tablist");
+  tabList.setAttribute("aria-orientation", "vertical");
   for (const tab of tabs) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.tab = tab.id;
-    button.textContent = tab.label;
+    button.dataset.testid = `inspector-${tab.id}`;
+    button.textContent = tab.icon;
+    button.title = tab.label;
+    button.setAttribute("aria-label", tab.label);
+    button.setAttribute("role", "tab");
     tabList.append(button);
   }
   const content = document.createElement("div");
-  content.className = "sc-bottom-content";
+  content.className = "sc-bottom-content sc-inspector-content";
+  const title = document.createElement("div");
+  title.className = "sc-inspector-title";
   const objects = document.createElement("div");
   objects.className = "sc-object-manager";
   const propertyEditor = createPropertyEditor();
   const dataWindow = createDataWindow();
-  content.append(objects, propertyEditor.element, dataWindow.element);
-  element.append(tabList, content);
+  content.append(title, objects, propertyEditor.element, dataWindow.element);
+  element.append(content, tabList);
   let currentViewModel: WorkspaceViewModel | undefined;
   let actions: WorkspaceUiActions | undefined;
+  let currentDataWindow: DataWindowSnapshot | undefined;
 
   const select = (drawingId: string) => {
     actions?.setDrawingTool("select");
@@ -62,7 +74,12 @@ export function createBottomPanel(): BottomPanel {
       actions = nextActions;
       const onTabClick = (event: Event) => {
         const activeTab = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-tab]")?.dataset.tab as BottomPanelState["activeTab"] | undefined;
-        if (activeTab && currentViewModel) actions?.setBottomPanel({ ...currentViewModel.bottomPanel, activeTab, collapsed: false });
+        if (!activeTab || !currentViewModel) return;
+        actions?.setBottomPanel({
+          ...currentViewModel.bottomPanel,
+          activeTab,
+          collapsed: currentViewModel.bottomPanel.activeTab === activeTab && !currentViewModel.bottomPanel.collapsed
+        });
       };
       const onObjectClick = (event: Event) => {
         const target = (event.target as HTMLElement).closest<HTMLElement>("[data-drawing-id]");
@@ -82,9 +99,16 @@ export function createBottomPanel(): BottomPanel {
     },
     render(viewModel) {
       currentViewModel = viewModel;
-      element.style.height = viewModel.bottomPanel.collapsed ? "32px" : `${viewModel.bottomPanel.height}px`;
+      // ponytail: the v1 `height` key is the dock extent; keep it to preserve stored layouts.
+      const width = Math.max(240, Math.min(420, viewModel.bottomPanel.height));
+      element.style.setProperty("--sc-inspector-width", `${width}px`);
+      element.dataset.collapsed = String(viewModel.bottomPanel.collapsed);
       content.hidden = viewModel.bottomPanel.collapsed;
-      for (const button of tabList.querySelectorAll("button")) button.setAttribute("aria-selected", String(button.dataset.tab === viewModel.bottomPanel.activeTab));
+      for (const button of tabList.querySelectorAll("button")) {
+        const selected = button.getAttribute("data-tab") === viewModel.bottomPanel.activeTab;
+        button.setAttribute("aria-selected", String(selected));
+      }
+      title.textContent = tabs.find((tab) => tab.id === viewModel.bottomPanel.activeTab)?.label ?? "";
       objects.replaceChildren();
       for (const drawing of viewModel.drawings) {
         const row = document.createElement("div");
@@ -116,7 +140,11 @@ export function createBottomPanel(): BottomPanel {
       propertyEditor.element.hidden = active !== "properties";
       dataWindow.element.hidden = active !== "data";
       propertyEditor.render(selectedDrawing(viewModel), (command) => actions?.executeDrawingCommand(command));
-      dataWindow.render(viewModel.dataWindow);
+      dataWindow.render(currentDataWindow);
+    },
+    renderDataWindow(snapshot) {
+      currentDataWindow = snapshot;
+      dataWindow.render(snapshot);
     }
   };
 }

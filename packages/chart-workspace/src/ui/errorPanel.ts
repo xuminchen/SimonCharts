@@ -1,4 +1,4 @@
-import type { WorkspaceStatus } from "../controller/chartWorkspaceController";
+import type { WorkspaceStatus } from "../controller/chartController";
 
 export interface ErrorPanel {
   readonly element: HTMLDivElement;

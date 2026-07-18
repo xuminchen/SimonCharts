@@ -1,11 +1,25 @@
 {
-  "name": "@simoncharts/chart-workspace",
-  "version": "1.0.0-rc.0",
+  "name": "@simoncharts/charts",
+  "version": "1.0.0-rc.18",
   "private": true,
-  "description": "Complete commercial browser chart workspace for SimonCharts partners.",
+  "description": "Embeddable Advanced Charts SDK for SimonCharts partners.",
   "license": "UNLICENSED",
+  "keywords": [
+    "charts",
+    "technical-analysis",
+    "advanced-charts",
+    "browser-sdk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xuminchen/SimonCharts.git",
+    "directory": "packages/chart-workspace"
+  },
+  "homepage": "https://github.com/xuminchen/SimonCharts#readme",
   "type": "module",
-  "sideEffects": ["./dist/styles.css"],
+  "sideEffects": [
+    "./dist/styles.css"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,7 +31,10 @@
     },
     "./styles.css": "./dist/styles.css"
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "vite build && tsc -b --force",
     "typecheck": "tsc -b"

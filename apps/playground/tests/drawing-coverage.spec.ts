@@ -66,6 +66,14 @@ test("playground exposes drawing tool categories and creates representative tool
 
 test("imports valid drawing JSON into the workbench", async ({ page }) => {
   await page.goto("/");
+  const overlay = page.getByTestId("chart-overlay");
+  const box = await overlay.boundingBox();
+
+  if (!box) {
+    throw new Error("overlay missing");
+  }
+
+  const drawingX = Math.floor(box.width / 2);
 
   await page.getByTestId("drawing-json-import").fill(
     JSON.stringify({
@@ -75,7 +83,7 @@ test("imports valid drawing JSON into the workbench", async ({ page }) => {
           schemaVersion: 1,
           id: "imported-text",
           type: "text",
-          anchors: [{ x: 180, y: 160 }],
+          anchors: [{ x: drawingX, y: 160 }],
           text: "Imported note",
           style: { color: "#2563eb", lineWidth: 3 }
         }
@@ -90,15 +98,8 @@ test("imports valid drawing JSON into the workbench", async ({ page }) => {
   await expect(page.getByTestId("drawing-object-manager")).toContainText("text imported-text");
   await expect(page.getByTestId("drawing-property-panel")).toContainText("Selection: imported-text");
 
-  const overlay = page.getByTestId("chart-overlay");
-  const box = await overlay.boundingBox();
-
-  if (!box) {
-    throw new Error("overlay missing");
-  }
-
   await page.getByTestId("drawing-tool-select").click();
-  await page.mouse.move(box.x + 180, box.y + 160);
+  await page.mouse.move(box.x + drawingX, box.y + 160);
   await expect(page.getByTestId("cursor-state")).toHaveText("drawing");
 });
 

@@ -1,24 +1,39 @@
 import "./styles.css";
 
-export { createChartWorkspace } from "./createChartWorkspace";
+export { createChart } from "./createChart";
+export { advancedChartFeatures, defaultChartFeatures } from "./contracts";
 
 export type {
   AdjustMode,
   Candle,
+  ChartDataCapabilities,
+  ChartDataSeriesCapability,
+  ChartDatafeed,
+  ChartEvent,
+  ChartEventListener,
+  ChartFeature,
+  ChartIntradayScale,
+  ChartInstance,
+  ChartLocale,
+  ChartOptions,
+  ChartState,
+  ChartStateListener,
   ChartSymbol,
-  ChartWorkspace,
-  ChartWorkspaceDataSource,
-  ChartWorkspaceOptions,
-  ChartWorkspaceState,
+  ChartTheme,
+  ChartView,
+  ChartVisibleRange,
   Exchange,
+  IntradayDayCount,
   SeriesPage,
   SeriesRequest,
   SymbolKind,
   Timeframe
 } from "./contracts";
 export {
-  createWorkspaceError,
-  type ChartWorkspaceError,
-  type ChartWorkspaceErrorCode,
-  type ChartWorkspaceErrorScope
+  ChartDatafeedError,
+  createChartError,
+  type ChartDatafeedErrorCode,
+  type ChartError,
+  type ChartErrorCode,
+  type ChartErrorScope
 } from "./errors";

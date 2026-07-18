@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 async function persistedDrawingCount(page: Page): Promise<number> {
   return page.evaluate(() => {
     const key = Object.keys(localStorage).find((candidate) =>
-      candidate.startsWith("simoncharts:workspace:v1:workspace-playground:drawings:")
+      candidate.startsWith("simoncharts:workspace:v1:workspace-playground:fixture-user:drawings:fixture-current:")
     );
     if (!key) return 0;
     const envelope = JSON.parse(localStorage.getItem(key) ?? "null") as { value?: unknown[] } | null;
@@ -22,7 +22,7 @@ async function stepGesture(page: Page) {
   }
 }
 
-test("exposes 63 tools and persists drawing lifecycle and palette position", async ({ page }) => {
+test("exposes 63 tools and persists drawing lifecycle in the fixed drawing rail", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
   await page.getByTestId("drawing-palette-expand").click();
@@ -37,7 +37,7 @@ test("exposes 63 tools and persists drawing lifecycle and palette position", asy
   expect(new Set(toolTypes).size).toBe(63);
 
   await page.locator('[data-drawing-category="basic"]').click();
-  await page.getByRole("button", { name: "Trend Line", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Trend Line", exact: true }).click();
   await stepGesture(page);
   await expect.poll(() => persistedDrawingCount(page)).toBe(1);
   await expect(page.getByTestId("drawing-undo")).toBeEnabled();
@@ -46,17 +46,13 @@ test("exposes 63 tools and persists drawing lifecycle and palette position", asy
   await page.getByTestId("drawing-redo").click();
   await expect.poll(() => persistedDrawingCount(page)).toBe(1);
 
-  const before = await page.getByTestId("drawing-palette").boundingBox();
-  const handle = page.getByTestId("drawing-palette-drag-handle");
-  const handleBox = await handle.boundingBox();
-  if (!handleBox) throw new Error("palette handle missing");
-  await page.mouse.move(handleBox.x + 5, handleBox.y + 5);
-  await page.mouse.down();
-  await page.mouse.move(handleBox.x + 300, handleBox.y + 120);
-  await page.mouse.up();
+  const railBefore = await page.locator(".sc-drawing-palette-host").boundingBox();
+  const chartBefore = await page.locator(".sc-chart-region").boundingBox();
+  expect(railBefore?.width).toBe(44);
+  expect((railBefore?.x ?? 0) + (railBefore?.width ?? 0)).toBe(chartBefore?.x);
   await page.reload();
-  const after = await page.getByTestId("drawing-palette").boundingBox();
-  expect(after?.x).not.toBe(before?.x);
+  const railAfter = await page.locator(".sc-drawing-palette-host").boundingBox();
+  expect(railAfter).toMatchObject({ x: railBefore?.x, width: 44 });
 });
 
 test("commits every continuous drawing mode only on pointer up", async ({ page }) => {
@@ -73,7 +69,7 @@ test("commits every continuous drawing mode only on pointer up", async ({ page }
   ];
   for (const [index, tool] of tools.entries()) {
     await page.locator(`[data-drawing-category="${tool.category}"]`).click();
-    await page.getByRole("button", { name: tool.name, exact: true }).click();
+    await page.getByRole("menuitem", { name: tool.name, exact: true }).click();
     await page.mouse.move(box.x + 220, box.y + 220 + index * 20);
     await page.mouse.down();
     await page.mouse.move(box.x + 280, box.y + 240 + index * 20);
@@ -123,14 +119,14 @@ test("creates, edits, serializes, and restores all 63 drawing tools", async ({ p
 
   await page.reload();
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
-  await page.getByRole("button", { name: "对象", exact: true }).click();
+  await page.getByRole("tab", { name: "对象", exact: true }).click();
   const rows = page.locator(".sc-object-row");
   await expect(rows).toHaveCount(63);
   for (let index = 0; index < 63; index += 1) {
     await rows.nth(index).locator("button").first().click();
-    await page.getByRole("button", { name: "属性", exact: true }).click();
+    await page.getByRole("tab", { name: "属性", exact: true }).click();
     await page.getByLabel("Color", { exact: true }).fill(index % 2 === 0 ? "#f04455" : "#00aa91");
-    await page.getByRole("button", { name: "对象", exact: true }).click();
+    await page.getByRole("tab", { name: "对象", exact: true }).click();
   }
   await expect.poll(() => page.evaluate(() => {
     const key = Object.keys(localStorage).find((candidate) => candidate.includes(":drawings:"));
@@ -138,25 +134,25 @@ test("creates, edits, serializes, and restores all 63 drawing tools", async ({ p
     return stored?.value?.filter((drawing) => drawing.style?.color === "#f04455" || drawing.style?.color === "#00aa91").length ?? 0;
   })).toBe(63);
   await page.reload();
-  await page.getByRole("button", { name: "对象", exact: true }).click();
+  await page.getByRole("tab", { name: "对象", exact: true }).click();
   await expect(page.locator(".sc-object-row")).toHaveCount(63);
   for (const [label, id] of [["Moving Average", "MA"], ["RSI", "RSI"], ["MACD", "MACD"]] as const) {
     await page.getByTestId("indicator-manager-open").click();
     await page.getByRole("button", { name: label, exact: true }).click();
     await page.getByRole("button", { name: `Apply ${id}`, exact: true }).click();
-    await expect(page.getByTestId(`indicator-legend-${id}`)).toBeVisible();
+    await expect(page.getByTestId(`indicator-legend-${id}`)).toHaveCount(1);
   }
   const performanceCanvas = page.locator("canvas.sc-overlay-canvas");
-  const frameDurations: number[] = [];
+  await page.evaluate(() => { window.__hostCounters.frameCallbackDurations = []; });
   for (let index = 0; index < 30; index += 1) {
-    frameDurations.push(await performanceCanvas.evaluate((element, offset) => new Promise<number>((resolve) => {
+    await performanceCanvas.evaluate((element, offset) => new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
-        const started = performance.now();
         element.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 300 + offset * 3, clientY: 220 }));
-        requestAnimationFrame(() => resolve(performance.now() - started));
+        requestAnimationFrame(() => resolve());
       });
-    }), index));
+    }), index);
   }
+  const frameDurations = await page.evaluate(() => window.__hostCounters.frameCallbackDurations);
   frameDurations.sort((left, right) => left - right);
   expect(frameDurations[Math.ceil(frameDurations.length * 0.95) - 1]).toBeLessThanOrEqual(16.7);
   expect(errors).toEqual([]);

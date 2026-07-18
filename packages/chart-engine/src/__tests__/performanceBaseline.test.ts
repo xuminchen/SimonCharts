@@ -306,10 +306,13 @@ function createLayout(): ChartLayout {
   return {
     width: 1_000,
     height: 620,
+    leftAxisWidth: 0,
     rightAxisWidth: 64,
     bottomAxisHeight: 28,
+    leftPriceAxisArea: { x: 0, y: 0, width: 0, height: 592 },
     plotArea: { x: 0, y: 0, width: 936, height: 592 },
     priceAxisArea: { x: 936, y: 0, width: 64, height: 592 },
+    volumeArea: { x: 0, y: 592, width: 936, height: 0 },
     timeAxisArea: { x: 0, y: 592, width: 936, height: 28 }
   };
 }

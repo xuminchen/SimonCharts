@@ -2,16 +2,15 @@ import { indexToX } from "../../viewport/viewport";
 import type { ViewportState } from "../../model/runtime";
 import type { ChartLayer } from "../renderTypes";
 
-const volumePanelRatio = 0.24;
-
 export function createVolumeLayer(): ChartLayer {
   return {
     id: "volume",
     render({ context, state }) {
       const { layout, series, theme, viewport } = state;
+      const { volumeArea } = layout;
       const bounds = getVisibleBounds(viewport, series.candles.length);
 
-      if (!bounds || layout.plotArea.width <= 0 || layout.plotArea.height <= 0) {
+      if (!bounds || volumeArea.width <= 0 || volumeArea.height <= 0) {
         return;
       }
 
@@ -21,16 +20,17 @@ export function createVolumeLayer(): ChartLayer {
         maxVolume = Math.max(maxVolume, series.candles[index].volume);
       }
 
-      context.fillStyle = theme.colors.volume;
-
       for (let index = bounds.from; index <= bounds.to; index += 1) {
         const candle = series.candles[index];
-        const x = indexToX(index, viewport, layout.plotArea.x);
+        const x = indexToX(index, viewport, volumeArea.x);
         const barWidth = Math.max(1, viewport.candleWidth * 0.7);
-        const panelHeight = layout.plotArea.height * volumePanelRatio;
-        const baseline = layout.plotArea.y + layout.plotArea.height;
-        const barHeight = maxVolume > 0 ? (candle.volume / maxVolume) * panelHeight : 0;
+        const baseline = volumeArea.y + volumeArea.height;
+        const barHeight = maxVolume > 0 ? (candle.volume / maxVolume) * volumeArea.height : 0;
 
+        context.fillStyle =
+          candle.close >= candle.open
+            ? theme.colors.bullishCandle
+            : theme.colors.bearishCandle;
         context.fillRect(x - barWidth / 2, baseline - barHeight, barWidth, barHeight);
       }
     }

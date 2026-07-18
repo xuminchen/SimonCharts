@@ -183,13 +183,15 @@ test("selecting an existing drawing records drawing drag mode", async ({ page })
     throw new Error("overlay missing");
   }
 
+  const centerX = box.width / 2;
+
   await page.getByTestId("drawing-tool-trendLine").click();
-  await page.mouse.click(box.x + 120, box.y + 180);
-  await page.mouse.click(box.x + 260, box.y + 240);
+  await page.mouse.click(box.x + centerX - 70, box.y + 180);
+  await page.mouse.click(box.x + centerX + 70, box.y + 240);
   await expect(page.getByTestId("drawing-count")).toHaveText("1 drawing");
 
   await page.getByTestId("drawing-tool-select").click();
-  await page.mouse.move(box.x + 180, box.y + 210);
+  await page.mouse.move(box.x + centerX, box.y + 210);
   await page.mouse.down();
   await expect(page.getByTestId("cursor-state")).toHaveText("drawing");
   await page.mouse.up();
@@ -258,7 +260,7 @@ test("wheel zoom invalidates chart layers and records render reason", async ({ p
 
   const staticBefore = Number(await page.getByTestId("static-render-count").textContent());
 
-  await page.mouse.move(box.x + 180, box.y + 220);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(0, -180);
 
   await expect

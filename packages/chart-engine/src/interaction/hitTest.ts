@@ -1,6 +1,7 @@
 import type { Candle, CandleSeries } from "../model/market";
 import type { ViewportState } from "../model/runtime";
 import { yToPrice, type PriceScale } from "../viewport/priceScale";
+import { xToIndex } from "../viewport/viewport";
 
 export function hitTestCandleAtX(
   series: CandleSeries,
@@ -30,10 +31,8 @@ export function hitTestCandleAtX(
     return undefined;
   }
 
-  const candleWidth = Math.max(1, viewport.candleWidth);
   const offsetX = x - plotLeft;
-  const slotIndex = Math.floor(offsetX / candleWidth);
-  const index = rawFrom + slotIndex;
+  const index = xToIndex(x, viewport, plotLeft);
 
   if (offsetX < 0 || index < visibleFrom || index > visibleTo) {
     return undefined;

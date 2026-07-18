@@ -20,15 +20,15 @@ test("renders a lazy million-candle source within bounded frame budgets", async 
   const canvas = page.locator("canvas.sc-overlay-canvas");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("canvas missing");
-  const frameDurations: number[] = [];
+  await page.evaluate(() => { window.__hostCounters.frameCallbackDurations = []; });
   for (let index = 0; index < 30; index += 1) {
-    frameDurations.push(await canvas.evaluate((element, offset) => new Promise<number>((resolve) => {
+    await canvas.evaluate((element, offset) => new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
-        const started = performance.now();
         element.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 200 + offset * 5, clientY: 220 }));
-        requestAnimationFrame(() => resolve(performance.now() - started));
+        requestAnimationFrame(() => resolve());
       });
-    }), index));
+    }), index);
   }
+  const frameDurations = await page.evaluate(() => window.__hostCounters.frameCallbackDurations);
   expect(percentile(frameDurations, 0.95)).toBeLessThanOrEqual(16.7);
 });

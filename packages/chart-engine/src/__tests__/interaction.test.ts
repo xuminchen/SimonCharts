@@ -303,6 +303,23 @@ describe("interaction engine", () => {
 });
 
 describe("hit testing", () => {
+  it("uses the same subpixel candle width as rendering", () => {
+    const series = createSeries(2_169);
+    const viewport: ViewportState = {
+      visibleRange: { from: 0, to: 2_168 },
+      candleWidth: 0.17,
+      scrollOffset: 0,
+      priceScaleMode: "linear"
+    };
+    const index = 1_700;
+    const x = indexToX(index, viewport, plotLeft);
+
+    expect(hitTestCandleAtX(series, viewport, x, plotLeft)).toEqual({
+      index,
+      candle: series.candles[index]
+    });
+  });
+
   it("returns undefined when x maps beyond clamped visible candle data", () => {
     const series = createSeries(5);
     const viewport: ViewportState = {

@@ -96,7 +96,8 @@ export function yToPrice(
 
 export function formatPriceScaleTick(price: number, scale: PriceScale): string {
   if (scale.mode === "percentage") {
-    return `${priceToScaleValue(price, scale).toFixed(2)}%`;
+    const value = priceToScaleValue(price, scale);
+    return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
   }
   return Number.isInteger(price) ? String(price) : price.toFixed(2);
 }

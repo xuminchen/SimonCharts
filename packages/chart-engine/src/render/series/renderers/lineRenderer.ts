@@ -17,9 +17,14 @@ export function createLineRenderer() {
 
     const range = getVisiblePriceRange(renderContext.model, bounds);
     const { context, state } = renderContext;
+    const lastClose = renderContext.model.points[bounds.to].close;
 
     withPlotClip(renderContext, () => {
-      context.strokeStyle = state.theme.colors.text;
+      context.strokeStyle = state.priceScale.mode !== "percentage" || lastClose === state.priceScale.basePrice
+        ? state.theme.colors.text
+        : lastClose > state.priceScale.basePrice
+          ? state.theme.colors.bullishCandle
+          : state.theme.colors.bearishCandle;
       context.lineWidth = state.theme.lineWidths.indicator;
 
       context.beginPath();

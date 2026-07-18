@@ -1,10 +1,11 @@
-import type {
-  Candle,
-  ChartSymbol,
-  ChartWorkspaceDataSource,
-  SeriesPage,
-  SeriesRequest
-} from "@simoncharts/chart-workspace";
+import {
+  ChartDatafeedError,
+  type Candle,
+  type ChartSymbol,
+  type ChartDatafeed,
+  type SeriesPage,
+  type SeriesRequest
+} from "@simoncharts/charts";
 
 export const stock = { id: "stock:SSE:600000", code: "600000", name: "浦发银行", exchange: "SSE" as const, kind: "stock" as const };
 export const index = { id: "index:SSE:000001", code: "000001", name: "上证指数", exchange: "SSE" as const, kind: "index" as const };
@@ -18,6 +19,7 @@ export interface HostCounters {
   activeEventListeners: number;
   abortedRequests: number;
   errors: number;
+  frameCallbackDurations: number[];
   lastSeriesResolvedAt?: number;
   firstFrameAfterSeriesResolvedAt?: number;
 }
@@ -43,12 +45,15 @@ export interface FixtureControls {
   single: boolean;
   million: boolean;
   emptyPage: boolean;
+  capabilitySubset: boolean;
+  dataSourceFailure?: "notConfigured" | "rateLimited";
 }
 
 export function readFixtureControls(search: string): FixtureControls {
   const params = new URLSearchParams(search);
   const initialFailure = params.get("initialFailure");
   const invalidPage = params.get("invalidPage");
+  const dataSourceFailure = params.get("dataSourceFailure");
   return {
     latency: Math.max(0, Number(params.get("latency") ?? 0) || 0),
     ...(initialFailure === "once" || initialFailure === "always" ? { initialFailure } : {}),
@@ -60,7 +65,11 @@ export function readFixtureControls(search: string): FixtureControls {
     history: params.get("history") === "1" || params.get("million") === "1" || ["historyFailure", "cursorCycle", "boundaryConflict", "versionChange"].some((key) => params.get(key) === "1") || invalidPage === "history",
     single: params.get("single") === "1",
     million: params.get("million") === "1",
-    emptyPage: params.get("emptyPage") === "1"
+    emptyPage: params.get("emptyPage") === "1",
+    capabilitySubset: params.get("capabilitySubset") === "1",
+    ...(dataSourceFailure === "notConfigured" || dataSourceFailure === "rateLimited"
+      ? { dataSourceFailure }
+      : {})
   };
 }
 
@@ -121,7 +130,7 @@ export function createFixtureDataSource(
   controls: FixtureControls,
   counters: HostCounters,
   requests: FixtureRequestLog[]
-): ChartWorkspaceDataSource {
+): ChartDatafeed {
   const initialAttempts = new Map<string, number>();
   let version = "fixture-v1";
   const symbols: readonly ChartSymbol[] = [stock, index, slowStock, fastStock];
@@ -149,6 +158,39 @@ export function createFixtureDataSource(
   };
 
   return {
+    async getCapabilities(symbol, signal) {
+      counters.activeRequests += 1;
+      try {
+        const latency = symbol.id === slowStock.id ? Math.max(1_000, controls.latency) : controls.latency;
+        await waitFor(signal, latency);
+        if (controls.capabilitySubset && symbol.kind === "stock") {
+          return {
+            series: [
+              { timeframe: "1d", adjustModes: ["forward"] },
+              { timeframe: "5m", adjustModes: ["none"] }
+            ]
+          };
+        }
+        return {
+          series: (["1m", "5m", "15m", "30m", "60m", "1d", "1w", "1mo"] as const).map(
+            (timeframe) => ({
+              timeframe,
+              adjustModes: symbol.kind === "index"
+                ? ["none"] as const
+                : ["none", "forward", "backward"] as const
+            })
+          ),
+          ...(symbol.kind === "stock"
+            ? { intradayScale: { previousClose: 100, priceLimitPercent: 10 } }
+            : { intradayScale: { previousClose: 100 } })
+        };
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") counters.abortedRequests += 1;
+        throw error;
+      } finally {
+        counters.activeRequests -= 1;
+      }
+    },
     searchSymbols(query, signal) {
       const log: FixtureRequestLog = { symbolId: `search:${query}`, timeframe: "", adjustMode: "", hasCursor: false, status: "started" };
       return tracked(signal, log, async () => {
@@ -162,12 +204,19 @@ export function createFixtureDataSource(
         timeframe: request.timeframe,
         adjustMode: request.adjustMode,
         hasCursor: request.beforeCursor !== undefined,
+        ...(request.dataCutoffTime === undefined ? {} : { dataCutoffTime: request.dataCutoffTime }),
         ...(request.beforeCursor === undefined ? {} : { cursor: request.beforeCursor }),
         status: "started"
       };
       return tracked(signal, log, async () => {
         const latency = request.symbol.id === slowStock.id ? Math.max(1_000, controls.latency) : controls.latency;
         await waitFor(signal, latency);
+        if (request.beforeCursor === undefined && controls.dataSourceFailure === "notConfigured") {
+          throw new ChartDatafeedError("NOT_CONFIGURED", "尚未配置授权行情源", false);
+        }
+        if (request.beforeCursor === undefined && controls.dataSourceFailure === "rateLimited") {
+          throw new ChartDatafeedError("RATE_LIMITED", "行情服务限额已用尽", true);
+        }
         if (request.beforeCursor !== undefined && controls.historyFailure) throw new Error("fixture history failure");
         const attemptKey = `${request.symbol.id}:${request.timeframe}:${request.adjustMode}`;
         const attempts = initialAttempts.get(attemptKey) ?? 0;

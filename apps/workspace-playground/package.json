@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build -w @simoncharts/chart-workspace && vite --host 127.0.0.1 --port 5174",
+    "dev": "npm run build -w @simoncharts/charts && vite --host 127.0.0.1 --port 5174",
     "build": "vite build",
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@simoncharts/chart-workspace": "1.0.0-rc.0"
+    "@simoncharts/charts": "1.0.0-rc.18"
   }
 }

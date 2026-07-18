@@ -73,7 +73,7 @@ test("atomically refreshes a changed data version", async ({ page }) => {
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
 });
 
-for (const invalid of ["workspace", "symbol", "datasource"] as const) {
+for (const invalid of ["workspace", "context", "symbol", "datasource"] as const) {
   test(`rejects ${invalid} configuration without requests or retry`, async ({ page }) => {
     await page.goto(`/?invalid=${invalid}`);
     await expect(page.locator('[data-error-code="INVALID_CONFIGURATION"]')).toBeVisible();
@@ -100,6 +100,7 @@ declare global {
       activeEventListeners: number;
       abortedRequests: number;
       errors: number;
+      frameCallbackDurations: number[];
       lastSeriesResolvedAt?: number;
       firstFrameAfterSeriesResolvedAt?: number;
     };

@@ -1,7 +1,7 @@
 import type { ViewportState, VisibleRange } from "../model/runtime";
 
 const defaultCandleWidth = 8;
-const minCandleWidth = 2;
+const minCandleWidth = 0.05;
 const maxCandleWidth = 48;
 const wheelZoomFactor = 1.25;
 
@@ -31,14 +31,10 @@ export function computeVisibleRange(
   const candleWidth = normalizeCandleWidth(viewport);
   const visibleCount = Math.max(1, Math.ceil(width / candleWidth));
 
-  if (candleCount <= visibleCount) {
-    return { from: 0, to: candleCount - 1 };
-  }
-
   const maxScrollOffset = Math.max(0, candleCount - visibleCount);
   const scrollOffset = Math.min(maxScrollOffset, Math.max(0, Math.floor(viewport.scrollOffset)));
   const to = Math.max(0, candleCount - 1 - scrollOffset);
-  const from = Math.max(0, to - visibleCount + 1);
+  const from = to - visibleCount + 1;
 
   return { from, to };
 }
@@ -73,20 +69,28 @@ export function zoomViewportAtIndex(
   const nextCandleWidth = clampCandleWidth(
     deltaY < 0 ? candleWidth * wheelZoomFactor : candleWidth / wheelZoomFactor
   );
-  const visibleCount = getVisibleCount(viewport, candleCount);
+  const visibleCount = getVisibleCount(viewport);
   const plotWidth = visibleCount * candleWidth;
-  const nextVisibleCount = Math.max(1, Math.min(candleCount, Math.ceil(plotWidth / nextCandleWidth)));
+  const nextVisibleCount = Math.max(1, Math.ceil(plotWidth / nextCandleWidth));
   const anchorRatio = clamp(
     (anchorIndex - viewport.visibleRange.from + 0.5) / Math.max(1, visibleCount),
     0,
     1
   );
-  const nextFrom = clamp(
-    Math.round(anchorIndex + 0.5 - anchorRatio * nextVisibleCount),
-    0,
-    Math.max(0, candleCount - nextVisibleCount)
-  );
-  const nextTo = nextFrom + nextVisibleCount - 1;
+  const allCandlesVisible = nextVisibleCount >= candleCount;
+  const alignedToLatest =
+    viewport.scrollOffset === 0 && viewport.visibleRange.to >= candleCount - 1;
+  const keepLatestAligned = allCandlesVisible || alignedToLatest;
+  const nextFrom = keepLatestAligned
+    ? candleCount - nextVisibleCount
+    : clamp(
+        Math.round(anchorIndex + 0.5 - anchorRatio * nextVisibleCount),
+        0,
+        candleCount - nextVisibleCount
+      );
+  const nextTo = keepLatestAligned
+    ? candleCount - 1
+    : nextFrom + nextVisibleCount - 1;
 
   return {
     ...viewport,
@@ -110,7 +114,14 @@ export function panViewportByPixels(
   }
 
   const candleDelta = Math.round(deltaX / normalizeCandleWidth(viewport));
-  const visibleCount = getVisibleCount(viewport, candleCount);
+  const visibleCount = getVisibleCount(viewport);
+  if (visibleCount >= candleCount) {
+    return {
+      ...viewport,
+      scrollOffset: 0,
+      visibleRange: { from: candleCount - visibleCount, to: candleCount - 1 }
+    };
+  }
   const maxScrollOffset = Math.max(0, candleCount - visibleCount);
   const scrollOffset = clamp(Math.floor(viewport.scrollOffset) + candleDelta, 0, maxScrollOffset);
   const to = candleCount - 1 - scrollOffset;
@@ -128,21 +139,21 @@ export function resetViewportToLatest(candleCount: number, width: number): Viewp
 }
 
 function normalizeCandleWidth(viewport: ViewportState): number {
-  return Math.max(1, viewport.candleWidth);
+  return Math.max(minCandleWidth, viewport.candleWidth);
 }
 
 function clampCandleWidth(candleWidth: number): number {
   return clamp(candleWidth, minCandleWidth, maxCandleWidth);
 }
 
-function getVisibleCount(viewport: ViewportState, candleCount: number): number {
+function getVisibleCount(viewport: ViewportState): number {
   const visibleCount = viewport.visibleRange.to - viewport.visibleRange.from + 1;
 
   if (visibleCount <= 0) {
-    return Math.min(candleCount, 1);
+    return 1;
   }
 
-  return Math.max(1, Math.min(candleCount, visibleCount));
+  return visibleCount;
 }
 
 function clamp(value: number, min: number, max: number): number {

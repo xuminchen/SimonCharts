@@ -1,6 +1,11 @@
-import { priceToY } from "../../viewport/priceScale";
+import { formatPriceScaleTick, priceToY } from "../../viewport/priceScale";
 import { indexToX } from "../../viewport/viewport";
-import type { ChartLayer } from "../renderTypes";
+import type { ChartLayer, RenderState } from "../renderTypes";
+import { getTimeAxisLabels } from "../timeAxisLabels";
+
+const badgePadding = 6;
+const badgeVerticalPadding = 4;
+const crosshairDash = [4, 4];
 
 export function createCrosshairLayer(): ChartLayer {
   return {
@@ -15,30 +20,133 @@ export function createCrosshairLayer(): ChartLayer {
         crosshair.index > viewport.visibleRange.to ||
         crosshair.index < 0 ||
         crosshair.index >= series.candles.length ||
+        !Number.isFinite(crosshair.price) ||
+        (state.priceScale.mode === "log" && crosshair.price <= 0) ||
         plotArea.width <= 0 ||
         plotArea.height <= 0
       ) {
         return;
       }
 
-      const x = indexToX(crosshair.index, viewport, plotArea.x);
-      const y = priceToY(
-        crosshair.price,
-        state.priceScale,
+      const x = clamp(
+        indexToX(crosshair.index, viewport, plotArea.x),
+        plotArea.x,
+        plotArea.x + plotArea.width
+      );
+      const y = clamp(
+        priceToY(crosshair.price, state.priceScale, plotArea.y, plotArea.height),
         plotArea.y,
-        plotArea.height
+        plotArea.y + plotArea.height
       );
 
       context.save();
-      context.strokeStyle = theme.colors.crosshair;
-      context.lineWidth = theme.lineWidths.crosshair;
-      context.beginPath();
-      context.moveTo(x, plotArea.y);
-      context.lineTo(x, plotArea.y + plotArea.height);
-      context.moveTo(plotArea.x, y);
-      context.lineTo(plotArea.x + plotArea.width, y);
-      context.stroke();
-      context.restore();
+
+      try {
+        context.strokeStyle = theme.colors.crosshair;
+        context.lineWidth = theme.lineWidths.crosshair;
+        context.setLineDash(crosshairDash);
+        context.beginPath();
+        context.moveTo(x, plotArea.y);
+        context.lineTo(x, plotArea.y + plotArea.height);
+        context.moveTo(plotArea.x, y);
+        context.lineTo(plotArea.x + plotArea.width, y);
+        context.stroke();
+        context.setLineDash([]);
+
+        context.font = `${theme.typography.fontSize}px ${theme.typography.fontFamily}`;
+        drawPriceBadge(
+          context,
+          formatPriceScaleTick(crosshair.price, state.priceScale),
+          y,
+          state
+        );
+        drawTimeBadge(
+          context,
+          state.formatTime(crosshair.time, series.timeframe),
+          x,
+          state
+        );
+      } finally {
+        context.restore();
+      }
     }
   };
+}
+
+function drawPriceBadge(
+  context: CanvasRenderingContext2D,
+  label: string,
+  y: number,
+  state: RenderState
+): void {
+  const { priceAxisArea } = state.layout;
+
+  if (priceAxisArea.width <= 0 || priceAxisArea.height <= 0) return;
+
+  const height = Math.min(
+    priceAxisArea.height,
+    state.theme.typography.fontSize + badgeVerticalPadding * 2
+  );
+  const top = clamp(
+    y - height / 2,
+    priceAxisArea.y,
+    priceAxisArea.y + priceAxisArea.height - height
+  );
+
+  context.fillStyle = state.theme.colors.crosshair;
+  context.fillRect(priceAxisArea.x, top, priceAxisArea.width, height);
+  context.fillStyle = state.theme.colors.tooltip.text;
+  context.textAlign = "left";
+  context.textBaseline = "middle";
+  context.fillText(
+    label,
+    priceAxisArea.x + Math.min(badgePadding, priceAxisArea.width / 2),
+    top + height / 2
+  );
+}
+
+function drawTimeBadge(
+  context: CanvasRenderingContext2D,
+  label: string,
+  x: number,
+  state: RenderState
+): void {
+  const { timeAxisArea } = state.layout;
+
+  if (timeAxisArea.width <= 0 || timeAxisArea.height <= 0) return;
+
+  const width = Math.min(
+    timeAxisArea.width,
+    context.measureText(label).width + badgePadding * 2
+  );
+  const left = clamp(
+    x - width / 2,
+    timeAxisArea.x,
+    timeAxisArea.x + timeAxisArea.width - width
+  );
+
+  context.fillStyle = state.theme.colors.background;
+  for (const timeLabel of getTimeAxisLabels(context, state)) {
+    const labelLeft = timeLabel.x - timeLabel.halfWidth;
+    const labelRight = timeLabel.x + timeLabel.halfWidth;
+    if (labelRight <= left || labelLeft >= left + width) continue;
+    const clearLeft = Math.max(timeAxisArea.x, labelLeft - 2);
+    const clearRight = Math.min(timeAxisArea.x + timeAxisArea.width, labelRight + 2);
+    context.fillRect(
+      clearLeft,
+      timeAxisArea.y,
+      clearRight - clearLeft,
+      timeAxisArea.height
+    );
+  }
+  context.fillStyle = state.theme.colors.crosshair;
+  context.fillRect(left, timeAxisArea.y, width, timeAxisArea.height);
+  context.fillStyle = state.theme.colors.tooltip.text;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, left + width / 2, timeAxisArea.y + timeAxisArea.height / 2);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

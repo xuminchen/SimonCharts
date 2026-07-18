@@ -77,6 +77,10 @@ class FakeCanvasContext {
     this.record("restore");
   }
 
+  setLineDash(dash: number[]): void {
+    this.record("setLineDash", [...dash]);
+  }
+
   private record(name: string, ...args: unknown[]): void {
     this.calls.push({ name, args });
   }
@@ -110,10 +114,13 @@ function createLayout(): ChartLayout {
   return {
     width: 140,
     height: 100,
+    leftAxisWidth: 0,
     rightAxisWidth: 40,
     bottomAxisHeight: 20,
+    leftPriceAxisArea: { x: 0, y: 0, width: 0, height: 80 },
     plotArea: { x: 0, y: 0, width: 100, height: 80 },
     priceAxisArea: { x: 100, y: 0, width: 40, height: 80 },
+    volumeArea: { x: 0, y: 80, width: 100, height: 0 },
     timeAxisArea: { x: 0, y: 80, width: 100, height: 20 }
   };
 }
@@ -312,6 +319,57 @@ describe("overlay layers", () => {
       );
     }
   );
+
+  it("renders host-formatted crosshair badges clamped to both axes", () => {
+    const renderContext = createRenderContext(
+      createState({
+        crosshair: createCrosshair({ index: 1, time: 2, price: 100 }),
+        formatTime: () => "A very long host-formatted time"
+      })
+    );
+
+    createCrosshairLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "fillRect")).toEqual([
+      { name: "fillRect", args: [100, 0, 40, 20, "#64748b"] },
+      { name: "fillRect", args: [0, 80, 100, 20, "#ffffff"] },
+      { name: "fillRect", args: [0, 80, 100, 20, "#64748b"] }
+    ]);
+    expect(callsNamed(renderContext, "fillText").map((call) => call.args[0])).toEqual([
+      "100",
+      "A very long host-formatted time"
+    ]);
+  });
+
+  it("clears complete neighboring time ticks before drawing the crosshair badge", () => {
+    const layout: ChartLayout = {
+      ...createLayout(),
+      width: 600,
+      plotArea: { x: 0, y: 0, width: 560, height: 80 },
+      priceAxisArea: { x: 560, y: 0, width: 40, height: 80 },
+      volumeArea: { x: 0, y: 80, width: 560, height: 0 },
+      timeAxisArea: { x: 0, y: 80, width: 560, height: 20 }
+    };
+    const viewport: ViewportState = {
+      ...createViewport(),
+      visibleRange: { from: -20, to: 3 }
+    };
+    const renderContext = createRenderContext(createState({
+      layout,
+      viewport,
+      crosshair: createCrosshair({ index: 2, time: 3 }),
+      formatTime: () => "2026-03-25"
+    }));
+
+    createCrosshairLayer().render(renderContext);
+
+    const timeAxisRects = callsNamed(renderContext, "fillRect")
+      .filter((call) => call.args[1] === 80);
+    expect(timeAxisRects).toEqual([
+      { name: "fillRect", args: [168, 80, 74, 20, "#ffffff"] },
+      { name: "fillRect", args: [184, 80, 82, 20, "#64748b"] }
+    ]);
+  });
 
   it("draws nothing when crosshair is absent", () => {
     const renderContext = createRenderContext();

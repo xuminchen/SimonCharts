@@ -1,9 +1,12 @@
 import {
-  createChartWorkspace,
-  type ChartWorkspace,
-  type ChartWorkspaceOptions
-} from "@simoncharts/chart-workspace";
-import "@simoncharts/chart-workspace/styles.css";
+  advancedChartFeatures,
+  createChart,
+  type ChartInstance,
+  type ChartLocale,
+  type ChartOptions,
+  type ChartTheme
+} from "@simoncharts/charts";
+import "@simoncharts/charts/styles.css";
 import "./styles.css";
 import {
   createFixtureDataSource,
@@ -19,7 +22,8 @@ const counters: HostCounters = {
   activeAnimationFrames: 0,
   activeEventListeners: 0,
   abortedRequests: 0,
-  errors: 0
+  errors: 0,
+  frameCallbackDurations: []
 };
 window.__hostCounters = counters;
 const requests: FixtureRequestLog[] = [];
@@ -74,7 +78,12 @@ window.requestAnimationFrame = (callback) => {
     if (counters.lastSeriesResolvedAt !== undefined && counters.firstFrameAfterSeriesResolvedAt === undefined) {
       counters.firstFrameAfterSeriesResolvedAt = performance.now();
     }
-    callback(time);
+    const started = performance.now();
+    try {
+      callback(time);
+    } finally {
+      counters.frameCallbackDurations.push(performance.now() - started);
+    }
   });
   activeFrames.add(id);
   counters.activeAnimationFrames += 1;
@@ -97,34 +106,43 @@ document.body.append(destroy);
 const params = new URLSearchParams(location.search);
 const controls = readFixtureControls(location.search);
 const dataSource = createFixtureDataSource(controls, counters, requests);
-let workspace: ChartWorkspace | undefined;
+let chart: ChartInstance | undefined;
 
 if (params.get("nonElement") === "1") {
   try {
-    createChartWorkspace(null as unknown as HTMLElement, { workspaceId: "invalid-container", initialSymbol: stock, dataSource });
+    createChart(null as unknown as HTMLElement, { chartId: "invalid-container", persistenceScopeId: "fixture-user", dataContextId: "fixture-current", initialSymbol: stock, datafeed: dataSource });
   } catch (error) {
     document.body.dataset.nonElementError = error instanceof TypeError ? "TypeError" : "UnexpectedError";
   }
 } else {
   const invalid = params.get("invalid");
   const options = {
-    workspaceId: invalid === "workspace" ? "" : "workspace-playground",
+    chartId: invalid === "workspace" ? "" : "workspace-playground",
+    persistenceScopeId: "fixture-user",
+    dataContextId: invalid === "context" ? "" : "fixture-current",
     initialSymbol: invalid === "symbol" ? { ...stock, id: "" } : stock,
-    dataSource: invalid === "datasource" ? {} : dataSource,
+    datafeed: invalid === "datasource" ? {} : dataSource,
+    ...(invalid === "features"
+      ? { features: ["not-a-feature"] }
+      : params.get("minimal") === "1"
+        ? {}
+        : { features: advancedChartFeatures }),
+    theme: (params.get("theme") ?? "dark") as ChartTheme,
+    locale: (params.get("locale") ?? "zh-CN") as ChartLocale,
     onError: () => { counters.errors += 1; }
-  } as ChartWorkspaceOptions;
-  workspace = createChartWorkspace(container, options);
+  } as ChartOptions;
+  chart = createChart(container, options);
   if (invalid) {
-    workspace.setSymbol(stock);
-    workspace.setTimeframe("5m");
-    workspace.setAdjustMode("backward");
-    workspace.retry();
+    chart.setSymbol(stock);
+    chart.setTimeframe("5m");
+    chart.setAdjustMode("backward");
+    chart.retry();
   }
 }
 
 destroy.addEventListener("click", () => {
-  workspace?.destroy();
-  workspace?.destroy();
+  chart?.destroy();
+  chart?.destroy();
 });
 
 declare global {

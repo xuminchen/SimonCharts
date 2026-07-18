@@ -64,16 +64,14 @@ describe("chart engine facade", () => {
     expect(engine.getState().viewport).toEqual(target);
   });
 
-  it("zooms around the center visible candle", () => {
+  it("keeps the latest candle right-aligned when zooming from the latest viewport", () => {
     const engine = createChartEngine({ series: fixtureCandleSeries(200) });
-    const before = engine.getState().viewport;
-    const centerIndex = Math.floor((before.visibleRange.from + before.visibleRange.to) / 2);
 
     engine.dispatch({ type: "zoomIn" });
 
     const after = engine.getState().viewport;
-    expect(after.visibleRange).toEqual({ from: 127, to: 191 });
-    expect(Math.floor((after.visibleRange.from + after.visibleRange.to) / 2)).toBe(centerIndex);
+    expect(after.visibleRange).toEqual({ from: 135, to: 199 });
+    expect(after.scrollOffset).toBe(0);
   });
 
   it("clamps command navigation to the 200-candle series bounds", () => {

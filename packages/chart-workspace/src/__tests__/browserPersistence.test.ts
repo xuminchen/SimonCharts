@@ -3,6 +3,7 @@ import type { ChartSymbol } from "../index";
 import {
   createBrowserPersistence,
   defaultLayoutState,
+  defaultPreferences,
   type BrowserPersistenceErrorHandler
 } from "../persistence/browserPersistence";
 
@@ -21,27 +22,52 @@ const stock: ChartSymbol = { id: "stock:SSE:600000", code: "600000", name: "æµ¦å
 const drawings = [{ id: "d1", type: "trendLine" as const, anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }] }];
 
 describe("browser persistence", () => {
-  it("isolates drawing namespaces by workspace, symbol, and adjustment but not timeframe", () => {
+  it("starts the advanced inspector collapsed", () => {
+    expect(defaultLayoutState.bottomPanel).toMatchObject({ height: 300, collapsed: true, activeTab: "objects" });
+  });
+
+  it("persists timeframe favorites and fills the default favorites into legacy preferences", () => {
     const storage = new MemoryStorage();
-    const persistence = createBrowserPersistence("trs", storage, vi.fn());
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, vi.fn());
+    persistence.savePreferences({
+      ...defaultPreferences,
+      favoriteTimeframes: ["5m", "1d", "intraday"]
+    });
+    expect(persistence.loadPreferences().favoriteTimeframes).toEqual(["5m", "1d", "intraday"]);
+
+    storage.setItem("simoncharts:workspace:v1:trs:user-1:preferences", JSON.stringify({
+      schemaVersion: 1,
+      value: { seriesType: "candles", priceScaleMode: "linear", gridVisible: false }
+    }));
+    expect(persistence.loadPreferences()).toEqual({
+      ...defaultPreferences,
+      gridVisible: false
+    });
+  });
+
+  it("isolates drawings by workspace, persistence scope, data context, symbol, and adjustment but not timeframe", () => {
+    const storage = new MemoryStorage();
+    const persistence = createBrowserPersistence("trs", "user-1", "cutoff:2026-07-16", storage, vi.fn());
     persistence.saveDrawings(stock, "forward", drawings);
 
     expect(persistence.loadDrawings(stock, "forward")).toEqual(drawings);
     expect(persistence.loadDrawings(stock, "backward")).toEqual([]);
     expect(persistence.loadDrawings({ ...stock, id: "stock:SZSE:000001" }, "forward")).toEqual([]);
+    expect(createBrowserPersistence("trs", "user-2", "cutoff:2026-07-16", storage, vi.fn()).loadDrawings(stock, "forward")).toEqual([]);
+    expect(createBrowserPersistence("trs", "user-1", "cutoff:2026-07-15", storage, vi.fn()).loadDrawings(stock, "forward")).toEqual([]);
     expect(storage.entries().map(([key]) => key).join(" ")).not.toContain("1m");
   });
 
   it("discards only a corrupted namespace and reports a safe read error", () => {
     const storage = new MemoryStorage();
     const onError = vi.fn<BrowserPersistenceErrorHandler>();
-    const persistence = createBrowserPersistence("trs", storage, onError);
-    persistence.savePreferences({ seriesType: "candles", priceScaleMode: "linear", gridVisible: false });
-    storage.setItem("simoncharts:workspace:v1:trs:layout", "{bad-json");
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, onError);
+    persistence.savePreferences({ ...defaultPreferences, gridVisible: false });
+    storage.setItem("simoncharts:workspace:v1:trs:user-1:layout", "{bad-json");
 
     expect(persistence.loadLayout()).toEqual(defaultLayoutState);
     expect(persistence.loadPreferences().gridVisible).toBe(false);
-    expect(storage.getItem("simoncharts:workspace:v1:trs:layout")).toBeNull();
+    expect(storage.getItem("simoncharts:workspace:v1:trs:user-1:layout")).toBeNull();
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "STORAGE_READ_FAILED" }));
     expect(onError.mock.calls[0][0]).not.toHaveProperty("context");
   });
@@ -50,7 +76,7 @@ describe("browser persistence", () => {
     const storage = new MemoryStorage();
     storage.setItem = () => { throw new DOMException("quota", "QuotaExceededError"); };
     const onError = vi.fn<BrowserPersistenceErrorHandler>();
-    const persistence = createBrowserPersistence("secret-workspace", storage, onError);
+    const persistence = createBrowserPersistence("secret-workspace", "user-1", "current", storage, onError);
     const layout = structuredClone(defaultLayoutState);
 
     persistence.saveLayout(layout);

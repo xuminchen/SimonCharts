@@ -1,6 +1,7 @@
 import { coreIndicatorDefinitions, type CoreIndicatorDefinition } from "@simoncharts/chart-engine";
-import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartWorkspaceController";
+import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartController";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
+import type { ChartLabels } from "./localization";
 
 function validParams(id: string, params: Record<string, number>): boolean {
   if (Object.values(params).some((value) => !Number.isFinite(value) || value <= 0)) return false;
@@ -18,13 +19,14 @@ export interface IndicatorManager {
   render(viewModel: WorkspaceViewModel): void;
 }
 
-export function createIndicatorManager(): IndicatorManager {
+export function createIndicatorManager(labels: ChartLabels, compact = false): IndicatorManager {
   const element = document.createElement("div");
   element.className = "sc-indicator-manager";
   const open = document.createElement("button");
   open.type = "button";
   open.dataset.testid = "indicator-manager-open";
-  open.textContent = "指标";
+  open.textContent = labels.indicators;
+  open.setAttribute("aria-expanded", "false");
   const popup = document.createElement("div");
   popup.className = "sc-indicator-popup";
   popup.hidden = true;
@@ -40,7 +42,9 @@ export function createIndicatorManager(): IndicatorManager {
   const legends = document.createElement("div");
   legends.className = "sc-indicator-legends";
   popup.append(definitions, editor);
-  element.append(open, popup, legends);
+  if (compact) popup.append(legends);
+  element.append(open, popup);
+  if (!compact) element.append(legends);
   let actions: WorkspaceUiActions | undefined;
   let current: readonly IndicatorConfig[] = [];
   let active: CoreIndicatorDefinition | undefined;
@@ -70,7 +74,10 @@ export function createIndicatorManager(): IndicatorManager {
     element,
     bind(nextActions) {
       actions = nextActions;
-      const toggle = () => { popup.hidden = !popup.hidden; };
+      const toggle = () => {
+        popup.hidden = !popup.hidden;
+        open.setAttribute("aria-expanded", String(!popup.hidden));
+      };
       const click = (event: Event) => {
         const target = event.target as HTMLElement;
         const id = target.closest<HTMLElement>("[data-indicator-id]")?.dataset.indicatorId;
@@ -87,15 +94,33 @@ export function createIndicatorManager(): IndicatorManager {
           const next: IndicatorConfig = { id: active.id, params, visible: true, panelId: active.panelId };
           actions?.setIndicators([...current.filter((config) => config.id !== active!.id), next]);
           popup.hidden = true;
+          open.setAttribute("aria-expanded", "false");
         }
         const hideId = target.closest<HTMLElement>("[data-hide-indicator]")?.dataset.hideIndicator;
-        if (hideId) actions?.setIndicators(current.map((config) => config.id === hideId ? { ...config, visible: false } : config));
+        if (hideId) actions?.setIndicators(current.map((config) => config.id === hideId ? { ...config, visible: !config.visible } : config));
         const removeId = target.closest<HTMLElement>("[data-remove-indicator]")?.dataset.removeIndicator;
         if (removeId) actions?.setIndicators(current.filter((config) => config.id !== removeId));
       };
+      const outside = (event: PointerEvent) => {
+        if (element.contains(event.target as Node)) return;
+        popup.hidden = true;
+        open.setAttribute("aria-expanded", "false");
+      };
+      const escape = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return;
+        popup.hidden = true;
+        open.setAttribute("aria-expanded", "false");
+      };
       open.addEventListener("click", toggle);
       element.addEventListener("click", click);
-      return () => { open.removeEventListener("click", toggle); element.removeEventListener("click", click); };
+      element.ownerDocument.addEventListener("pointerdown", outside);
+      element.ownerDocument.addEventListener("keydown", escape);
+      return () => {
+        open.removeEventListener("click", toggle);
+        element.removeEventListener("click", click);
+        element.ownerDocument.removeEventListener("pointerdown", outside);
+        element.ownerDocument.removeEventListener("keydown", escape);
+      };
     },
     render(viewModel) {
       current = viewModel.indicators;
@@ -103,13 +128,13 @@ export function createIndicatorManager(): IndicatorManager {
       for (const config of current) {
         const legend = document.createElement("span");
         legend.dataset.testid = `indicator-legend-${config.id}`;
-        legend.hidden = !config.visible;
-        legend.textContent = `${config.id} ${Object.values(config.params).join(",")}`;
+        legend.dataset.visible = String(config.visible);
+        legend.textContent = `${config.id} ${Object.values(config.params).join(",")}${config.visible ? "" : " (隐藏)"}`;
         const hide = document.createElement("button");
         hide.type = "button";
         hide.dataset.hideIndicator = config.id;
-        hide.setAttribute("aria-label", `Hide ${config.id}`);
-        hide.textContent = "隐藏";
+        hide.setAttribute("aria-label", `${config.visible ? "Hide" : "Show"} ${config.id}`);
+        hide.textContent = config.visible ? "隐藏" : "显示";
         const remove = document.createElement("button");
         remove.type = "button";
         remove.dataset.removeIndicator = config.id;

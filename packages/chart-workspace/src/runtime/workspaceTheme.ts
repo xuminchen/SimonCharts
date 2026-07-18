@@ -25,7 +25,7 @@ export function readWorkspaceChartTheme(
       panelSeparator: border,
       selectedDrawing: variable(style, "--sc-accent", "#6266f1"),
       hoveredDrawing: variable(style, "--sc-accent", "#6266f1"),
-      tooltip: { background: "#15171c", text, border }
+      tooltip: { background: variable(style, "--sc-surface", "#15171c"), text, border }
     },
     lineDashes: { grid: [1, 3] }
   };

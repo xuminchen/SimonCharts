@@ -44,7 +44,7 @@ describe("price scales", () => {
     expect(scale.basePrice).toBe(100);
     expect(priceToScaleValue(110, scale)).toBeCloseTo(10, 8);
     expect(scaleValueToPrice(10, scale)).toBeCloseTo(110, 8);
-    expect(formatPriceScaleTick(110, scale)).toBe("10.00%");
+    expect(formatPriceScaleTick(110, scale)).toBe("+10.00%");
   });
 
   it("clamps the percentage base index to available candles", () => {

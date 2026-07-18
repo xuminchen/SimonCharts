@@ -506,10 +506,13 @@ const ohlcMagnetTargets = createOhlcMagnetTargetsFromSeries(ohlcMagnetTargetOpti
 const layout: ChartLayout = {
   width: 800,
   height: 480,
+  leftAxisWidth: 0,
   rightAxisWidth: 64,
   bottomAxisHeight: 28,
-  plotArea: { x: 0, y: 0, width: 736, height: 452 },
-  priceAxisArea: { x: 736, y: 0, width: 64, height: 452 },
+  leftPriceAxisArea: { x: 0, y: 0, width: 0, height: 345 },
+  plotArea: { x: 0, y: 0, width: 736, height: 345 },
+  priceAxisArea: { x: 736, y: 0, width: 64, height: 345 },
+  volumeArea: { x: 0, y: 353, width: 736, height: 99 },
   timeAxisArea: { x: 0, y: 452, width: 736, height: 28 }
 };
 const drawingCoordinateContext: DrawingCoordinateContext = {

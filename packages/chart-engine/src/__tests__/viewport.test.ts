@@ -43,7 +43,7 @@ describe("viewport coordinate mapping", () => {
     };
 
     expect(computeVisibleRange(viewport, 100, 200)).toEqual({ from: 75, to: 94 });
-    expect(computeVisibleRange(viewport, 8, 200)).toEqual({ from: 0, to: 7 });
+    expect(computeVisibleRange(viewport, 8, 200)).toEqual({ from: -12, to: 7 });
     expect(computeVisibleRange(viewport, 0, 200)).toEqual({ from: 0, to: -1 });
     expect(computeVisibleRange({ ...viewport, scrollOffset: -5 }, 100, 200)).toEqual({
       from: 80,
@@ -77,6 +77,20 @@ describe("viewport coordinate mapping", () => {
     expect(xToIndex(68, viewport, 40)).toBe(13);
   });
 
+  it("right-aligns the latest candle when the viewport has more slots than data", () => {
+    const viewport = createInitialViewport(8, 200);
+
+    expect(viewport.visibleRange).toEqual({ from: -17, to: 7 });
+    expect(indexToX(7, viewport, 0)).toBe(196);
+
+    const zoomedOut = zoomViewportAtIndex(viewport, 4, 100, 8);
+    expect(zoomedOut.visibleRange.to).toBe(7);
+    expect(zoomedOut.visibleRange.from).toBeLessThan(0);
+    expect(indexToX(7, zoomedOut, 0)).toBeGreaterThanOrEqual(196);
+
+    expect(panViewportByPixels(zoomedOut, 100, 8)).toEqual(zoomedOut);
+  });
+
   it("uses normalized candle width for x mapping", () => {
     const zeroWidthViewport: ViewportState = {
       visibleRange: { from: 10, to: 20 },
@@ -89,12 +103,12 @@ describe("viewport coordinate mapping", () => {
       candleWidth: -4
     };
 
-    expect(indexToX(10, zeroWidthViewport, 40)).toBe(40.5);
-    expect(xToIndex(40.5, zeroWidthViewport, 40)).toBe(10);
+    expect(indexToX(10, zeroWidthViewport, 40)).toBe(40.025);
+    expect(xToIndex(40.025, zeroWidthViewport, 40)).toBe(10);
     expect(Number.isFinite(indexToX(13, zeroWidthViewport, 40))).toBe(true);
     expect(Number.isFinite(xToIndex(43.5, zeroWidthViewport, 40))).toBe(true);
-    expect(indexToX(10, negativeWidthViewport, 40)).toBe(40.5);
-    expect(xToIndex(40.5, negativeWidthViewport, 40)).toBe(10);
+    expect(indexToX(10, negativeWidthViewport, 40)).toBe(40.025);
+    expect(xToIndex(40.025, negativeWidthViewport, 40)).toBe(10);
   });
 
   it("maps max price to top plot area and min price to bottom plot area", () => {
@@ -159,7 +173,7 @@ describe("viewport coordinate mapping", () => {
   });
 
   it("zooms around an anchor index and keeps the anchor visible", () => {
-    const viewport = createInitialViewport(100, 200);
+    const viewport = panViewportByPixels(createInitialViewport(100, 200), 80, 100);
     const anchorIndex = viewport.visibleRange.from + 8;
 
     const zoomedIn = zoomViewportAtIndex(viewport, anchorIndex, -100, 100);
@@ -171,6 +185,14 @@ describe("viewport coordinate mapping", () => {
     expect(zoomedOut.candleWidth).toBeLessThan(zoomedIn.candleWidth);
     expect(zoomedOut.visibleRange.from).toBeLessThanOrEqual(anchorIndex);
     expect(zoomedOut.visibleRange.to).toBeGreaterThanOrEqual(anchorIndex);
+  });
+
+  it("keeps the latest candle right-aligned while zooming from the latest viewport", () => {
+    const viewport = createInitialViewport(100, 200);
+    const zoomed = zoomViewportAtIndex(viewport, viewport.visibleRange.from + 2, -100, 100);
+
+    expect(zoomed.scrollOffset).toBe(0);
+    expect(zoomed.visibleRange.to).toBe(99);
   });
 
   it("pans by whole candle deltas and clamps to available data", () => {

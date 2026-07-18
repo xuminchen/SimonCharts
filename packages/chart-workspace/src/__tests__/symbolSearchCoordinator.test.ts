@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { ChartSymbol, ChartWorkspaceDataSource } from "../index";
+import type { ChartDatafeed, ChartSymbol } from "../index";
 import {
   createSymbolSearchCoordinator,
   type SymbolSearchCoordinatorEvent
 } from "../data/symbolSearchCoordinator";
+
+const unusedCapabilities: ChartDatafeed["getCapabilities"] = async () => ({
+  series: [{ timeframe: "1d", adjustModes: ["none"] }]
+});
 
 describe("symbol search coordinator", () => {
   it("publishes only the newest valid cloned result", async () => {
     let firstResolve!: (value: readonly ChartSymbol[]) => void;
     const first = new Promise<readonly ChartSymbol[]>((resolve) => (firstResolve = resolve));
     const signals: AbortSignal[] = [];
-    const dataSource: ChartWorkspaceDataSource = {
+    const dataSource: ChartDatafeed = {
+      getCapabilities: unusedCapabilities,
       searchSymbols(_query, signal) {
         signals.push(signal);
         return signals.length === 1
@@ -40,7 +45,8 @@ describe("symbol search coordinator", () => {
   });
 
   it("rejects the entire malformed or duplicate result", async () => {
-    const dataSource: ChartWorkspaceDataSource = {
+    const dataSource: ChartDatafeed = {
+      getCapabilities: unusedCapabilities,
       async searchSymbols() {
         return [
           { id: "same", code: "600000", name: "A", exchange: "SSE", kind: "stock" },

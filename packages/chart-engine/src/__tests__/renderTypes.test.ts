@@ -65,6 +65,22 @@ describe("canvas manager render contracts", () => {
     expect(canvas.context.calls).toEqual(["resetTransform", "scale:2:2"]);
   });
 
+  it("does not reallocate an unchanged backing store", () => {
+    const canvas = createFakeCanvas();
+    resizeCanvas(canvas as unknown as HTMLCanvasElement, 320, 180, 2);
+    let width = canvas.width;
+    let writes = 0;
+    Object.defineProperty(canvas, "width", {
+      configurable: true,
+      get: () => width,
+      set(next: number) { writes += 1; width = next; }
+    });
+
+    resizeCanvas(canvas as unknown as HTMLCanvasElement, 320, 180, 2);
+
+    expect(writes).toBe(0);
+  });
+
   it("falls back to a device pixel ratio of 1 for invalid values", () => {
     for (const devicePixelRatio of [0, -2, Infinity, NaN]) {
       const canvas = createFakeCanvas();
@@ -77,23 +93,36 @@ describe("canvas manager render contracts", () => {
     }
   });
 
-  it("reserves right price axis width and bottom time axis height from the plot area", () => {
+  it("separates the price plot, volume panel, and time axis", () => {
     expect(createChartLayout(320, 180)).toEqual({
       width: 320,
       height: 180,
+      leftAxisWidth: 0,
       rightAxisWidth: 64,
       bottomAxisHeight: 28,
+      leftPriceAxisArea: {
+        x: 0,
+        y: 34,
+        width: 0,
+        height: 85
+      },
       plotArea: {
         x: 0,
-        y: 0,
+        y: 34,
         width: 256,
-        height: 152
+        height: 85
       },
       priceAxisArea: {
         x: 256,
-        y: 0,
+        y: 34,
         width: 64,
-        height: 152
+        height: 85
+      },
+      volumeArea: {
+        x: 0,
+        y: 127,
+        width: 256,
+        height: 25
       },
       timeAxisArea: {
         x: 0,
@@ -104,12 +133,30 @@ describe("canvas manager render contracts", () => {
     });
   });
 
+  it("reserves a left price axis only when requested", () => {
+    const layout = createChartLayout(320, 180, { leftPriceAxis: true });
+
+    expect(layout.leftAxisWidth).toBe(64);
+    expect(layout.leftPriceAxisArea).toEqual({ x: 0, y: 34, width: 64, height: 85 });
+    expect(layout.plotArea).toEqual({ x: 64, y: 34, width: 192, height: 85 });
+    expect(layout.priceAxisArea).toEqual({ x: 256, y: 34, width: 64, height: 85 });
+    expect(layout.volumeArea).toEqual({ x: 64, y: 127, width: 192, height: 25 });
+    expect(layout.timeAxisArea).toEqual({ x: 64, y: 152, width: 192, height: 28 });
+  });
+
   it("clamps axis reservations to small layout dimensions", () => {
     expect(createChartLayout(40, 20)).toEqual({
       width: 40,
       height: 20,
+      leftAxisWidth: 0,
       rightAxisWidth: 40,
       bottomAxisHeight: 20,
+      leftPriceAxisArea: {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0
+      },
       plotArea: {
         x: 0,
         y: 0,
@@ -120,6 +167,12 @@ describe("canvas manager render contracts", () => {
         x: 0,
         y: 0,
         width: 40,
+        height: 0
+      },
+      volumeArea: {
+        x: 0,
+        y: 0,
+        width: 0,
         height: 0
       },
       timeAxisArea: {
