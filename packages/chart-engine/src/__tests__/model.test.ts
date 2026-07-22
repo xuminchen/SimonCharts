@@ -4,13 +4,13 @@ import {
   defaultChartSettings,
   defaultChartTheme,
   findCandleByTime,
-  fixtureDailyCandleSeries,
   getCandleAtIndex,
   isValidCandle,
   mergeChartSettings,
   supportedTimeframes
 } from "../index";
 import type { Candle, CandleSeries, HostAdapter, Timeframe, ViewportState } from "../index";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles";
 
 describe("neutral engine model contracts", () => {
   it("publishes the canonical timeframe values", () => {

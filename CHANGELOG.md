@@ -1,5 +1,53 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.26 - 2026-07-22
+
+- Added opt-in, read-only host-owned execution marks with A-share red-buy/green-sell arrows, B/S/T labels, real-timeframe placement, same-candle grouping and stacking, and complete hover/click/touch details without constructing trades or inferring T classifications.
+- Accepted the immutable 34-file artifact after Engine `69 files / 1,107 tests`, Charts `14 files / 131 tests`, and Charts Chrome/Edge `42/42` per browser; SHA-256 is `44fca92c30e9ef1dc200e07c56a1e90f612cead15cd4aa10fb47cb899b72f616`.
+
+## @simoncharts/charts 1.0.0-rc.25 - 2026-07-19
+
+- Reissued the rc.24 runtime unchanged with a self-consistent packaged README and final package version; rc.24 remains immutable intermediate history.
+- Accepted the immutable 33-file artifact after Vitest `68 files / 1,089 tests`, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, and Charts unit `13 files / 115 tests`; SHA-256 is `655aa6a0fff8ae3c755e07a41a381c956d19cb9f04dde066d730dc1dab73ce38`, SHA-512 is `e635f6e0489181daeed084f5e9dc8118df7db0db85a35eb3d7038060fb59009399565d0072b17184703761c0fa01414d7e06e4d327dd1d22df6551f5d3d582a6`.
+
+## @simoncharts/charts 1.0.0-rc.24 - 2026-07-19
+
+- Kept a one-day intraday percentage axis at the host's nominal daily limit while real highs and lows stay inside it; when tick-size rounding produces a real excursion beyond that limit, the axis now expands symmetrically to the next 0.1 percentage point after a 0.1-point drawing margin.
+- Added direct regression coverage for the reported `9.65 → 10.62` (`+10.0518%`) case and the equivalent downside case without changing multi-day auto-scaling or fabricating market data.
+- Accepted the immutable 33-file artifact after Vitest `68 files / 1,089 tests`, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, and Charts unit `13 files / 115 tests`; SHA-256 is `476b2bc2484f5fdb9583ef68fc9de123c9767811bca9828fa18da0558a9f4b26`, SHA-512 is `8e8ed08f4073ab45e6a65aebad54e7b27b2950c7982042f629c083a780699329daaa252364936ef67f246299a60bb0827cf4df574e4faa021d786a0b591ccef6`.
+
+## @simoncharts/charts 1.0.0-rc.23 - 2026-07-19
+
+- Fixed baseline-free intraday windows so their price line is no longer neutral: the official pre-window close remains preferred, while shorter real history uses the first real candle open solely for direction color and keeps the raw-price axis.
+- Added a regression for the reported `000062`-style falling multi-day window without creating candles or a percentage baseline.
+- Accepted the immutable 33-file artifact after Vitest `68 files / 1,088 tests`, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, and Charts unit `13 files / 114 tests`; SHA-256 is `461d3e607212e13f1aefe8f51f4b12beb50e6302b333f07693fec9fc8aaaa9cd`, SHA-512 is `a24dd4c8b495a85e030bb4d964b1fa2630352327ffdb943276604fa03df787a549bf464aa84b06bf4e190d4edf001c93a949022370414aaf01dc222c13f89066`.
+
+## @simoncharts/charts 1.0.0-rc.22 - 2026-07-19
+
+- Rebuilt real multi-day intraday presentation around equal-width trading-day slots with 242 center-aligned session slots per day, compressed lunch without overlap, real day-boundary separators, and one continuous price path; missing days or minutes are never filled.
+- Added the yellow intraday average as each Shanghai trading day's reset cumulative turnover divided by cumulative volume, kept one red/green direction color for the visible price window, and made the real price, average, volume, crosshair, and symmetric percentage axis share the same coordinates.
+- Accepted the immutable 33-file artifact after Vitest `68 files / 1,087 tests`, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, Charts unit `13 files / 114 tests`, Engine `162` runtime exports / `415` type symbols, and Charts `5` runtime exports / `4` declaration files; SHA-256 is `f87be50ae320476e8a9d69329f28d6d0c84bc7d30f1c1ba0b9e7cc1a24e37238`, SHA-512 is `b3e5180a7b97d1f5f8975224125f0552a42fb6fc010c3fe47e4cc0ccd8870ef39660f29a141fde1ce21b00c86246a4a87a9487dae30617d137001c4c9889f20a`.
+
+## @simoncharts/charts 1.0.0-rc.21 - 2026-07-19
+
+- Removed the production `fixtureDailyCandleSeries` export and implementation. The SDK now ships no market-data fixture or generator and only renders candles supplied by the host; an empty real response remains empty.
+- Kept deterministic candle fixtures only in tests, scripts, and the private playground harness, outside the production package and runtime path.
+- Accepted the immutable 32-file artifact after Vitest `67 files / 1,078 tests`, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, Charts unit `12 files / 110 tests`, Engine `162` runtime exports / `414` type symbols, and Charts `5` runtime exports / `4` declaration files; SHA-256 is `99951711a609c7575d84fe90d4d9195c97d8ac37dfbf3b2d982dacf25c8d9f51`, SHA-512 is `af1fb2a0100ef1b189508adb8ff1e867fb47e20a6dc250042369087af48f40ed8ea6a177d0d8c8ea6916d7456372adcb792e6682e6788b4d7979e95fc5d8f190`.
+
+## @simoncharts/charts 1.0.0-rc.20 - 2026-07-19
+
+- Bounded ordinary K-line zoom-out to a responsive maximum of `floor(plotWidth / 2)` visible candles and a minimum two-pixel candle width, preventing negative range indexes, virtual blank dates, and compressed full-history plots.
+- Fitted the first and last actual candle/date edges to the plot boundaries at the zoom-out limit and made further zoom-out idempotent; wheel, keyboard, time-axis drag, resize, and public `setVisibleRange` now share the same constraint, while one-to-nine-day intraday remains fully fitted and zoom-locked.
+- Accepted the immutable 32-file artifact after Vitest `67 files / 1,078 tests`, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, five runtime exports, four declaration files, TypeScript, artifact and external-consumer gates; SHA-256 is `2d3e22295144ee828119269689e73bf9c04e8230a152c6587e6d57ceadbbc3a6`, SHA-512 is `50db22816ddcd456677070044a6573cfd886ef394bd328236b0d465b9b92807e52c33f0c832faafb799cbef7138c642091c262c4520fd8d6ac94b887f92d406f`.
+
+## @simoncharts/charts 1.0.0-rc.19 - 2026-07-19
+
+- Limited persistent period shortcuts to four in fixed product order and display `最多固定 4 个周期，请先取消一个` when a fifth is requested; unsupported pinned rows remain visible so users can unpin them.
+- Fixed intraday and 2–9 day intraday to line views while ordinary periods default to candles, and gave all 17 bilingual series choices visible semantic SVG icons.
+- Extended the vertical crosshair through the separate volume region, added change data to ordinary K-line headers, and expanded the localized candle hover panel with date, OHLC, change, amplitude, position, volume, and turnover.
+- Added visible semantic SVG icons and bilingual grouped menus for all 63 real drawing tools, without advertising tools that the engine cannot create, edit, serialize, and restore; also propagated locale consistently through the shell and chart region.
+- Accepted the immutable 32-file artifact after Vitest `67 files / 1,074 tests`, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, five runtime exports, four declaration files, TypeScript, artifact and external-consumer gates; SHA-256 is `617512f5f9ce17ca5d4dea08e68ba7fcbf66d0cf1e3664579d8b309290993c45`, SHA-512 is `8ac7d11bb640fa2a21adc530970fa81766b4da13adf53683d8d9e812c6095fa44ec52c23ed91e99396326b21ccdf53f31f98756f134e7db9c723e9b922420eb0`.
+
 ## @simoncharts/charts 1.0.0-rc.18 - 2026-07-18
 
 - Added a complete period dropdown with persistent starred shortcuts rendered in fixed product order; defaults remain `15m / 60m / 1d / intraday`.

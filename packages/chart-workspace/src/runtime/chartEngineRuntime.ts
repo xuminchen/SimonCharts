@@ -4,7 +4,7 @@ import {
   createBandVisualRenderer,
   createChartEngine,
   createChartLayout,
-  computeVisibleRange,
+  constrainViewportToWidth,
   createDefaultDrawingRendererRegistry,
   createDrawingEditor,
   createDrawingLayer,
@@ -46,22 +46,35 @@ import {
   type DrawingMoveDragOperation,
   type DrawingEditorTool,
   type DrawingObject,
+  type IndicatorMarkerOutput,
   type IndicatorVisualOutput,
+  type MovingAveragePoint,
   type PriceScale,
   type PriceScaleMode,
   type RenderMetrics,
   type SeriesRenderModel,
   type SeriesType,
   type StatefulSeriesTransformType,
+  type TimeCoordinateMap,
+  type VisualTooltipRow,
   type ViewportState
 } from "@simoncharts/chart-engine";
-import type { Candle, ChartVisibleRange } from "../contracts";
+import type { Candle, ChartExecution, ChartVisibleRange } from "../contracts";
 import type { MaterializedSeries } from "../data/materializedSeries";
 import { shanghaiTradingDayKey } from "../data/pagedSeriesStore";
 import type { CalculationStatus, CheckpointedCalculationRuntime } from "./checkpointedCalculationRuntime";
 import type { IndicatorConfig } from "./indicatorRuntime";
+import {
+  calculateFixedIntradayPercentExtent,
+  calculateIntradayAverage,
+  createIntradayTimeCoordinates
+} from "./intradayPresentation";
 import { formatShanghaiTime } from "./shanghaiTimeFormatter";
 import { readWorkspaceChartTheme } from "./workspaceTheme";
+import {
+  createExecutionMarkerOutput,
+  executionTooltipRows
+} from "./executionMarks";
 
 export interface WorkspaceRuntimeMetrics extends RenderMetrics {
   maxMaterializedCandleCount: number;
@@ -90,6 +103,15 @@ export interface DataWindowSnapshot {
   intradaySummary?: DataWindowIntradaySummary;
 }
 
+export interface ExecutionTooltipSnapshot {
+  readonly markId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly title?: string;
+  readonly rows: VisualTooltipRow[];
+  readonly pinned: boolean;
+}
+
 export interface ChartEngineRuntime {
   setMaterializedSeries(input: MaterializedSeries, anchorTime?: number): void;
   getMaterializationDemand(): Readonly<MaterializationDemand>;
@@ -98,6 +120,8 @@ export interface ChartEngineRuntime {
   resetToLatest(): void;
   setSeriesType(type: SeriesType): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
+  setExecutions(executions: readonly ChartExecution[]): void;
+  setExecutionsVisible(visible: boolean): void;
   setPriceScaleMode(mode: PriceScaleMode): void;
   setDrawings(drawings: readonly DrawingObject[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
@@ -127,6 +151,7 @@ export interface ChartEngineRuntimeOptions {
   onVisibleRangeChanged?: (range: Readonly<ChartVisibleRange>) => void;
   onCalculationStatusChanged?: (status: CalculationStatus) => void;
   onDataWindowChanged?: (snapshot: DataWindowSnapshot | undefined) => void;
+  onExecutionTooltipChanged?: (snapshot: ExecutionTooltipSnapshot | undefined) => void;
   onDrawingsChanged?: (drawings: readonly DrawingObject[], selectedDrawingIds: readonly string[]) => void;
   onDrawingHistoryChanged?: (state: { canUndo: boolean; canRedo: boolean }) => void;
   onRenderError?: (error: unknown) => void;
@@ -175,6 +200,11 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let viewport = createInitialViewport(0, 1);
   let layout = createChartLayout(1, 1);
   let visualOutputs: IndicatorVisualOutput[] = [];
+  let executionOutput: IndicatorMarkerOutput | undefined;
+  let executions: readonly ChartExecution[] = [];
+  let executionsVisible = true;
+  let executionTooltip: Omit<ExecutionTooltipSnapshot, "pinned"> | undefined;
+  let executionTooltipPinned = false;
   let indicatorConfigs: readonly IndicatorConfig[] = [];
   let seriesModel: SeriesRenderModel | undefined;
   let crosshair: ChartCrosshairState | undefined;
@@ -191,6 +221,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let lastDataWindowIndex: number | undefined;
   let dataWindowVisible = false;
   let currentIntradaySummary: DataWindowIntradaySummary | undefined;
+  let intradayAverage: MovingAveragePoint[] | undefined;
+  let timeCoordinates: TimeCoordinateMap | undefined;
   let lastVisibleRangeKey = "";
   let lastMaterializationDemandKey = "";
   const emptySeries = { symbol: "", timeframe: "1d" as const, adjustMode: "none" as const, dataVersion: "", candles: [] };
@@ -222,12 +254,27 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let drawingEditor: DrawingEditor;
 
   const intradayLocked = (): boolean => materialized?.intradayDays !== undefined;
+  const activeVisualOutputs = (): IndicatorVisualOutput[] => executionOutput === undefined
+    ? visualOutputs
+    : [...visualOutputs, executionOutput];
+
+  const syncVisualOutputs = (): void => {
+    chartEngine.setVisualOutputs(activeVisualOutputs());
+  };
+
+  const rebuildExecutionOutput = (): void => {
+    executionOutput = materialized === undefined || !executionsVisible
+      ? undefined
+      : createExecutionMarkerOutput(executions, materialized.series.candles, materialized.series.timeframe);
+    syncVisualOutputs();
+  };
 
   const coordinateContext = () => ({
     series: chartEngine.getState().series,
     viewport,
     plotArea: layout.plotArea,
-    priceScale
+    priceScale,
+    ...(timeCoordinates === undefined ? {} : { timeCoordinates })
   });
   const emitDrawingHistoryState = (): void => {
     const capabilities = drawingEditor.getCapabilities();
@@ -318,12 +365,12 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     layout = nextLayout;
     const series = chartEngine.getState().series;
     if (changed) {
+      timeCoordinates = materialized?.intradayDays === undefined
+        ? undefined
+        : createIntradayTimeCoordinates(materialized.series.candles, layout.plotArea.width);
       viewport = materialized !== undefined && intradayLocked()
         ? { ...initialViewportFor(materialized), priceScaleMode: viewport.priceScaleMode }
-        : {
-            ...viewport,
-            visibleRange: computeVisibleRange(viewport, series.candles.length, layout.plotArea.width)
-          };
+        : constrainViewportToWidth(viewport, series.candles.length, layout.plotArea.width);
       chartEngine.setViewport(viewport);
       rebuildInteraction();
       options.onViewportChanged?.(viewport);
@@ -340,19 +387,24 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       state.series,
       viewport.visibleRange,
       intradayScale === undefined ? viewport.priceScaleMode : "percentage",
-      visualOutputs,
-      []
+      activeVisualOutputs(),
+      intradayAverage === undefined ? [] : [intradayAverage]
     );
     if (intradayScale === undefined) {
       priceScale = manualPriceScale ?? automatic;
     } else if (manualPriceScale !== undefined) {
       priceScale = manualPriceScale;
     } else if (intradayScale.priceLimitPercent !== undefined) {
+      const extent = calculateFixedIntradayPercentExtent(
+        state.series.candles,
+        intradayScale.previousClose,
+        intradayScale.priceLimitPercent
+      );
       priceScale = {
         mode: "percentage",
         basePrice: intradayScale.previousClose,
-        min: -intradayScale.priceLimitPercent,
-        max: intradayScale.priceLimitPercent
+        min: -extent,
+        max: extent
       };
     } else {
       const referenced: PriceScale = {
@@ -361,10 +413,19 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         min: 0,
         max: 1
       };
+      const referencedMin = priceToScaleValue(
+        scaleValueToPrice(automatic.min, automatic),
+        referenced
+      );
+      const referencedMax = priceToScaleValue(
+        scaleValueToPrice(automatic.max, automatic),
+        referenced
+      );
+      const extent = Math.max(Math.abs(referencedMin), Math.abs(referencedMax));
       priceScale = {
         ...referenced,
-        min: priceToScaleValue(scaleValueToPrice(automatic.min, automatic), referenced),
-        max: priceToScaleValue(scaleValueToPrice(automatic.max, automatic), referenced)
+        min: -extent,
+        max: extent
       };
     }
     interaction?.setPriceScale(priceScale);
@@ -412,6 +473,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       plotLeft: layout.plotArea.x,
       plotTop: layout.plotArea.y,
       plotHeight: layout.plotArea.height,
+      ...(timeCoordinates === undefined ? {} : { timeCoordinates }),
       onEvent(event) {
         if (event.type === "viewportChanged") {
           applyViewport(event.viewport, "viewportChanged", false);
@@ -488,17 +550,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       syncLayout();
       const state = chartEngine.getState();
       const theme = readWorkspaceChartTheme(options.themeRoot, options.getComputedStyle?.(options.themeRoot));
-      const subPanelIds = [...new Set(visualOutputs.map((output) => output.panelId).filter((id): id is string => id !== undefined && id !== "main"))];
-      const panels = createPanelLayout({
-        width: layout.width,
-        height: layout.height,
-        rightAxisWidth: layout.rightAxisWidth,
-        bottomAxisHeight: layout.bottomAxisHeight,
-        panels: [
-          { id: "main", kind: "main", label: "Main", heightRatio: 3 },
-          ...subPanelIds.map((id) => ({ id, kind: "sub" as const, label: id, heightRatio: 1 }))
-        ]
-      });
+      const panels = createPanels();
+      const outputs = activeVisualOutputs();
       const renderState = {
         series: state.series,
         seriesType: state.seriesType,
@@ -509,16 +562,27 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         theme,
         layout,
         panels,
-        visualOutputs,
+        visualOutputs: outputs,
         drawings: state.drawings,
         selectedDrawingIds: drawingEditor.getState().selectedDrawingIds,
         hoveredDrawingId,
         crosshair,
+        ...(executionTooltip === undefined
+          ? {}
+          : { visualTooltip: options.onExecutionTooltipChanged === undefined
+              ? executionTooltip
+              : { x: executionTooltip.x, y: executionTooltip.y, rows: [] } }),
+        ...(intradayAverage === undefined ? {} : { movingAverages: [intradayAverage] }),
+        ...(timeCoordinates === undefined ? {} : { timeCoordinates }),
+        locale: options.themeRoot.lang === "en-US" ? "en-US" as const : "zh-CN" as const,
         ...(materialized?.intradayDays === undefined
           ? {}
           : { intradayDays: materialized.intradayDays })
       };
       if (pass === "overlay") {
+        options.onExecutionTooltipChanged?.(executionTooltip === undefined
+          ? undefined
+          : { ...executionTooltip, pinned: executionTooltipPinned });
         const context = resizeCanvas(options.overlayCanvas, layout.width, layout.height, options.devicePixelRatio ?? 1);
         renderOverlay({ context, state: renderState });
       } else if (pass === "static") {
@@ -531,6 +595,77 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     } catch (error) {
       options.onRenderError?.(error);
     }
+  }
+
+  function createPanels() {
+    const subPanelIds = [...new Set(visualOutputs.map((output) => output.panelId).filter((id): id is string => id !== undefined && id !== "main"))];
+    return createPanelLayout({
+        width: layout.width,
+        height: layout.height,
+        rightAxisWidth: layout.rightAxisWidth,
+        bottomAxisHeight: layout.bottomAxisHeight,
+        panels: [
+          { id: "main", kind: "main", label: "Main", heightRatio: 3 },
+          ...subPanelIds.map((id) => ({ id, kind: "sub" as const, label: id, heightRatio: 1 }))
+        ]
+      }).map((panel) => panel.id === "main"
+        ? { ...panel, plotArea: { ...layout.plotArea }, priceAxisArea: { ...layout.priceAxisArea } }
+        : panel);
+  }
+
+  function executionMarkAt(point: { x: number; y: number }) {
+    if (executionOutput === undefined) return undefined;
+    const state = chartEngine.getState();
+    const theme = readWorkspaceChartTheme(options.themeRoot, options.getComputedStyle?.(options.themeRoot));
+    const panels = createPanels();
+    const panel = panels.find((candidate) => candidate.id === "main");
+    if (!panel) return undefined;
+    const renderer = visualRegistry.require("marker");
+    const hit = renderer.hitTest({
+      output: executionOutput,
+      panel,
+      state: {
+        series: state.series,
+        viewport,
+        priceScale,
+        formatTime: formatShanghaiTime,
+        theme,
+        layout,
+        panels,
+        visualOutputs: activeVisualOutputs(),
+        ...(timeCoordinates === undefined ? {} : { timeCoordinates })
+      },
+      valueScale: priceScale,
+      valueRange: renderer.getAutoscale(executionOutput)
+    }, point.x, point.y);
+    return hit?.distance !== undefined && hit.distance <= 14
+      ? executionOutput.marks.find((mark) => mark.id === hit.itemId)
+      : undefined;
+  }
+
+  function updateExecutionTooltip(point: { x: number; y: number }, pinned = false): boolean {
+    const mark = executionMarkAt(point);
+    if (!mark) {
+      if (!executionTooltipPinned) clearExecutionTooltip();
+      return false;
+    }
+    executionTooltipPinned = pinned;
+    executionTooltip = {
+      markId: mark.id,
+      x: point.x,
+      y: point.y,
+      ...(mark.label === undefined ? {} : { title: mark.label }),
+      rows: executionTooltipRows(mark, options.themeRoot.lang === "en-US" ? "en-US" : "zh-CN")
+    };
+    scheduler.invalidate({ layers: ["tooltip"], reason: "executionTooltipChanged" });
+    return true;
+  }
+
+  function clearExecutionTooltip(): void {
+    if (executionTooltip === undefined && !executionTooltipPinned) return;
+    executionTooltip = undefined;
+    executionTooltipPinned = false;
+    scheduler.invalidate({ layers: ["tooltip"], reason: "executionTooltipClosed" });
   }
 
   function invalidateDrawingInteraction(reason: string): void {
@@ -649,7 +784,11 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const candles = chartEngine.getState().series.candles;
     if (candles.length === 0) return;
     const anchor = Math.floor((viewport.visibleRange.from + viewport.visibleRange.to) / 2);
-    applyViewport(zoomViewportAtIndex(viewport, anchor, deltaY, candles.length), "keyboardZoom", true);
+    applyViewport(
+      zoomViewportAtIndex(viewport, anchor, deltaY, candles.length, layout.plotArea.width),
+      "keyboardZoom",
+      true
+    );
   }
 
   function panChart(deltaX: number, reason: string): void {
@@ -743,7 +882,14 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
 
   function initialViewportFor(input: MaterializedSeries): ViewportState {
     const initial = createInitialViewport(input.series.candles.length, layout.plotArea.width);
-    if (input.intradayDays === undefined || input.series.candles.length === 0) return initial;
+    if (input.intradayDays === undefined) {
+      return constrainViewportToWidth(
+        initial,
+        input.series.candles.length,
+        layout.plotArea.width
+      );
+    }
+    if (input.series.candles.length === 0) return initial;
     return {
       ...initial,
       candleWidth: Math.max(0.05, layout.plotArea.width / input.series.candles.length),
@@ -782,6 +928,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const event = raw as PointerEvent;
     const p = point(event);
     options.overlayCanvas.focus?.({ preventScroll: true });
+    if (updateExecutionTooltip(p, true)) return;
+    clearExecutionTooltip();
     if (intradayLocked() && (p.x >= layout.priceAxisArea.x || p.y >= layout.timeAxisArea.y)) {
       return;
     }
@@ -808,6 +956,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const event = raw as PointerEvent;
     if (activePointerId !== undefined && event.pointerId !== activePointerId) return;
     const p = point(event);
+    if (activePointerId === undefined && !executionTooltipPinned && event.pointerType !== "touch") {
+      updateExecutionTooltip(p);
+    }
     session.handleInput(activePointerId === undefined
       ? { type: "pointerMove", point: p }
       : { type: "pointerDrag", point: p });
@@ -832,14 +983,15 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         Math.min(48, timeAxisDrag.viewport.candleWidth * Math.exp((p.x - timeAxisDrag.startX) / 160))
       );
       const next = { ...timeAxisDrag.viewport, candleWidth };
-      applyViewport({
-        ...next,
-        visibleRange: computeVisibleRange(
+      applyViewport(
+        constrainViewportToWidth(
           next,
           chartEngine.getState().series.candles.length,
           layout.plotArea.width
-        )
-      }, "timeAxisScaled", true);
+        ),
+        "timeAxisScaled",
+        true
+      );
       return;
     }
     if (handleDrawingPointerMove(p)) return;
@@ -876,7 +1028,10 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     if (!expectedLostPointerIds.delete(event.pointerId)) finishPointer(event, true);
   }) as EventListener);
   listen("pointerleave", (() => {
-    if (activePointerId === undefined) cancelPointerInteraction("leave");
+    if (activePointerId === undefined) {
+      if (!executionTooltipPinned) clearExecutionTooltip();
+      cancelPointerInteraction("leave");
+    }
   }) as EventListener);
   listen("blur", (() => cancelPointerInteraction("blur")) as EventListener);
   listen("wheel", ((raw: Event) => {
@@ -936,7 +1091,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       const results = await options.calculationRuntime.calculateIndicators({ selection: materialized.selection, configs, targetTimes: new Set(materialized.series.candles.map((candle) => candle.time)), generation });
       if (destroyed || generation !== indicatorGeneration) return;
       visualOutputs = [...results.values()].flatMap((result) => result.outputs);
-      chartEngine.setVisualOutputs(visualOutputs);
+      syncVisualOutputs();
       updatePriceScale();
       lastDataWindowIndex = undefined;
       emitDataWindow(true);
@@ -973,8 +1128,16 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       lastDataWindowIndex = undefined;
       materialized = input;
       currentIntradaySummary = summarizeLatestIntradayDay(input);
+      intradayAverage = input.intradayDays === undefined
+        ? undefined
+        : calculateIntradayAverage(input.series.candles);
+      timeCoordinates = input.intradayDays === undefined
+        ? undefined
+        : createIntradayTimeCoordinates(input.series.candles, layout.plotArea.width);
       maxMaterializedCandleCount = Math.max(maxMaterializedCandleCount, input.series.candles.length);
       chartEngine.setSeries(input.series);
+      clearExecutionTooltip();
+      rebuildExecutionOutput();
       const nextAnchorIndex = anchorTime === undefined
         ? -1
         : input.series.candles.findIndex((candle) => candle.time === anchorTime);
@@ -984,17 +1147,21 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         previousAnchorIndex >= 0 &&
         nextAnchorIndex >= 0
       ) {
-        const visibleCount = Math.max(1, viewport.visibleRange.to - viewport.visibleRange.from + 1);
+        const visibleCount = Math.min(
+          input.series.candles.length,
+          Math.max(1, viewport.visibleRange.to - viewport.visibleRange.from + 1)
+        );
         const allCandlesVisible = visibleCount >= input.series.candles.length;
         const maximumFrom = input.series.candles.length - visibleCount;
         const from = allCandlesVisible
-          ? maximumFrom
+          ? 0
           : Math.min(maximumFrom, Math.max(0, nextAnchorIndex - previousAnchorOffset));
         const to = allCandlesVisible
           ? input.series.candles.length - 1
           : from + visibleCount - 1;
         viewport = {
           ...viewport,
+          candleWidth: layout.plotArea.width / visibleCount,
           scrollOffset: Math.max(0, input.series.candles.length - 1 - to),
           visibleRange: { from, to }
         };
@@ -1035,13 +1202,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         }
       }
       if (from < 0 || to < from) return false;
-      const visibleCount = to - from + 1;
-      viewport = {
+      const requestedVisibleCount = to - from + 1;
+      viewport = constrainViewportToWidth({
         ...viewport,
-        candleWidth: Math.max(2, Math.min(48, layout.plotArea.width / visibleCount)),
+        candleWidth: layout.plotArea.width / requestedVisibleCount,
         scrollOffset: candles.length - 1 - to,
         visibleRange: { from, to }
-      };
+      }, candles.length, layout.plotArea.width);
       chartEngine.setViewport(viewport);
       rebuildInteraction();
       options.onViewportChanged?.(viewport);
@@ -1078,6 +1245,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       });
     },
     setIndicators(configs) { if (destroyed) return; indicatorConfigs = configs.map((config) => structuredClone(config)); indicatorGeneration += 1; void calculateIndicators(indicatorConfigs, indicatorGeneration); },
+    setExecutions(nextExecutions) { if (destroyed) return; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals", "tooltip"], reason: "executionsChanged" }); },
+    setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals", "tooltip"], reason: "executionVisibilityChanged" }); },
     setPriceScaleMode(mode) { if (destroyed) return; manualPriceScale = undefined; viewport = { ...viewport, priceScaleMode: mode }; chartEngine.dispatch({ type: "setPriceScaleMode", mode }); rebuildInteraction(); scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"], reason: "priceScaleChanged" }); },
     setDrawings(drawings) { if (destroyed) return; drawingHandleDragOperation = undefined; drawingMoveDragOperation = undefined; hoveredDrawingId = undefined; drawingEditor = createEditor(drawings); syncDrawings(); emitDrawingHistoryState(); },
     setDrawingTool(tool) { if (destroyed) return; drawingEditor.setTool(tool); },
@@ -1089,6 +1258,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     getMetrics() { return { ...scheduler.getState().metrics, maxMaterializedCandleCount }; },
     destroy() {
       if (destroyed) return;
+      options.onExecutionTooltipChanged?.(undefined);
       destroyed = true;
       indicatorGeneration += 1;
       seriesGeneration += 1;

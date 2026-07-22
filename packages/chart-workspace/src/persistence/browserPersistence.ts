@@ -33,6 +33,7 @@ export interface WorkspaceLayoutState {
 }
 
 export type FavoriteTimeframe = Timeframe | "intraday";
+export const maxFavoriteTimeframes = 4;
 
 export interface WorkspacePreferences {
   readonly seriesType: SeriesType;
@@ -212,7 +213,8 @@ export function createBrowserPersistence(
       const stored = read<StoredWorkspacePreferences>(preferencesKey, defaultPreferences, isPreferences);
       return {
         ...stored,
-        favoriteTimeframes: stored.favoriteTimeframes ?? defaultPreferences.favoriteTimeframes
+        favoriteTimeframes: (stored.favoriteTimeframes ?? defaultPreferences.favoriteTimeframes)
+          .slice(0, maxFavoriteTimeframes)
       };
     },
     savePreferences: (value) => write(preferencesKey, value),

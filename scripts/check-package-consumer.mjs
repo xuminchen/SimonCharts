@@ -44,12 +44,12 @@ import {
   validateChartExtension,
   deserializeDrawingObject,
   engineApiVersion,
-  fixtureDailyCandleSeries,
   serializeDrawingObject,
   supportedPriceScaleModes,
   supportedTimeframes,
   transformSeriesChunk
 } from "@simoncharts/chart-engine";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles.mjs";
 
 const engine = createChartEngine({
   series: fixtureDailyCandleSeries,

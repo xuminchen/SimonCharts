@@ -39,6 +39,9 @@ class FakeCanvasContext {
   strokeStyle = "";
   lineWidth = 1;
   globalAlpha = 1;
+  font = "";
+  textAlign: CanvasTextAlign = "start";
+  textBaseline: CanvasTextBaseline = "alphabetic";
 
   beginPath(): void {
     this.record("beginPath");
@@ -51,6 +54,10 @@ class FakeCanvasContext {
   lineTo(x: number, y: number): void {
     this.record("lineTo", x, y);
   }
+
+  closePath(): void { this.record("closePath"); }
+
+  fillText(text: string, x: number, y: number): void { this.record("fillText", text, x, y); }
 
   rect(x: number, y: number, width: number, height: number): void {
     this.record("rect", x, y, width, height);
@@ -366,6 +373,66 @@ describe("visual renderers", () => {
     expect(histogramRects[0].args[4]).toBe("#abcdef");
     expect(histogramRects[1].args[4]).toBe(defaultChartTheme.colors.volume);
     expect(markerFill.args[0]).toBe("#ff00ff");
+  });
+
+  it("renders immutable executions as A-share direction arrows with labels", () => {
+    const output: IndicatorVisualOutput = {
+      id: "executions",
+      label: "Executions",
+      type: "marker",
+      panelId: "main",
+      marks: [
+        { id: "buy", time: 2, price: 12, direction: "below", label: "T买 ×2", metadata: { kind: "execution", stackIndex: 0 } },
+        { id: "buy-stacked", time: 2, price: 12, direction: "below", label: "B", metadata: { kind: "execution", stackIndex: 1 } },
+        { id: "sell", time: 3, price: 13, direction: "above", label: "S", metadata: { kind: "execution" } }
+      ]
+    };
+    const context = createVisualContext(output);
+    const fake = context.context as unknown as FakeCanvasContext;
+
+    const renderer = createMarkerVisualRenderer();
+    renderer.render(context);
+
+    expect(callsNamed(fake, "arc")).toHaveLength(0);
+    expect(callsNamed(fake, "fill").map((call) => call.args[0])).toEqual([
+      defaultChartTheme.colors.bullishCandle,
+      defaultChartTheme.colors.bullishCandle,
+      defaultChartTheme.colors.bearishCandle
+    ]);
+    expect(callsNamed(fake, "fillText").map((call) => call.args[0])).toEqual(["T买 ×2", "B", "S"]);
+    expect(callsNamed(fake, "fillText")[1]!.args[2]).not.toBe(callsNamed(fake, "fillText")[0]!.args[2]);
+    const buyLabel = callsNamed(fake, "fillText")[0]!;
+    expect(renderer.hitTest(context, Number(buyLabel.args[1]), Number(buyLabel.args[2]) - 8)?.itemId)
+      .toBe("buy");
+  });
+
+  it("keeps stacked execution arrows and hit targets inside the main plot", () => {
+    const output: IndicatorVisualOutput = {
+      id: "executions",
+      label: "Executions",
+      type: "marker",
+      panelId: "main",
+      marks: [
+        { id: "buy", time: 1, price: 8, direction: "below", label: "B", metadata: { kind: "execution", stackIndex: 0 } },
+        { id: "buy-stacked", time: 1, price: 8, direction: "below", label: "T买", metadata: { kind: "execution", stackIndex: 1 } },
+        { id: "sell", time: 5, price: 16, direction: "above", label: "S", metadata: { kind: "execution", stackIndex: 0 } }
+      ]
+    };
+    const context = createVisualContext(output);
+    const fake = context.context as unknown as FakeCanvasContext;
+    const renderer = createMarkerVisualRenderer();
+
+    renderer.render(context);
+
+    const labels = callsNamed(fake, "fillText");
+    const plot = context.panel.plotArea;
+    expect(labels.every((call) => Number(call.args[2]) >= plot.y && Number(call.args[2]) <= plot.y + plot.height)).toBe(true);
+    expect(new Set(labels.slice(0, 2).map((call) => call.args[2])).size).toBe(2);
+    for (const label of labels) {
+      const itemId = label.args[0] === "B" ? "buy" : label.args[0] === "T买" ? "buy-stacked" : "sell";
+      const hitY = Number(label.args[2]) + (label.args[0] === "S" ? 8 : -8);
+      expect(renderer.hitTest(context, Number(label.args[1]), hitY)?.itemId).toBe(itemId);
+    }
   });
 
   it("breaks line paths at null values instead of connecting across gaps", () => {

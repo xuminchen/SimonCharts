@@ -4,7 +4,10 @@ import type {
   WorkspaceUiActions,
   WorkspaceViewModel
 } from "../controller/chartController";
-import type { DataWindowSnapshot } from "../runtime/chartEngineRuntime";
+import type {
+  DataWindowSnapshot,
+  ExecutionTooltipSnapshot
+} from "../runtime/chartEngineRuntime";
 import { createBottomPanel } from "./bottomPanel";
 import { createDrawingPalette } from "./drawingPalette";
 import { createErrorPanel } from "./errorPanel";
@@ -27,6 +30,7 @@ export interface WorkspaceShell {
   bind(actions: ShellUiActions): () => void;
   render(viewModel: WorkspaceViewModel): void;
   renderDataWindow(snapshot: DataWindowSnapshot | undefined): void;
+  renderExecutionTooltip(snapshot: ExecutionTooltipSnapshot | undefined): void;
   destroy(): void;
 }
 
@@ -65,12 +69,22 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
   body.className = "sc-workspace-body";
   const chartRegion = document.createElement("div");
   chartRegion.className = "sc-chart-region";
+  chartRegion.lang = options.locale;
   const staticCanvas = document.createElement("canvas");
   staticCanvas.className = "sc-chart-canvas sc-static-canvas";
   const overlayCanvas = document.createElement("canvas");
   overlayCanvas.className = "sc-chart-canvas sc-overlay-canvas";
   overlayCanvas.tabIndex = 0;
   overlayCanvas.setAttribute("aria-label", options.locale === "zh-CN" ? "交互式金融图表" : "Interactive financial chart");
+  const executionTooltip = options.features.has("executions")
+    ? document.createElement("div")
+    : undefined;
+  if (executionTooltip) {
+    executionTooltip.className = "sc-execution-tooltip";
+    executionTooltip.dataset.testid = "execution-tooltip";
+    executionTooltip.setAttribute("role", "tooltip");
+    executionTooltip.hidden = true;
+  }
 
   const drawingPalette = options.features.has("drawing-tools")
     ? createDrawingPalette(labels)
@@ -111,17 +125,25 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         return [field, value] as const;
       })
     : [];
+  const legendChange = legend ? document.createElement("span") : undefined;
   if (chartHeader && legend) {
     chartHeader.className = "sc-chart-header";
     legend.className = "sc-chart-legend";
     legend.dataset.testid = "chart-ohlc-legend";
     legend.setAttribute("aria-live", "off");
+    if (legendChange) {
+      legendChange.dataset.field = "change";
+      legendChange.dataset.testid = "chart-change-legend";
+      legendChange.hidden = true;
+      legend.append(legendChange);
+    }
     if (intradayHeader) chartHeader.append(intradayHeader);
     chartHeader.append(legend);
   }
 
   const errorPanel = createErrorPanel();
   chartRegion.append(staticCanvas, overlayCanvas);
+  if (executionTooltip) chartRegion.append(executionTooltip);
   if (watermark) chartRegion.append(watermark);
   if (chartHeader) chartRegion.append(chartHeader);
   chartRegion.append(errorPanel.element);
@@ -173,6 +195,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
   let destroyed = false;
   let currentViewModel: WorkspaceViewModel | undefined;
   let currentDataWindow: DataWindowSnapshot | undefined;
+  let currentExecutionTooltipId: string | undefined;
 
   const paintDataWindow = (snapshot: DataWindowSnapshot | undefined) => {
     if (legend) {
@@ -189,6 +212,18 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         element.dataset.direction = value === undefined || previousClose === undefined || value === previousClose
           ? "flat"
           : value > previousClose ? "up" : "down";
+      }
+      if (legendChange) {
+        const timeframe = currentViewModel?.state.view === "timeframe";
+        legendChange.hidden = !timeframe || snapshot === undefined;
+        if (timeframe && snapshot) {
+          const direction = snapshot.change > 0 ? "up" : snapshot.change < 0 ? "down" : "flat";
+          const change = `${snapshot.change > 0 ? "+" : ""}${number(snapshot.change)}`;
+          const percent = `${snapshot.changePercent > 0 ? "+" : ""}${snapshot.changePercent.toFixed(2)}%`;
+          const arrow = direction === "up" ? "▲" : direction === "down" ? "▼" : "•";
+          legendChange.textContent = `${arrow} ${change} ${percent}`;
+          legendChange.dataset.direction = direction;
+        }
       }
     }
     if (statusTime) statusTime.textContent = snapshot?.formattedTime ?? labels.shanghaiTime;
@@ -353,6 +388,55 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
     renderDataWindow(snapshot) {
       currentDataWindow = snapshot === undefined ? undefined : structuredClone(snapshot);
       paintDataWindow(currentDataWindow);
+    },
+    renderExecutionTooltip(snapshot) {
+      if (!executionTooltip) return;
+      if (!snapshot) {
+        if (executionTooltip.hidden && currentExecutionTooltipId === undefined) return;
+        executionTooltip.hidden = true;
+        executionTooltip.replaceChildren();
+        currentExecutionTooltipId = undefined;
+        return;
+      }
+      if (snapshot.markId !== currentExecutionTooltipId) {
+        const nodes: HTMLElement[] = [];
+        if (snapshot.title) {
+          const title = document.createElement("strong");
+          title.className = "sc-execution-tooltip-title";
+          title.textContent = snapshot.title;
+          nodes.push(title);
+        }
+        for (const row of snapshot.rows) {
+          const line = document.createElement("div");
+          line.className = "sc-execution-tooltip-row";
+          const label = document.createElement("span");
+          const value = document.createElement("span");
+          label.textContent = row.label;
+          value.textContent = row.value;
+          line.append(label, value);
+          nodes.push(line);
+        }
+        executionTooltip.replaceChildren(...nodes);
+        executionTooltip.scrollTop = 0;
+        currentExecutionTooltipId = snapshot.markId;
+      }
+      executionTooltip.dataset.pinned = String(snapshot.pinned);
+      executionTooltip.hidden = false;
+      executionTooltip.style.visibility = "hidden";
+      const gap = 8;
+      const width = executionTooltip.offsetWidth;
+      const height = executionTooltip.offsetHeight;
+      const preferredLeft = snapshot.x + gap;
+      const preferredTop = snapshot.y + gap;
+      const left = preferredLeft + width <= chartRegion.clientWidth - gap
+        ? preferredLeft
+        : Math.max(gap, snapshot.x - gap - width);
+      const top = preferredTop + height <= chartRegion.clientHeight - gap
+        ? preferredTop
+        : Math.max(gap, snapshot.y - gap - height);
+      executionTooltip.style.left = `${left}px`;
+      executionTooltip.style.top = `${top}px`;
+      executionTooltip.style.visibility = "visible";
     },
     destroy() {
       if (destroyed) return;

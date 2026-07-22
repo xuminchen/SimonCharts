@@ -39,6 +39,20 @@ export interface Candle {
   turnover: number;
 }
 
+export type ChartExecutionSide = "buy" | "sell";
+
+export interface ChartExecution {
+  readonly id: string;
+  readonly time: number;
+  readonly side: ChartExecutionSide;
+  readonly price: number;
+  readonly quantity: number;
+  readonly label?: string;
+  readonly amount?: number;
+  readonly fee?: number;
+  readonly tQuantity?: number;
+}
+
 export interface SeriesRequest {
   symbol: ChartSymbol;
   timeframe: Timeframe;
@@ -70,7 +84,8 @@ export type ChartFeature =
   | "drawing-tools"
   | "drawing-history"
   | "settings"
-  | "bottom-panel";
+  | "bottom-panel"
+  | "executions";
 
 export type ChartTheme = "dark" | "light";
 export type ChartLocale = "zh-CN" | "en-US";
@@ -107,6 +122,7 @@ export interface ChartOptions {
   features?: readonly ChartFeature[];
   theme?: ChartTheme;
   locale?: ChartLocale;
+  executions?: readonly ChartExecution[];
   onError?: (error: ChartError) => void;
 }
 
@@ -146,6 +162,8 @@ export interface ChartInstance {
   setView(view: ChartView): void;
   setIntradayDays(days: IntradayDayCount): void;
   setAdjustMode(adjustMode: AdjustMode): void;
+  setExecutions(executions: readonly ChartExecution[]): void;
+  setExecutionsVisible(visible: boolean): void;
   setVisibleRange(range: ChartVisibleRange): void;
   resetToLatest(): void;
   retry(): void;

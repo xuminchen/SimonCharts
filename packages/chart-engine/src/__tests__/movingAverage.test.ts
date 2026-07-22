@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateDefaultMovingAverages,
-  calculateMovingAverage,
-  fixtureDailyCandleSeries
+  calculateMovingAverage
 } from "../index";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles";
 
 describe("moving average calculation", () => {
   it("returns undefined until enough candles exist for MA5", () => {

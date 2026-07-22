@@ -2,7 +2,7 @@ import type { MagnetSessionState } from "../interaction/sessionTypes";
 import type { CandleSeries } from "../model/market";
 import type { ViewportState } from "../model/runtime";
 import { priceToY, type PriceScale } from "../viewport/priceScale";
-import { indexToX } from "../viewport/viewport";
+import { indexToX, type TimeCoordinateMap } from "../viewport/viewport";
 import type { DrawingObject } from "./drawingTypes";
 
 export interface MagnetPoint {
@@ -41,6 +41,7 @@ export interface OhlcMagnetTargetOptions {
   viewport: ViewportState;
   plotArea: MagnetPlotArea;
   priceScale: PriceScale;
+  timeCoordinates?: TimeCoordinateMap;
   fields?: readonly OhlcMagnetField[];
 }
 
@@ -176,7 +177,12 @@ export function createOhlcMagnetTargetsFromSeries(
 
   for (let index = from; index <= to; index += 1) {
     const candle = options.series.candles[index];
-    const x = indexToX(index, options.viewport, options.plotArea.x);
+    const x = indexToX(
+      index,
+      options.viewport,
+      options.plotArea.x,
+      options.timeCoordinates
+    );
 
     for (const field of fields) {
       const y = priceToY(

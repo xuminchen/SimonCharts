@@ -3,6 +3,7 @@ import {
   computeVisiblePriceBounds,
   computeVisiblePriceRange,
   computeVisibleRange,
+  constrainViewportToWidth,
   createInitialViewport,
   createPriceScale,
   indexToX,
@@ -77,18 +78,36 @@ describe("viewport coordinate mapping", () => {
     expect(xToIndex(68, viewport, 40)).toBe(13);
   });
 
-  it("right-aligns the latest candle when the viewport has more slots than data", () => {
-    const viewport = createInitialViewport(8, 200);
+  it("uses a shared irregular time map for rendering and hit testing", () => {
+    const viewport: ViewportState = {
+      visibleRange: { from: 0, to: 3 },
+      candleWidth: 50,
+      scrollOffset: 0,
+      priceScaleMode: "linear"
+    };
+    const timeCoordinates = {
+      positions: [0, 100, 100, 200],
+      barWidth: 1,
+      dayStartIndices: [0, 2],
+      dayStartOffsets: [0, 100]
+    };
 
-    expect(viewport.visibleRange).toEqual({ from: -17, to: 7 });
-    expect(indexToX(7, viewport, 0)).toBe(196);
+    expect(indexToX(0, viewport, 40, timeCoordinates)).toBe(40);
+    expect(indexToX(3, viewport, 40, timeCoordinates)).toBe(240);
+    expect(xToIndex(91, viewport, 40, timeCoordinates)).toBe(1);
+    expect(xToIndex(191, viewport, 40, timeCoordinates)).toBe(3);
+  });
 
-    const zoomedOut = zoomViewportAtIndex(viewport, 4, 100, 8);
-    expect(zoomedOut.visibleRange.to).toBe(7);
-    expect(zoomedOut.visibleRange.from).toBeLessThan(0);
-    expect(indexToX(7, zoomedOut, 0)).toBeGreaterThanOrEqual(196);
+  it("fits a short history between both plot edges when the product constrains it", () => {
+    const initial = createInitialViewport(8, 200);
+    const viewport = constrainViewportToWidth(initial, 8, 200);
 
-    expect(panViewportByPixels(zoomedOut, 100, 8)).toEqual(zoomedOut);
+    expect(viewport.visibleRange).toEqual({ from: 0, to: 7 });
+    expect(indexToX(0, viewport, 0) - viewport.candleWidth / 2).toBeCloseTo(0);
+    expect(indexToX(7, viewport, 0) + viewport.candleWidth / 2).toBeCloseTo(200);
+
+    expect(zoomViewportAtIndex(viewport, 4, 100, 8, 200)).toEqual(viewport);
+    expect(panViewportByPixels(viewport, 100, 8)).toEqual(viewport);
   });
 
   it("uses normalized candle width for x mapping", () => {
@@ -193,6 +212,35 @@ describe("viewport coordinate mapping", () => {
 
     expect(zoomed.scrollOffset).toBe(0);
     expect(zoomed.visibleRange.to).toBe(99);
+  });
+
+  it("stops zooming out before candles compress and keeps both visible dates at the plot edges", () => {
+    let viewport = createInitialViewport(6_000, 1_600);
+
+    for (let count = 0; count < 64; count += 1) {
+      const anchor = Math.floor((viewport.visibleRange.from + viewport.visibleRange.to) / 2);
+      viewport = zoomViewportAtIndex(viewport, anchor, 100, 6_000, 1_600);
+    }
+
+    expect(viewport.candleWidth).toBe(2);
+    expect(viewport.visibleRange).toEqual({ from: 5_200, to: 5_999 });
+    expect(indexToX(viewport.visibleRange.from, viewport, 0)).toBe(1);
+    expect(indexToX(viewport.visibleRange.to, viewport, 0)).toBe(1_599);
+    expect(zoomViewportAtIndex(viewport, 5_600, 100, 6_000, 1_600)).toEqual(viewport);
+  });
+
+  it("stops at the full real history when fewer candles exist than the zoom-out capacity", () => {
+    let viewport = createInitialViewport(300, 1_600);
+
+    for (let count = 0; count < 64; count += 1) {
+      viewport = zoomViewportAtIndex(viewport, 150, 100, 300, 1_600);
+    }
+
+    expect(viewport.visibleRange).toEqual({ from: 0, to: 299 });
+    expect(viewport.candleWidth).toBeCloseTo(1_600 / 300);
+    expect(indexToX(0, viewport, 0) - viewport.candleWidth / 2).toBeCloseTo(0);
+    expect(indexToX(299, viewport, 0) + viewport.candleWidth / 2).toBeCloseTo(1_600);
+    expect(zoomViewportAtIndex(viewport, 150, 100, 300, 1_600)).toEqual(viewport);
   });
 
   it("pans by whole candle deltas and clamps to available data", () => {

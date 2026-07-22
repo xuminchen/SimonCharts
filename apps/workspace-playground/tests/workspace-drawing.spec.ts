@@ -37,7 +37,13 @@ test("exposes 63 tools and persists drawing lifecycle in the fixed drawing rail"
   expect(new Set(toolTypes).size).toBe(63);
 
   await page.locator('[data-drawing-category="basic"]').click();
-  await page.getByRole("menuitem", { name: "Trend Line", exact: true }).click();
+  await expect(page.locator(".sc-drawing-tools-header-label")).toHaveText("趋势线工具");
+  await expect(page.locator(".sc-drawing-tools-header-count")).toHaveText("16");
+  await expect(page.locator(".sc-drawing-tool-icon")).toHaveCount(16);
+  expect(await page.locator(".sc-drawing-tool-icon").evaluateAll(
+    (icons) => icons.every((icon) => icon.childElementCount > 0 && icon.getBoundingClientRect().width > 0)
+  )).toBe(true);
+  await page.locator('[data-drawing-tool="trendLine"]').click();
   await stepGesture(page);
   await expect.poll(() => persistedDrawingCount(page)).toBe(1);
   await expect(page.getByTestId("drawing-undo")).toBeEnabled();
@@ -63,13 +69,13 @@ test("commits every continuous drawing mode only on pointer up", async ({ page }
   const box = await canvas.boundingBox();
   if (!box) throw new Error("canvas missing");
   const tools = [
-    { category: "path", name: "Path" },
-    { category: "path", name: "Brush" },
-    { category: "forecast", name: "Forecast Path" }
+    { category: "path", type: "path" },
+    { category: "path", type: "brush" },
+    { category: "forecast", type: "forecastPath" }
   ];
   for (const [index, tool] of tools.entries()) {
     await page.locator(`[data-drawing-category="${tool.category}"]`).click();
-    await page.getByRole("menuitem", { name: tool.name, exact: true }).click();
+    await page.locator(`[data-drawing-tool="${tool.type}"]`).click();
     await page.mouse.move(box.x + 220, box.y + 220 + index * 20);
     await page.mouse.down();
     await page.mouse.move(box.x + 280, box.y + 240 + index * 20);

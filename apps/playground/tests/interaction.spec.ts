@@ -5,9 +5,9 @@ import {
   createInitialViewport,
   createMainPanelPriceScale,
   createOhlcMagnetTargetsFromSeries,
-  createPanelLayout,
-  fixtureDailyCandleSeries
+  createPanelLayout
 } from "@simoncharts/chart-engine";
+import { fixtureDailyCandleSeries } from "../src/fixtures/dailyCandles";
 import { playgroundVisualOutputs } from "../src/fixtures/visualFixtures";
 
 interface RecordedViewportEvent {
@@ -204,6 +204,7 @@ test("projects interaction price through the main-panel overlay geometry", async
   const tooltipRect = calls.filter((call) => call.name === "fillRect").at(-1);
   const plotRight = geometry.plotArea.x + geometry.plotArea.width;
   const plotBottom = geometry.plotArea.y + geometry.plotArea.height;
+  const volumeBottom = geometry.volumeArea.y + geometry.volumeArea.height;
 
   expect(crosshair?.index).toBe(geometry.target.dataIndex);
   expect(crosshair?.price).toBeCloseTo(candle.high, 5);
@@ -216,7 +217,7 @@ test("projects interaction price through the main-panel overlay geometry", async
   expect(pathCalls[0].args[0]).toBeCloseTo(geometry.target.x, 5);
   expect(pathCalls[0].args[1]).toBeCloseTo(geometry.plotArea.y, 5);
   expect(pathCalls[1].args[0]).toBeCloseTo(geometry.target.x, 5);
-  expect(pathCalls[1].args[1]).toBeCloseTo(plotBottom, 5);
+  expect(pathCalls[1].args[1]).toBeCloseTo(volumeBottom, 5);
   expect(tooltipRect).toBeDefined();
 
   const [tooltipX, tooltipY, tooltipWidth, tooltipHeight] = tooltipRect?.args ?? [];
@@ -469,6 +470,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getMainPanelOhlcGeometry(width: number, height: number): {
   plotArea: { x: number; y: number; width: number; height: number };
+  volumeArea: { x: number; y: number; width: number; height: number };
   target: { x: number; y: number; dataIndex: number };
 } {
   const layout = createChartLayout(Math.floor(width), Math.floor(height));
@@ -520,6 +522,7 @@ function getMainPanelOhlcGeometry(width: number, height: number): {
 
   return {
     plotArea: mainPanel.plotArea,
+    volumeArea: layout.volumeArea,
     target: { x: target.x, y: target.y, dataIndex: target.dataIndex }
   };
 }

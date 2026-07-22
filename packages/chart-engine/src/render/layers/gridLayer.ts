@@ -28,9 +28,13 @@ export function createGridLayer(): ChartLayer {
           context.lineTo(plotArea.x + plotArea.width, y);
         }
 
-        for (let step = 0; step <= verticalLineCount; step += 1) {
-          const x = plotArea.x + (plotArea.width / verticalLineCount) * step;
-
+        const verticalXs = state.intradayDays !== undefined && state.intradayDays > 1 && state.timeCoordinates
+          ? state.timeCoordinates.dayStartOffsets.slice(1).map((offset) => plotArea.x + offset)
+          : Array.from(
+              { length: verticalLineCount + 1 },
+              (_, step) => plotArea.x + (plotArea.width / verticalLineCount) * step
+            );
+        for (const x of verticalXs) {
           context.moveTo(x, plotArea.y);
           context.lineTo(x, plotArea.y + plotArea.height);
         }

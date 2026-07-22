@@ -285,6 +285,49 @@ describe("series renderers", () => {
     ]);
   });
 
+  it("connects equal-width intraday days vertically at the boundary with one uniform color", () => {
+    const firstDay = Date.UTC(2026, 6, 15, 1, 30);
+    const secondDay = Date.UTC(2026, 6, 16, 1, 30);
+    const series: CandleSeries = {
+      ...createSeries(),
+      timeframe: "1m",
+      candles: [
+        { time: firstDay, open: 99, high: 100, low: 98, close: 99, volume: 1, turnover: 99 },
+        { time: firstDay + 330 * 60_000, open: 99, high: 102, low: 99, close: 101, volume: 1, turnover: 101 },
+        { time: secondDay, open: 103, high: 104, low: 102, close: 103, volume: 1, turnover: 103 },
+        { time: secondDay + 330 * 60_000, open: 103, high: 106, low: 103, close: 105, volume: 1, turnover: 105 }
+      ]
+    };
+    const renderContext = createRenderContext("line", "percentage", series);
+    renderContext.state.priceScale = { mode: "percentage", basePrice: 100, min: -6, max: 6 };
+    renderContext.state.timeCoordinates = {
+      positions: [0, 50, 50, 100],
+      barWidth: 1,
+      dayStartIndices: [0, 2],
+      dayStartOffsets: [0, 50]
+    };
+
+    createSeriesLayer(createDefaultSeriesRendererRegistry()).render(renderContext);
+
+    const context = renderContext.context as unknown as FakeCanvasContext;
+    expect(context.calls.filter((call) => call.name === "moveTo")).toHaveLength(1);
+    expect(context.calls.filter((call) => call.name === "lineTo" && call.args[0] === 50)).toHaveLength(4);
+    expect(context.strokeStyles).toEqual([renderContext.state.theme.colors.bullishCandle]);
+  });
+
+  it("colors baseline-free intraday from the first real open", () => {
+    const series = createSeries();
+    series.candles[2] = { ...series.candles[2], close: 8, low: 8 };
+    const renderContext = createRenderContext("line", "linear", series);
+    renderContext.state.intradayDays = 5;
+
+    createSeriesLayer(createDefaultSeriesRendererRegistry()).render(renderContext);
+
+    expect((renderContext.context as unknown as FakeCanvasContext).strokeStyles).toEqual([
+      renderContext.state.theme.colors.bearishCandle
+    ]);
+  });
+
   it("restores the caller canvas styles after direct renderer drawing", () => {
     const registry = createDefaultSeriesRendererRegistry();
     const renderContext = createRenderContext("area");

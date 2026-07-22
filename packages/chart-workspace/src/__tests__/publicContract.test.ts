@@ -9,6 +9,7 @@ import type {
   ChartDatafeed,
   ChartError,
   ChartEvent,
+  ChartExecution,
   ChartFeature,
   ChartInstance,
   ChartIntradayScale,
@@ -48,6 +49,10 @@ describe("charts public contract", () => {
     expectTypeOf<ChartInstance["setIntradayDays"]>()
       .toEqualTypeOf<(days: IntradayDayCount) => void>();
     expectTypeOf<ChartInstance>().toHaveProperty("setAdjustMode");
+    expectTypeOf<ChartInstance["setExecutions"]>()
+      .toEqualTypeOf<(executions: readonly ChartExecution[]) => void>();
+    expectTypeOf<ChartInstance["setExecutionsVisible"]>()
+      .toEqualTypeOf<(visible: boolean) => void>();
     expectTypeOf<ChartInstance>().toHaveProperty("setVisibleRange");
     expectTypeOf<ChartInstance>().toHaveProperty("resetToLatest");
     expectTypeOf<ChartInstance>().toHaveProperty("retry");
@@ -61,6 +66,18 @@ describe("charts public contract", () => {
     expectTypeOf<ChartOptions>().toHaveProperty("features");
     expectTypeOf<ChartOptions>().toHaveProperty("theme");
     expectTypeOf<ChartOptions>().toHaveProperty("locale");
+    expectTypeOf<ChartOptions>().toHaveProperty("executions");
+    expectTypeOf<ChartExecution>().toEqualTypeOf<{
+      readonly id: string;
+      readonly time: number;
+      readonly side: "buy" | "sell";
+      readonly price: number;
+      readonly quantity: number;
+      readonly label?: string;
+      readonly amount?: number;
+      readonly fee?: number;
+      readonly tQuantity?: number;
+    }>();
     expectTypeOf<ChartStateListener>().toEqualTypeOf<(
       state: Readonly<import("../index").ChartState>
     ) => void>();
@@ -90,6 +107,7 @@ describe("charts public contract", () => {
       | "drawing-history"
       | "settings"
       | "bottom-panel"
+      | "executions"
     >();
     expectTypeOf<ChartTheme>().toEqualTypeOf<"dark" | "light">();
     expectTypeOf<ChartLocale>().toEqualTypeOf<"zh-CN" | "en-US">();

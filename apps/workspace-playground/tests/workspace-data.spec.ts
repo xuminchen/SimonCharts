@@ -55,7 +55,8 @@ test("renders and requests only the exact host capability subset", async ({ page
   await expect(page.locator(".sc-timeframe-more-toggle")).toBeVisible();
   await page.locator(".sc-timeframe-more-toggle").click();
   await expect(page.getByRole("menuitemradio", { name: "5分", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "分时", exact: true })).toBeHidden();
+  await expect(page.getByRole("menuitemradio", { name: "分时", exact: true })).toBeDisabled();
+  await expect(page.getByRole("menuitemcheckbox", { name: "取消固定 分时", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "1分", exact: true })).toBeHidden();
   await expect(page.getByTestId("adjust-select")).toHaveValue("forward");
 
@@ -104,6 +105,11 @@ test("operates every timeframe, chart, indicator, adjustment, and scale", async 
   await expect(page.locator(".sc-timeframes > [data-timeframe-shortcut]")).toHaveText([
     "5分", "15分", "日", "分时"
   ]);
+  await page.locator('[data-favorite-timeframe-pin="30m"]').click();
+  await expect(page.getByTestId("favorite-timeframe-limit")).toBeVisible();
+  await expect(page.locator(".sc-timeframes > [data-timeframe-shortcut]")).toHaveText([
+    "5分", "15分", "日", "分时"
+  ]);
   await page.keyboard.press("Escape");
   for (const { timeframe, view } of [
     { timeframe: "15m", view: "timeframe" },
@@ -125,8 +131,12 @@ test("operates every timeframe, chart, indicator, adjustment, and scale", async 
   await series.click();
   const seriesTypes = await page.locator("[data-series-type]").evaluateAll((options) => options.map((option) => (option as HTMLElement).dataset.seriesType ?? ""));
   expect(seriesTypes).toHaveLength(17);
-  await expect(page.locator('[data-series-type="candles"]')).toHaveText("蜡烛图（Candles）");
-  await expect(page.locator('[data-series-type="pointAndFigure"]')).toHaveText("点数图（Point & Figure）");
+  await expect(page.locator('[data-series-type="candles"] .sc-series-type-label')).toHaveText("蜡烛图（Candles）");
+  await expect(page.locator('[data-series-type="pointAndFigure"] .sc-series-type-label')).toHaveText("点数图（Point & Figure）");
+  await expect(page.locator("[data-series-type] .sc-series-type-icon")).toHaveCount(17);
+  expect(await page.locator("[data-series-type] .sc-series-type-icon").evaluateAll(
+    (icons) => icons.every((icon) => icon.childElementCount > 0 && icon.getBoundingClientRect().width > 0)
+  )).toBe(true);
   await page.keyboard.press("Escape");
   for (const type of seriesTypes) {
     await chooseSeriesType(page, type);
@@ -169,11 +179,16 @@ test("treats intraday as a 1-minute line preset without resetting an advanced ma
 
   await page.getByRole("button", { name: "分时", exact: true }).click();
   await expect(series).toHaveAttribute("data-value", "line");
+  await expect(series).toBeDisabled();
+  await expect(page.getByTestId("chart-change-legend")).toBeHidden();
   await expect(page.getByRole("button", { name: "分时", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => requestLog(page)).toContainEqual(expect.objectContaining({ timeframe: "1m" }));
 
   await chooseTimeframe(page, "5m");
   await expect(series).toHaveAttribute("data-value", "candles");
+  await expect(series).toBeEnabled();
+  await expect(page.getByTestId("chart-change-legend")).toBeVisible();
+  await expect(page.getByTestId("chart-change-legend")).toContainText(/[%▲▼•]/);
 
   await chooseSeriesType(page, "line");
   await page.getByRole("button", { name: "15分", exact: true }).click();

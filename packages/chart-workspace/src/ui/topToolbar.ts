@@ -1,6 +1,7 @@
 import {
   coreIndicatorDefinitions,
-  type EngineCapabilityManifest
+  type EngineCapabilityManifest,
+  type SeriesType
 } from "@simoncharts/chart-engine";
 import type {
   AdjustMode,
@@ -11,7 +12,10 @@ import type {
   Timeframe
 } from "../contracts";
 import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartController";
-import type { FavoriteTimeframe } from "../persistence/browserPersistence";
+import {
+  maxFavoriteTimeframes,
+  type FavoriteTimeframe
+} from "../persistence/browserPersistence";
 import { createIndicatorManager } from "./indicatorManager";
 import { labelsFor } from "./localization";
 import { createSymbolSearch } from "./symbolSearch";
@@ -51,6 +55,41 @@ function iconButton(button: HTMLButtonElement, label: string, icon: string): voi
   button.setAttribute("aria-label", label);
 }
 
+const seriesTypeIconShapes: Readonly<Record<SeriesType, string>> = {
+  bars: '<path d="M4 2v16M2 6h2M4 13h3M12 4v13M9 9h3M12 14h3M20 1v16M17 5h3M20 12h2"/>',
+  candles: '<path d="M6 1v18M17 2v16"/><rect x="3" y="5" width="6" height="8" fill="currentColor"/><rect x="14" y="8" width="6" height="7" fill="currentColor"/>',
+  hollowCandles: '<path d="M6 1v18M17 2v16"/><rect x="3" y="5" width="6" height="8"/><rect x="14" y="8" width="6" height="7"/>',
+  volumeCandles: '<path d="M5 1v12M15 2v10"/><rect x="2" y="4" width="6" height="6" fill="currentColor"/><rect x="12" y="5" width="6" height="5" fill="currentColor"/><path d="M1 18V14M5 18v-5M9 18v-3M13 18v-6M17 18v-4M21 18v-7"/>',
+  line: '<path d="M1 16 6 10l4 3 5-9 4 4 4-5"/>',
+  lineWithMarkers: '<path d="M1 16 6 10l4 3 5-9 4 4 4-5"/><circle cx="6" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="4" r="1.5" fill="currentColor"/>',
+  stepLine: '<path d="M1 16h6V11h6V6h5V2h5"/>',
+  area: '<path d="M1 16 6 10l4 3 5-9 4 4 4-5v15H1Z" fill="currentColor" opacity=".28"/><path d="M1 16 6 10l4 3 5-9 4 4 4-5"/>',
+  hlcArea: '<path d="M1 13 6 8l5 2 5-7 7 4v8l-7-3-5 5-5-2-5 3Z" fill="currentColor" opacity=".22"/><path d="M1 13 6 8l5 2 5-7 7 4M1 18l5-3 5 2 5-5 7 3"/>',
+  baseline: '<path d="M1 16 6 10l4 3 5-9 4 4 4-5"/><path d="M1 12h22" stroke-dasharray="2 2"/>',
+  columns: '<rect x="2" y="10" width="4" height="8" fill="currentColor"/><rect x="10" y="4" width="4" height="14" fill="currentColor"/><rect x="18" y="7" width="4" height="11" fill="currentColor"/>',
+  highLow: '<path d="M5 3v15M3 3h4M3 18h4M13 6v10M11 6h4M11 16h4M21 1v13M19 1h4M19 14h4"/>',
+  heikinAshi: '<path d="M6 1v18M17 2v16"/><rect x="3" y="5" width="6" height="8" fill="currentColor" opacity=".55"/><rect x="14" y="7" width="6" height="8" fill="currentColor" opacity=".85"/>',
+  renko: '<path d="m2 13 5-5 5 5-5 5Zm10-6 5-5 5 5-5 5Z" fill="currentColor" opacity=".75"/>',
+  lineBreak: '<rect x="2" y="9" width="5" height="9" fill="currentColor"/><rect x="9" y="4" width="5" height="10"/><rect x="16" y="1" width="5" height="8" fill="currentColor"/>',
+  kagi: '<path d="M2 17V8h7V3h6v11h7"/><path d="M9 8v8" stroke-width="2.5"/>',
+  pointAndFigure: '<path d="m2 3 6 6m0-6L2 9m0 3 6 6m0-6-6 6"/><circle cx="17" cy="6" r="4"/><circle cx="17" cy="15" r="4"/>'
+};
+
+function createSeriesTypeIcon(type: SeriesType): SVGSVGElement {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 20");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "1.5");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  icon.classList.add("sc-series-type-icon");
+  icon.dataset.seriesIcon = type;
+  icon.innerHTML = seriesTypeIconShapes[type];
+  icon.setAttribute("aria-hidden", "true");
+  return icon;
+}
+
 export function createTopToolbar(
   manifest: EngineCapabilityManifest,
   features: ReadonlySet<ChartFeature>,
@@ -76,6 +115,7 @@ export function createTopToolbar(
   const timeframeMore = advanced && timeframeHost ? document.createElement("div") : undefined;
   const timeframeMoreToggle = timeframeMore ? document.createElement("button") : undefined;
   const timeframeMoreMenu = timeframeMore ? document.createElement("div") : undefined;
+  const favoriteLimitToast = timeframeMore ? document.createElement("div") : undefined;
   const timeframeMenuOptions = new Map<FavoriteTimeframe, HTMLButtonElement>();
   const timeframeLabel = (timeframe: FavoriteTimeframe): string =>
     timeframe === "intraday" ? labels.intraday : labels.timeframes[timeframe];
@@ -163,7 +203,11 @@ export function createTopToolbar(
     series.setAttribute("aria-label", locale === "zh-CN" ? "图表类型" : "Chart type");
     series.setAttribute("aria-haspopup", "menu");
     series.setAttribute("aria-expanded", "false");
-    series.textContent = "▥⌄";
+    const chevron = document.createElement("span");
+    chevron.className = "sc-menu-chevron";
+    chevron.textContent = "⌄";
+    chevron.setAttribute("aria-hidden", "true");
+    series.append(createSeriesTypeIcon("candles"), chevron);
     seriesMenu.className = "sc-series-type-menu";
     seriesMenu.dataset.testid = "series-type-menu";
     seriesMenu.setAttribute("role", "menu");
@@ -174,7 +218,10 @@ export function createTopToolbar(
       option.dataset.seriesType = type;
       option.setAttribute("role", "menuitemradio");
       option.setAttribute("aria-checked", "false");
-      option.textContent = labels.seriesTypes[type];
+      const label = document.createElement("span");
+      label.className = "sc-series-type-label";
+      label.textContent = labels.seriesTypes[type];
+      option.append(createSeriesTypeIcon(type), label);
       seriesMenu.append(option);
     }
     seriesControl.append(series, seriesMenu);
@@ -193,6 +240,11 @@ export function createTopToolbar(
   }
 
   const indicatorManager = features.has("indicators") ? createIndicatorManager(labels, advanced) : undefined;
+  const executionsToggle = features.has("executions") ? document.createElement("button") : undefined;
+  if (executionsToggle) {
+    executionsToggle.dataset.testid = "executions-toggle";
+    iconButton(executionsToggle, labels.executions, "B/S");
+  }
   const undo = features.has("drawing-history") ? document.createElement("button") : undefined;
   if (undo) {
     undo.dataset.testid = "drawing-undo";
@@ -232,6 +284,7 @@ export function createTopToolbar(
 
   const actionGroup = document.createElement("div");
   actionGroup.className = "sc-toolbar-group sc-toolbar-actions";
+  if (executionsToggle) actionGroup.append(executionsToggle);
   if (indicatorManager) actionGroup.append(indicatorManager.element);
   if (undo) actionGroup.append(undo);
   if (redo) actionGroup.append(redo);
@@ -270,7 +323,34 @@ export function createTopToolbar(
   if (more) element.append(more);
   else element.append(...secondaryControls);
   if (fullscreen) element.append(fullscreen);
+  if (favoriteLimitToast) {
+    favoriteLimitToast.className = "sc-toolbar-toast";
+    favoriteLimitToast.dataset.testid = "favorite-timeframe-limit";
+    favoriteLimitToast.setAttribute("role", "status");
+    favoriteLimitToast.setAttribute("aria-live", "polite");
+    favoriteLimitToast.hidden = true;
+    const warning = document.createElement("span");
+    warning.className = "sc-toolbar-toast-icon";
+    warning.textContent = "!";
+    const message = document.createElement("span");
+    message.textContent = locale === "zh-CN"
+      ? `最多固定 ${maxFavoriteTimeframes} 个周期，请先取消一个`
+      : `Pin up to ${maxFavoriteTimeframes} timeframes; unpin one first`;
+    favoriteLimitToast.append(warning, message);
+    element.append(favoriteLimitToast);
+  }
   let currentViewModel: WorkspaceViewModel | undefined;
+  let favoriteLimitTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const showFavoriteLimit = (): void => {
+    if (!favoriteLimitToast) return;
+    favoriteLimitToast.hidden = false;
+    if (favoriteLimitTimer !== undefined) clearTimeout(favoriteLimitTimer);
+    favoriteLimitTimer = setTimeout(() => {
+      favoriteLimitToast.hidden = true;
+      favoriteLimitTimer = undefined;
+    }, 2_500);
+  };
 
   const renderFavoriteTimeframes = (
     viewModel: WorkspaceViewModel,
@@ -355,7 +435,8 @@ export function createTopToolbar(
           const favorite = target.closest<HTMLButtonElement>("[data-favorite-timeframe-pin]");
           if (favorite) {
             const timeframe = favorite.dataset.favoriteTimeframePin as FavoriteTimeframe;
-            actions.setFavoriteTimeframe(timeframe, favorite.getAttribute("aria-checked") !== "true");
+            const next = favorite.getAttribute("aria-checked") !== "true";
+            if (!actions.setFavoriteTimeframe(timeframe, next)) showFavoriteLimit();
             return;
           }
           const button = target.closest<HTMLButtonElement>("[data-timeframe]");
@@ -398,7 +479,6 @@ export function createTopToolbar(
         const choose = (event: Event) => {
           const option = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-series-type]");
           if (!option) return;
-          actions.setIntradayView(false);
           actions.setSeriesType(option.dataset.seriesType as WorkspaceViewModel["seriesType"]);
           if (currentViewModel) renderTimeframeSelection(currentViewModel);
           closeSeries();
@@ -423,6 +503,11 @@ export function createTopToolbar(
         const click = () => actions.redoDrawing();
         redo.addEventListener("click", click);
         cleanup.push(() => redo.removeEventListener("click", click));
+      }
+      if (executionsToggle) {
+        const click = () => actions.setExecutionsVisible(!currentViewModel!.executionsVisible);
+        executionsToggle.addEventListener("click", click);
+        cleanup.push(() => executionsToggle.removeEventListener("click", click));
       }
       if (grid) {
         const change = () => actions.setGridVisible(grid.checked);
@@ -500,6 +585,7 @@ export function createTopToolbar(
       if (symbolSearch) cleanup.push(symbolSearch.bind(actions));
       if (indicatorManager) cleanup.push(indicatorManager.bind(actions));
       return () => {
+        if (favoriteLimitTimer !== undefined) clearTimeout(favoriteLimitTimer);
         for (const dispose of cleanup.splice(0)) dispose();
       };
     },
@@ -515,7 +601,10 @@ export function createTopToolbar(
         for (const button of timeframeHost.querySelectorAll<HTMLButtonElement>("[data-timeframe]")) {
           const isSupported = supported.timeframes.includes(button.dataset.timeframe as Timeframe);
           const row = button.closest<HTMLDivElement>(".sc-timeframe-option");
-          if (row) row.hidden = !isSupported;
+          const favorite = viewModel.favoriteTimeframes.includes(
+            button.dataset.favoriteTimeframe as FavoriteTimeframe
+          );
+          if (row) row.hidden = !isSupported && !favorite;
           else button.hidden = !isSupported;
           button.disabled = !isSupported;
         }
@@ -543,6 +632,15 @@ export function createTopToolbar(
       if (series && seriesMenu) {
         series.dataset.value = viewModel.seriesType;
         series.title = labels.seriesTypes[viewModel.seriesType];
+        series.replaceChildren(
+          createSeriesTypeIcon(viewModel.seriesType),
+          Object.assign(document.createElement("span"), {
+            className: "sc-menu-chevron",
+            textContent: "⌄"
+          })
+        );
+        series.disabled = viewModel.state.view === "intraday";
+        if (series.disabled) closeSeries();
         for (const option of seriesMenu.querySelectorAll<HTMLButtonElement>("[data-series-type]")) {
           option.setAttribute("aria-checked", String(option.dataset.seriesType === viewModel.seriesType));
         }
@@ -553,6 +651,7 @@ export function createTopToolbar(
       }
       if (undo) undo.disabled = !viewModel.canUndoDrawing;
       if (redo) redo.disabled = !viewModel.canRedoDrawing;
+      if (executionsToggle) executionsToggle.setAttribute("aria-pressed", String(viewModel.executionsVisible));
       if (grid) grid.checked = viewModel.gridVisible;
       if (bottomToggle) bottomToggle.setAttribute("aria-pressed", String(!viewModel.bottomPanel.collapsed));
       symbolSearch?.render(viewModel);

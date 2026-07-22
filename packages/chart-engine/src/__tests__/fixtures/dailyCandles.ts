@@ -1,4 +1,4 @@
-import type { Candle, CandleSeries } from "../model/market";
+import type { Candle, CandleSeries } from "../../model/market";
 
 const dayMs = 24 * 60 * 60 * 1_000;
 const startTime = Date.UTC(2026, 0, 1);

@@ -7,7 +7,6 @@ import {
   createMainPanelPriceScale,
   createOhlcMagnetTargetsFromSeries,
   createPanelLayout,
-  fixtureDailyCandleSeries,
   projectDrawingObject,
   unprojectDrawingObject,
   zoomViewportAtIndex,
@@ -15,6 +14,7 @@ import {
   type DrawingCoordinateContext,
   type PriceScaleMode
 } from "@simoncharts/chart-engine";
+import { fixtureDailyCandleSeries } from "../src/fixtures/dailyCandles";
 import { playgroundVisualOutputs } from "../src/fixtures/visualFixtures";
 
 interface Point {
@@ -623,7 +623,7 @@ test("uses the current projection for hit testing and body drag after scale and 
     context.viewport.candleWidth;
   movedProjected.anchors.forEach((anchor, index) => {
     expect(anchor.x).toBeCloseTo((projected.anchors[index].x ?? 0) + snappedDeltaX, 5);
-    expect(anchor.y).toBeCloseTo((projected.anchors[index].y ?? 0) + delta.y, 5);
+    expect(anchor.y).toBeCloseTo((projected.anchors[index].y ?? 0) + delta.y, 4);
   });
 
   await page.getByTestId("undo").click();

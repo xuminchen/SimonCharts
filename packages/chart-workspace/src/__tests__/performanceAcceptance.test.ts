@@ -20,6 +20,7 @@ class FakeCanvas {
   clientHeight = 500;
   style: Record<string, string> = {};
   readonly texts: string[] = [];
+  readonly strokeStyles: string[] = [];
   private readonly capturedPointers = new Set<number>();
   private readonly listeners = new Map<string, Set<EventListener>>();
   private readonly context = new Proxy(
@@ -29,6 +30,7 @@ class FakeCanvas {
         if (key in target) return target[key as keyof typeof target];
         if (key === "fillText") return (value: unknown) => this.texts.push(String(value));
         if (key === "measureText") return (value: unknown) => ({ width: String(value).length * 7 });
+        if (key === "stroke") return () => this.strokeStyles.push(String((target as { strokeStyle?: unknown }).strokeStyle ?? ""));
         return () => undefined;
       },
       set(target, key, value) {
@@ -91,6 +93,85 @@ function materialized(start = 1, count = 100): MaterializedSeries {
 }
 
 describe("workspace engine runtime", () => {
+  it("clones, toggles, hovers, and closes execution marker tooltips", () => {
+    const staticCanvas = new FakeCanvas();
+    const overlayCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    let currentViewport: ViewportState | undefined;
+    const onRenderError = vi.fn();
+    const onExecutionTooltipChanged = vi.fn();
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500, lang: "zh-CN" } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      devicePixelRatio: 1,
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onRenderError,
+      onExecutionTooltipChanged,
+      onViewportChanged(viewport) { currentViewport = viewport; }
+    });
+    const source = materialized(1, 100);
+    const rows = [{
+      id: "execution",
+      time: 51,
+      side: "buy" as const,
+      price: 150,
+      quantity: 300,
+      amount: 45_000,
+      fee: 5,
+      tQuantity: 100,
+      label: "T买"
+    }];
+    runtime.setExecutions(rows);
+    rows[0]!.label = "changed";
+    runtime.setMaterializedSeries(source);
+    flushFrames();
+    expect(onRenderError).not.toHaveBeenCalled();
+    expect(staticCanvas.texts).toContain("T买");
+    expect(staticCanvas.texts).not.toContain("changed");
+
+    const layout = createChartLayout(800, 500);
+    const scale = createMainPanelPriceScale(source.series, currentViewport!.visibleRange, "linear", [], []);
+    const x = indexToX(50, currentViewport!, layout.plotArea.x);
+    const y = priceToY(150, scale, layout.plotArea.y, layout.plotArea.height) + 9;
+    overlayCanvas.dispatch("pointermove", { clientX: x, clientY: y, pointerType: "mouse" });
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(expect.objectContaining({
+      pinned: false,
+      rows: expect.arrayContaining([{ label: "金额", value: "45,000" }])
+    }));
+    expect(overlayCanvas.texts.some((text) => text.includes("金额:"))).toBe(false);
+
+    overlayCanvas.dispatch("pointerleave", {});
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 1, clientX: x, clientY: y });
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(expect.objectContaining({ pinned: true }));
+    overlayCanvas.dispatch("pointerdown", { pointerId: 2, clientX: 700, clientY: 100 });
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
+
+    staticCanvas.texts.splice(0);
+    runtime.setExecutionsVisible(false);
+    flushFrames();
+    expect(staticCanvas.texts).not.toContain("T买");
+    runtime.destroy();
+  });
+
   it("supplies valid defaults for every stateful series transform", async () => {
     const calculateSeries = vi.fn(async (input: Parameters<CheckpointedCalculationRuntime["calculateSeries"]>[0]) => ({
       type: input.type,
@@ -217,7 +298,7 @@ describe("workspace engine runtime", () => {
     runtime.destroy();
   });
 
-  it("renders a fixed intraday percentage axis and fits all nine days on first paint", () => {
+  it("renders a fixed one-day intraday percentage axis and fits the complete day on first paint", () => {
     const staticCanvas = new FakeCanvas();
     const viewports: ViewportState[] = [];
     const renderErrors: unknown[] = [];
@@ -235,20 +316,69 @@ describe("workspace engine runtime", () => {
       onRenderError: (error) => renderErrors.push(error)
     });
     const source: MaterializedSeries = {
-      ...materialized(1, 2_169),
-      intradayDays: 9,
+      ...materialized(1, 241),
+      intradayDays: 1,
       intradayScale: { previousClose: 100, priceLimitPercent: 10 }
     };
+    source.series.candles = source.series.candles.map((entry) => ({
+      ...entry,
+      open: 100,
+      high: 105,
+      low: 95,
+      close: 100,
+      turnover: 100_000
+    }));
 
     runtime.setMaterializedSeries(source);
     frame?.();
 
-    expect(viewports.at(-1)?.visibleRange).toEqual({ from: 0, to: 2_168 });
+    expect(viewports.at(-1)?.visibleRange).toEqual({ from: 0, to: 240 });
     expect(viewports.at(-1)?.candleWidth).toBeGreaterThanOrEqual(0.05);
-    expect(viewports.at(-1)?.candleWidth).toBeLessThan(0.25);
-    expect(runtime.getVisibleRange()).toEqual({ from: 1, to: 2_169 });
+    expect(viewports.at(-1)?.candleWidth).toBeLessThan(2);
+    expect(runtime.getVisibleRange()).toEqual({ from: 1, to: 241 });
     expect(renderErrors).toEqual([]);
     expect(staticCanvas.texts).toEqual(expect.arrayContaining(["+10.00%", "0.00%", "-10.00%"]));
+    runtime.destroy();
+  });
+
+  it("auto-scales multi-day intraday symmetrically around the close before the first day", () => {
+    const staticCanvas = new FakeCanvas();
+    let frame: (() => void) | undefined;
+    const firstDay = Date.UTC(2026, 6, 15, 1, 30);
+    const secondDay = Date.UTC(2026, 6, 16, 1, 30);
+    const source = materialized(1, 4);
+    source.series.candles = [
+      { time: firstDay, open: 100, high: 108, low: 94, close: 102, volume: 100, turnover: 10_200 },
+      { time: firstDay + 330 * 60_000, open: 102, high: 106, low: 98, close: 104, volume: 100, turnover: 10_400 },
+      { time: secondDay, open: 105, high: 110, low: 96, close: 108, volume: 100, turnover: 10_800 },
+      { time: secondDay + 330 * 60_000, open: 108, high: 114, low: 100, close: 112, volume: 100, turnover: 11_200 }
+    ];
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: (callback) => { frame = callback; return 1; },
+      cancelFrame: () => undefined,
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration
+    });
+
+    runtime.setMaterializedSeries({
+      ...source,
+      intradayDays: 2,
+      intradayScale: { previousClose: 100 }
+    });
+    frame?.();
+
+    expect(staticCanvas.texts).toEqual(expect.arrayContaining([
+      "+15.00%",
+      "0.00%",
+      "-15.00%",
+      "115.00",
+      "85.00"
+    ]));
+    expect(staticCanvas.strokeStyles).toContain("#d6a700");
     runtime.destroy();
   });
 
@@ -498,6 +628,36 @@ describe("workspace engine runtime", () => {
     expect(after.candleWidth).toBe(before.candleWidth);
     expect((1_425 - 1_175) - after.visibleRange.from).toBe((1_425 - 1_001) - before.visibleRange.from);
     expect(runtime.getVisibleRange()).toEqual({ from: 1_401, to: 1_450 });
+    runtime.destroy();
+  });
+
+  it("clamps an oversized public visible range to the ordinary K-line zoom capacity", () => {
+    const viewports: ViewportState[] = [];
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined,
+      onViewportChanged: (viewport) => viewports.push(structuredClone(viewport))
+    });
+    runtime.setMaterializedSeries(materialized(1, 1_000));
+
+    expect(runtime.setVisibleRange({ from: 1, to: 1_000 })).toBe(true);
+
+    const viewport = viewports.at(-1)!;
+    const plotWidth = createChartLayout(800, 500).plotArea.width;
+    expect(viewport.candleWidth).toBeGreaterThanOrEqual(2);
+    expect(viewport.visibleRange.to).toBe(999);
+    expect(viewport.visibleRange.to - viewport.visibleRange.from + 1).toBe(
+      Math.floor(plotWidth / 2)
+    );
+    expect(runtime.getVisibleRange()).toEqual({
+      from: 1_000 - Math.floor(plotWidth / 2) + 1,
+      to: 1_000
+    });
     runtime.destroy();
   });
 

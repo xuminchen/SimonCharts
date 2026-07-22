@@ -22,16 +22,21 @@ export function createVolumeLayer(): ChartLayer {
 
       for (let index = bounds.from; index <= bounds.to; index += 1) {
         const candle = series.candles[index];
-        const x = indexToX(index, viewport, volumeArea.x);
-        const barWidth = Math.max(1, viewport.candleWidth * 0.7);
+        const x = indexToX(index, viewport, volumeArea.x, state.timeCoordinates);
+        const barWidth = Math.max(
+          1,
+          state.timeCoordinates?.barWidth ?? viewport.candleWidth * 0.7
+        );
         const baseline = volumeArea.y + volumeArea.height;
         const barHeight = maxVolume > 0 ? (candle.volume / maxVolume) * volumeArea.height : 0;
+        const left = Math.max(volumeArea.x, x - barWidth / 2);
+        const right = Math.min(volumeArea.x + volumeArea.width, x + barWidth / 2);
 
         context.fillStyle =
           candle.close >= candle.open
             ? theme.colors.bullishCandle
             : theme.colors.bearishCandle;
-        context.fillRect(x - barWidth / 2, baseline - barHeight, barWidth, barHeight);
+        context.fillRect(left, baseline - barHeight, Math.max(0, right - left), barHeight);
       }
     }
   };

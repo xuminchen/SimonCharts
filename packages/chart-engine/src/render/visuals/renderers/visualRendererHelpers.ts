@@ -20,6 +20,7 @@ export interface VisibleValuePoint {
 }
 
 export interface VisualHitPoint {
+  itemId?: string;
   time: number;
   value?: number;
   x: number;
@@ -111,7 +112,12 @@ export function isVisibleIndex(context: VisualCoordinateContext, index: number):
 }
 
 export function xForVisualIndex(context: VisualCoordinateContext, index: number): number {
-  return indexToX(index, context.state.viewport, context.panel.plotArea.x);
+  return indexToX(
+    index,
+    context.state.viewport,
+    context.panel.plotArea.x,
+    context.state.timeCoordinates
+  );
 }
 
 export function yForVisualValue(
@@ -185,6 +191,7 @@ export function getNearestVisualHit(
       nearestHit = {
         outputId: output.id,
         outputType: output.type,
+        ...(point.itemId === undefined ? {} : { itemId: point.itemId }),
         time: point.time,
         value: point.value,
         distance

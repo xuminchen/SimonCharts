@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { calculateCoreIndicator, coreIndicatorDefinitions, fixtureDailyCandleSeries } from "@simoncharts/chart-engine";
+import { calculateCoreIndicator, coreIndicatorDefinitions } from "@simoncharts/chart-engine";
+import { fixtureDailyCandleSeries } from "../src/fixtures/dailyCandles";
 import { playgroundVisualOutputs } from "../src/fixtures/visualFixtures";
 
 test("exposes every core indicator definition", async ({ page }) => {

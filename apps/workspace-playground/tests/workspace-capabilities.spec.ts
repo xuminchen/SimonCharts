@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 async function drawTrendLine(page: Page): Promise<void> {
   await page.getByTestId("drawing-palette-expand").click();
   await page.locator('[data-drawing-category="basic"]').click();
-  await page.getByRole("menuitem", { name: "Trend Line", exact: true }).click();
+  await page.locator('[data-drawing-tool="trendLine"]').click();
   const canvas = page.locator("canvas.sc-overlay-canvas");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("canvas missing");

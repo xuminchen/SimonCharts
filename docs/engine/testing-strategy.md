@@ -130,7 +130,7 @@ npm run check:package-consumer
 npm run check:package-types
 ```
 
-SDK runtime coverage verifies package-root consumers can call `createOhlcMagnetTargetsFromSeries()` with `fixtureDailyCandleSeries`, the Engine viewport, a neutral plot area, and the shared main `PriceScale`, then read visible candle OHLC targets. Type coverage verifies `OhlcMagnetTargetOptions`, `MagnetPlotArea`, and `PriceScale` against built declarations.
+SDK runtime coverage verifies package-root consumers can call `createOhlcMagnetTargetsFromSeries()` with a test-local deterministic candle fixture, the Engine viewport, a neutral plot area, and the shared main `PriceScale`, then read visible candle OHLC targets. The fixture is not a package export or production runtime dependency. Type coverage verifies `OhlcMagnetTargetOptions`, `MagnetPlotArea`, and `PriceScale` against built declarations.
 
 OHLC target creation is DOM-free. Hosts pass neutral candle series, viewport, plot area, the required shared main price scale, and optional fields; the Engine returns visible candle OHLC `MagnetSnapTarget[]`. Hosts still own pointer events, magnet toggles, target collection timing, render invalidation, persistence, and collaboration.
 

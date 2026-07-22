@@ -86,7 +86,12 @@ export function getVisiblePriceRange(
 }
 
 export function xForIndex(context: SeriesRendererContext, index: number): number {
-  return indexToX(index, context.state.viewport, context.layout.plotArea.x);
+  return indexToX(
+    index,
+    context.state.viewport,
+    context.layout.plotArea.x,
+    context.state.timeCoordinates
+  );
 }
 
 export function yForPrice(
@@ -103,7 +108,10 @@ export function yForPrice(
 }
 
 export function bodyWidth(context: SeriesRendererContext): number {
-  return Math.max(1, context.state.viewport.candleWidth * 0.7);
+  return Math.max(
+    1,
+    context.state.timeCoordinates?.barWidth ?? context.state.viewport.candleWidth * 0.7
+  );
 }
 
 export function pointColor(context: SeriesRendererContext, point: SeriesRenderPoint): string {

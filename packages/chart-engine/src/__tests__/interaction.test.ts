@@ -3,12 +3,12 @@ import {
   createInitialViewport,
   createInteractionEngine,
   createPriceScaleFromBounds,
-  fixtureDailyCandleSeries,
   hitTestCandleAtX,
   indexToX
 } from "../index";
 import { createMainPanelPriceScale } from "../render/mainPriceScale";
 import type { CandleSeries, InteractionEvent, ViewportState } from "../index";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles";
 
 const width = 240;
 const plotLeft = 16;
@@ -137,6 +137,37 @@ describe("interaction engine", () => {
     );
     expect(after.visibleRange.from).toBeLessThanOrEqual(anchorIndex);
     expect(after.visibleRange.to).toBeGreaterThanOrEqual(anchorIndex);
+  });
+
+  it("makes further wheel zoom-out a no-op at the bounded K-line capacity", () => {
+    const series = createSeries(6_000);
+    const chartWidth = 1_132;
+    const viewport = createInitialViewport(series.candles.length, chartWidth);
+    const engine = createInteractionEngine({
+      series,
+      viewport,
+      priceScale: createMainPanelPriceScale(series, viewport.visibleRange, "linear", [], []),
+      width: chartWidth,
+      plotLeft: 0,
+      plotTop,
+      plotHeight,
+      onEvent: () => undefined
+    });
+
+    for (let count = 0; count < 64; count += 1) {
+      const current = engine.getViewport();
+      const anchorIndex = Math.floor((current.visibleRange.from + current.visibleRange.to) / 2);
+      engine.handleWheel({ x: indexToX(anchorIndex, current, 0), deltaY: 100 });
+    }
+
+    const stopped = engine.getViewport();
+    expect(stopped.candleWidth).toBe(2);
+    expect(stopped.visibleRange).toEqual({ from: 5_434, to: 5_999 });
+    expect(indexToX(stopped.visibleRange.from, stopped, 0) - stopped.candleWidth / 2).toBe(0);
+    expect(indexToX(stopped.visibleRange.to, stopped, 0) + stopped.candleWidth / 2).toBe(chartWidth);
+
+    engine.handleWheel({ x: chartWidth / 2, deltaY: 100 });
+    expect(engine.getViewport()).toEqual(stopped);
   });
 
   it("changes the visible range by candle delta while dragging", () => {
@@ -318,6 +349,28 @@ describe("hit testing", () => {
       index,
       candle: series.candles[index]
     });
+  });
+
+  it("uses the same irregular intraday coordinates as rendering", () => {
+    const series = createSeries(4);
+    const viewport: ViewportState = {
+      visibleRange: { from: 0, to: 3 },
+      candleWidth: 50,
+      scrollOffset: 0,
+      priceScaleMode: "linear"
+    };
+    const timeCoordinates = {
+      positions: [0, 100, 100, 200],
+      barWidth: 1,
+      dayStartIndices: [0, 2],
+      dayStartOffsets: [0, 100]
+    };
+
+    expect(hitTestCandleAtX(series, viewport, 160, 0, timeCoordinates)).toEqual({
+      index: 3,
+      candle: series.candles[3]
+    });
+    expect(hitTestCandleAtX(series, viewport, 202, 0, timeCoordinates)).toBeUndefined();
   });
 
   it("returns undefined when x maps beyond clamped visible candle data", () => {

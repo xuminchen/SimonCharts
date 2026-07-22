@@ -42,7 +42,6 @@ import {
   defaultChartTheme,
   defaultChartTimeFormatter,
   engineApiVersion,
-  fixtureDailyCandleSeries,
   serializeChartLayoutSnapshot,
   transformSeriesChunk
 } from "@simoncharts/chart-engine";
@@ -130,6 +129,22 @@ import type {
   Timeframe,
   VisualOutputType
 } from "@simoncharts/chart-engine";
+
+const fixtureDailyCandleSeries: CandleSeries = {
+  symbol: "TYPE-CHECK",
+  timeframe: "1d",
+  adjustMode: "none",
+  dataVersion: "type-check",
+  candles: Array.from({ length: 20 }, (_, index) => ({
+    time: index + 1,
+    open: 10,
+    high: 12,
+    low: 9,
+    close: 11,
+    volume: 100,
+    turnover: 1_100
+  }))
+};
 
 const series: CandleSeries = fixtureDailyCandleSeries;
 const checkpointSeries: CandleSeries = {

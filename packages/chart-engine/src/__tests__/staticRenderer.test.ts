@@ -440,6 +440,57 @@ describe("static renderer", () => {
     }
   });
 
+  it("uses real intraday day slots for boundary grid lines and date labels", () => {
+    const firstDay = Date.UTC(2026, 6, 16, 1, 30);
+    const secondDay = Date.UTC(2026, 6, 17, 1, 30);
+    const series: CandleSeries = {
+      ...createSeries(),
+      timeframe: "1m",
+      candles: [
+        { time: firstDay, open: 10, high: 11, low: 9, close: 10, volume: 1, turnover: 10 },
+        { time: firstDay + 330 * 60_000, open: 10, high: 11, low: 9, close: 10, volume: 1, turnover: 10 },
+        { time: secondDay, open: 10, high: 11, low: 9, close: 10, volume: 1, turnover: 10 },
+        { time: secondDay + 330 * 60_000, open: 10, high: 11, low: 9, close: 10, volume: 1, turnover: 10 }
+      ]
+    };
+    const viewport = createViewport({ from: 0, to: 3 });
+    const renderContext = createRenderContext(createState({
+      series,
+      viewport,
+      intradayDays: 2,
+      layout: {
+        ...createLayout(),
+        width: 300,
+        plotArea: { x: 0, y: 0, width: 260, height: 56 },
+        priceAxisArea: { x: 260, y: 0, width: 40, height: 56 },
+        volumeArea: { x: 0, y: 64, width: 260, height: 16 },
+        timeAxisArea: { x: 0, y: 80, width: 260, height: 20 }
+      },
+      timeCoordinates: {
+        positions: [0, 130, 130, 260],
+        barWidth: 1,
+        dayStartIndices: [0, 2],
+        dayStartOffsets: [0, 130]
+      },
+      formatTime: (time) => time < secondDay ? "2026-07-16 09:30" : "2026-07-17 09:30"
+    }));
+
+    createGridLayer().render(renderContext);
+    createAxisLayer().render(renderContext);
+
+    const boundaryMoves = callsNamed(renderContext, "moveTo")
+      .filter((call) => call.args[0] === 130 && call.args[1] === 0);
+    const boundaryLines = callsNamed(renderContext, "lineTo")
+      .filter((call) => call.args[0] === 130 && call.args[1] === 56);
+    const dateLabels = callsNamed(renderContext, "fillText")
+      .filter((call) => call.args[2] === 88)
+      .map((call) => [call.args[0], call.args[1]]);
+
+    expect(boundaryMoves).toHaveLength(1);
+    expect(boundaryLines).toHaveLength(1);
+    expect(dateLabels).toEqual([["07-16", 18], ["07-17", 130]]);
+  });
+
   it.each(["linear", "log", "percentage"] as const)(
     "renders the static chart with the shared %s scale",
     (priceScaleMode) => {
@@ -561,6 +612,30 @@ describe("static renderer", () => {
         renderContext.state.layout.volumeArea.y + renderContext.state.layout.volumeArea.height
       );
     }
+  });
+
+  it("aligns volume bars to the shared intraday day-slot coordinates", () => {
+    const series = createSeries();
+    series.candles = series.candles.slice(0, 4);
+    const renderContext = createRenderContext(createState({
+      series,
+      viewport: createViewport({ from: 0, to: 3 }),
+      timeCoordinates: {
+        positions: [0, 50, 50, 100],
+        barWidth: 1,
+        dayStartIndices: [0, 2],
+        dayStartOffsets: [0, 50]
+      }
+    }));
+
+    createVolumeLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "fillRect").map((call) => call.args[0])).toEqual([
+      0,
+      49.5,
+      49.5,
+      99.5
+    ]);
   });
 
   it("skips undefined moving average values and draws continuous defined segments", () => {

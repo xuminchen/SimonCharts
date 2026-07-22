@@ -2,6 +2,7 @@ import type {
   AdjustMode,
   ChartEvent,
   ChartEventListener,
+  ChartExecution,
   ChartFeature,
   ChartInstance,
   ChartLocale,
@@ -37,7 +38,8 @@ const validFeatures = new Set<ChartFeature>([
   "drawing-tools",
   "drawing-history",
   "settings",
-  "bottom-panel"
+  "bottom-panel",
+  "executions"
 ]);
 const drawingSurfaceFeatures: readonly ChartFeature[] = [
   "drawing-tools",
@@ -59,6 +61,28 @@ function resolvedTheme(theme: unknown): ChartTheme {
 
 function resolvedLocale(locale: unknown): ChartLocale {
   return locale === "en-US" || locale === "zh-CN" ? locale : "zh-CN";
+}
+
+function validExecutions(executions: unknown): executions is readonly ChartExecution[] {
+  return Array.isArray(executions) && executions.every((execution) => (
+    typeof execution === "object" &&
+    execution !== null &&
+    typeof execution.id === "string" &&
+    execution.id.trim().length > 0 &&
+    typeof execution.time === "number" && Number.isFinite(execution.time) && execution.time > 0 &&
+    (execution.side === "buy" || execution.side === "sell") &&
+    typeof execution.price === "number" && Number.isFinite(execution.price) && execution.price > 0 &&
+    typeof execution.quantity === "number" && Number.isFinite(execution.quantity) && execution.quantity > 0 &&
+    (execution.label === undefined || (typeof execution.label === "string" && execution.label.trim().length > 0)) &&
+    (execution.amount === undefined || (typeof execution.amount === "number" && Number.isFinite(execution.amount))) &&
+    (execution.fee === undefined || (typeof execution.fee === "number" && Number.isFinite(execution.fee))) &&
+    (execution.tQuantity === undefined || (
+      typeof execution.tQuantity === "number" &&
+      Number.isFinite(execution.tQuantity) &&
+      execution.tQuantity >= 0 &&
+      execution.tQuantity <= execution.quantity
+    ))
+  ));
 }
 
 function validOptions(options: ChartOptions): boolean {
@@ -83,6 +107,7 @@ function validOptions(options: ChartOptions): boolean {
       (Array.isArray(options.features) && options.features.every((feature) => validFeatures.has(feature)))) &&
     (options.theme === undefined || (["dark", "light"] as const).includes(options.theme)) &&
     (options.locale === undefined || (["zh-CN", "en-US"] as const).includes(options.locale)) &&
+    (options.executions === undefined || validExecutions(options.executions)) &&
     typeof options?.datafeed?.getCapabilities === "function" &&
     typeof options?.datafeed?.searchSymbols === "function" &&
     typeof options?.datafeed?.loadSeries === "function"
@@ -105,6 +130,7 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     canUndoDrawing: false,
     canRedoDrawing: false,
     gridVisible: true,
+    executionsVisible: false,
     calculationStatus: { type: "idle" },
     search: { query: "", loading: false, results: [] }
   };
@@ -164,6 +190,8 @@ export function createChart(
       setView: () => undefined,
       setIntradayDays: () => undefined,
       setAdjustMode: () => undefined,
+      setExecutions: () => undefined,
+      setExecutionsVisible: () => undefined,
       setVisibleRange: () => undefined,
       resetToLatest: () => undefined,
       retry: () => undefined,
@@ -220,6 +248,7 @@ export function createChart(
     },
     onCalculationStatusChanged: (status) => controller?.handleCalculationStatus(status),
     onDataWindowChanged: (snapshot) => shell.renderDataWindow(snapshot),
+    onExecutionTooltipChanged: (snapshot) => shell.renderExecutionTooltip(snapshot),
     onDrawingsChanged: (drawings, selectedDrawingIds) => controller?.handleDrawingsChanged(drawings, selectedDrawingIds),
     onDrawingHistoryChanged: (history) => controller?.handleDrawingHistoryChanged(history),
     onRenderError: (error) => controller?.handleRenderError(error)
@@ -228,6 +257,7 @@ export function createChart(
     chartId: options.chartId,
     drawingPersistenceEnabled: drawingSurfaceFeatures.some((feature) => features.has(feature)),
     seriesTypePersistenceEnabled: features.has("series-type"),
+    executionsEnabled: features.has("executions"),
     initialSymbol: options.initialSymbol,
     initialTimeframe: options.initialTimeframe,
     initialAdjustMode: options.initialAdjustMode,
@@ -254,6 +284,7 @@ export function createChart(
     }
   });
   const unbind = shell.bind(controller);
+  runtime.setExecutions(options.executions ?? []);
   shell.render(controller.getViewModel());
   for (const error of pendingStorageErrors) controller.handleStorageError(error);
   controller.start();
@@ -276,6 +307,14 @@ export function createChart(
       controller!.setIntradayDays(days);
     },
     setAdjustMode: (adjustMode: AdjustMode) => controller!.setAdjustMode(adjustMode),
+    setExecutions: (executions: readonly ChartExecution[]) => {
+      if (!validExecutions(executions)) throw new TypeError("Chart executions are invalid");
+      runtime.setExecutions(executions);
+    },
+    setExecutionsVisible: (visible: boolean) => {
+      if (typeof visible !== "boolean") throw new TypeError("Execution visibility must be boolean");
+      controller!.setExecutionsVisible(visible);
+    },
     setVisibleRange: (range: ChartVisibleRange) => {
       if (
         typeof range !== "object" ||

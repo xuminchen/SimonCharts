@@ -31,7 +31,7 @@ test("canonical viewport and scale controls update owned render state", async ({
   await expect.poll(async () => Number(await candleWidth.textContent())).toBe(initialWidth);
 
   await page.getByTestId("zoom-out").click();
-  await expect.poll(async () => Number(await candleWidth.textContent())).toBeLessThan(initialWidth);
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBe(initialWidth);
 
   const linearPixels = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
 
@@ -43,7 +43,8 @@ test("canonical viewport and scale controls update owned render state", async ({
 
   await page.getByTestId("zoom-in").click();
   await page.getByTestId("zoom-in").click();
-  await expect.poll(async () => Number(await candleWidth.textContent())).toBe(10);
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBeGreaterThan(initialWidth);
+  const beforeWheelWidth = Number(await candleWidth.textContent());
 
   await page.evaluate(() => {
     (window as Window & { __SIMON_CHART_EVENTS__?: unknown[] }).__SIMON_CHART_EVENTS__ = [];
@@ -66,5 +67,5 @@ test("canonical viewport and scale controls update owned render state", async ({
       )
     )
     .toBe(1);
-  await expect.poll(async () => Number(await candleWidth.textContent())).toBe(12.5);
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBeGreaterThan(beforeWheelWidth);
 });

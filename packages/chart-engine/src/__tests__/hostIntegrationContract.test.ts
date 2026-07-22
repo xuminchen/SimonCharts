@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   createChartEngine,
-  fixtureDailyCandleSeries,
   serializeChartLayoutSnapshot,
   supportedTimeframes,
   type CandleSeries,
   type HostAdapter
 } from "../index";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles";
 
 describe("host integration contract", () => {
   it("adapts neutral engine state without requiring host business models", async () => {

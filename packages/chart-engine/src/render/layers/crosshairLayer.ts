@@ -29,7 +29,7 @@ export function createCrosshairLayer(): ChartLayer {
       }
 
       const x = clamp(
-        indexToX(crosshair.index, viewport, plotArea.x),
+        indexToX(crosshair.index, viewport, plotArea.x, state.timeCoordinates),
         plotArea.x,
         plotArea.x + plotArea.width
       );
@@ -47,7 +47,7 @@ export function createCrosshairLayer(): ChartLayer {
         context.setLineDash(crosshairDash);
         context.beginPath();
         context.moveTo(x, plotArea.y);
-        context.lineTo(x, plotArea.y + plotArea.height);
+        context.lineTo(x, Math.max(plotArea.y + plotArea.height, layout.volumeArea.y + layout.volumeArea.height));
         context.moveTo(plotArea.x, y);
         context.lineTo(plotArea.x + plotArea.width, y);
         context.stroke();

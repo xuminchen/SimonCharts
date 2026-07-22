@@ -1,6 +1,5 @@
 export * from "./commands/chartCommands";
 export * from "./commands/history";
-export * from "./fixtures/dailyCandles";
 export * from "./figures/builtInFigures";
 export * from "./figures/figureGeometry";
 export * from "./figures/figureRegistry";

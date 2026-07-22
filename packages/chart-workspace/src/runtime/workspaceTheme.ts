@@ -25,6 +25,10 @@ export function readWorkspaceChartTheme(
       panelSeparator: border,
       selectedDrawing: variable(style, "--sc-accent", "#6266f1"),
       hoveredDrawing: variable(style, "--sc-accent", "#6266f1"),
+      maLines: [
+        variable(style, "--sc-intraday-average", "#d6a700"),
+        ...defaultChartTheme.colors.maLines.slice(1)
+      ],
       tooltip: { background: variable(style, "--sc-surface", "#15171c"), text, border }
     },
     lineDashes: { grid: [1, 3] }

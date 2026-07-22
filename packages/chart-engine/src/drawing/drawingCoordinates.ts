@@ -1,7 +1,7 @@
 import type { CandleSeries } from "../model/market";
 import type { ViewportState } from "../model/runtime";
 import { priceToY, yToPrice, type PriceScale } from "../viewport/priceScale";
-import { indexToX, xToIndex } from "../viewport/viewport";
+import { indexToX, xToIndex, type TimeCoordinateMap } from "../viewport/viewport";
 import type { DrawingEditorPoint } from "./drawingEditor";
 import type { DrawingAnchor, DrawingObject } from "./drawingTypes";
 
@@ -10,6 +10,7 @@ export interface DrawingCoordinateContext {
   viewport: ViewportState;
   plotArea: { x: number; y: number; width: number; height: number };
   priceScale: PriceScale;
+  timeCoordinates?: TimeCoordinateMap;
 }
 
 export function projectDrawingObject(
@@ -34,7 +35,12 @@ export function drawingPointFromPointer(
   pointer: Pick<DrawingEditorPoint, "x" | "y">,
   context: DrawingCoordinateContext
 ): DrawingEditorPoint {
-  const rawIndex = xToIndex(pointer.x, context.viewport, context.plotArea.x);
+  const rawIndex = xToIndex(
+    pointer.x,
+    context.viewport,
+    context.plotArea.x,
+    context.timeCoordinates
+  );
   const index = clampCandleIndex(rawIndex, context.series.candles.length);
 
   return {
@@ -60,7 +66,7 @@ function projectAnchor(
   return {
     time: anchor.time,
     price,
-    x: indexToX(index, context.viewport, context.plotArea.x),
+    x: indexToX(index, context.viewport, context.plotArea.x, context.timeCoordinates),
     y:
       typeof price === "number"
         ? priceToY(price, context.priceScale, context.plotArea.y, context.plotArea.height)
@@ -116,7 +122,8 @@ function unprojectAnchor(
   const rawIndex = xToIndex(
     anchor.x ?? context.plotArea.x,
     context.viewport,
-    context.plotArea.x
+    context.plotArea.x,
+    context.timeCoordinates
   );
   const index = clampCandleIndex(rawIndex, context.series.candles.length);
   const y = anchor.y ?? context.plotArea.y;
@@ -125,7 +132,8 @@ function unprojectAnchor(
       ? indexToX(
           resolveAnchorIndex(anchor, context.series),
           context.viewport,
-          context.plotArea.x
+          context.plotArea.x,
+          context.timeCoordinates
         )
       : undefined;
   const time =

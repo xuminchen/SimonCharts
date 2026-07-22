@@ -5,9 +5,11 @@ import type { CandleSeries } from "../model/market";
 import type { ChartCrosshairState as CrosshairState, ViewportState } from "../model/runtime";
 import type { ChartTheme } from "../model/theme";
 import type { IndicatorVisualOutput } from "../model/visual";
+import type { VisualTooltipRow } from "../visuals/visualTypes";
 import type { PanelArea } from "../panels/panelTypes";
 import type { SeriesRenderModel, SeriesType } from "../series/seriesTypes";
 import type { PriceScale } from "../viewport/priceScale";
+import type { TimeCoordinateMap } from "../viewport/viewport";
 
 export interface ChartLayout {
   width: number;
@@ -64,6 +66,14 @@ export interface RenderState {
   selectedDrawingIds?: string[];
   hoveredDrawingId?: string;
   intradayDays?: number;
+  timeCoordinates?: TimeCoordinateMap;
+  locale?: "zh-CN" | "en-US";
+  visualTooltip?: {
+    x: number;
+    y: number;
+    title?: string;
+    rows: VisualTooltipRow[];
+  };
 }
 
 export interface LayerRenderContext {

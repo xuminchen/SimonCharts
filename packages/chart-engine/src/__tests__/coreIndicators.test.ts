@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   calculateCoreIndicator,
   coreIndicatorDefinitions,
-  fixtureDailyCandleSeries,
   type IndicatorBandOutput,
   type IndicatorLineOutput,
   type IndicatorMarkerOutput,
   type IndicatorPoint,
   type IndicatorVisualOutput
 } from "../index";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles";
 
 const coreIndicatorIds = [
   "MA",

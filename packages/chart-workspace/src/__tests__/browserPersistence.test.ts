@@ -45,6 +45,29 @@ describe("browser persistence", () => {
     });
   });
 
+  it("truncates legacy timeframe favorites beyond the current limit", () => {
+    const storage = new MemoryStorage();
+    const onError = vi.fn<BrowserPersistenceErrorHandler>();
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, onError);
+    storage.setItem("simoncharts:workspace:v1:trs:user-1:preferences", JSON.stringify({
+      schemaVersion: 1,
+      value: {
+        seriesType: "area",
+        priceScaleMode: "percentage",
+        gridVisible: false,
+        favoriteTimeframes: ["1m", "5m", "15m", "30m", "60m"]
+      }
+    }));
+
+    expect(persistence.loadPreferences()).toEqual({
+      seriesType: "area",
+      priceScaleMode: "percentage",
+      gridVisible: false,
+      favoriteTimeframes: ["1m", "5m", "15m", "30m"]
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("isolates drawings by workspace, persistence scope, data context, symbol, and adjustment but not timeframe", () => {
     const storage = new MemoryStorage();
     const persistence = createBrowserPersistence("trs", "user-1", "cutoff:2026-07-16", storage, vi.fn());

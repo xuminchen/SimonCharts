@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.18";
+const expectedVersion = "1.0.0-rc.26";
 const failures = [];
 const result = spawnSync("npm", ["pack", "--dry-run", "--json", "-w", packageName], {
   cwd: process.cwd(),
@@ -50,6 +52,10 @@ for (const file of files) {
   expect(!file.endsWith(".tsbuildinfo"), `workspace artifact must not include build info ${file}`);
   expect(!file.endsWith(".ts") || file.endsWith(".d.ts"), `workspace artifact must not include source TypeScript ${file}`);
 }
+
+const bundle = await readFile(path.join(process.cwd(), "packages/chart-workspace/dist/index.js"), "utf8");
+expect(!/Date\.UTC\(2026,\s*0,\s*1\)/.test(bundle), "workspace bundle must not execute the test candle generator");
+expect(!bundle.includes("fixture-2026-06-23"), "workspace bundle must not contain test candle data");
 
 if (failures.length > 0) {
   console.error("Workspace package artifact check failed:");

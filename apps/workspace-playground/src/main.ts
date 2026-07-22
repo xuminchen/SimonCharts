@@ -106,6 +106,7 @@ document.body.append(destroy);
 const params = new URLSearchParams(location.search);
 const controls = readFixtureControls(location.search);
 const dataSource = createFixtureDataSource(controls, counters, requests);
+const executionOverflow = params.get("executionOverflow") === "1";
 let chart: ChartInstance | undefined;
 
 if (params.get("nonElement") === "1") {
@@ -121,12 +122,28 @@ if (params.get("nonElement") === "1") {
     persistenceScopeId: "fixture-user",
     dataContextId: invalid === "context" ? "" : "fixture-current",
     initialSymbol: invalid === "symbol" ? { ...stock, id: "" } : stock,
+    ...(executionOverflow
+      ? {
+          initialTimeframe: "1m",
+          executions: Array.from({ length: 30 }, (_, index) => ({
+            id: `fill-${index + 1}`,
+            time: Date.UTC(2026, 5, 5, 1, 30) + 499 * 60_000 + (index + 1) * 1_000,
+            side: "buy" as const,
+            price: 100 + index / 100,
+            quantity: 100 + index,
+            amount: (100 + index / 100) * (100 + index),
+            fee: 5,
+            tQuantity: 0,
+            label: "B"
+          }))
+        }
+      : {}),
     datafeed: invalid === "datasource" ? {} : dataSource,
     ...(invalid === "features"
       ? { features: ["not-a-feature"] }
       : params.get("minimal") === "1"
         ? {}
-        : { features: advancedChartFeatures }),
+        : { features: executionOverflow ? [...advancedChartFeatures, "executions"] : advancedChartFeatures }),
     theme: (params.get("theme") ?? "dark") as ChartTheme,
     locale: (params.get("locale") ?? "zh-CN") as ChartLocale,
     onError: () => { counters.errors += 1; }

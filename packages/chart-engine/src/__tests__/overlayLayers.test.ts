@@ -274,8 +274,16 @@ describe("overlay layers", () => {
     ]);
   });
 
-  it("draws vertical and horizontal guide lines when crosshair is visible", () => {
-    const renderContext = createRenderContext(createState({ crosshair: createCrosshair() }));
+  it("draws the vertical guide through volume while keeping the horizontal guide in the plot", () => {
+    const renderContext = createRenderContext(createState({
+      crosshair: createCrosshair(),
+      layout: {
+        ...createLayout(),
+        height: 120,
+        volumeArea: { x: 0, y: 88, width: 100, height: 12 },
+        timeAxisArea: { x: 0, y: 100, width: 100, height: 20 }
+      }
+    }));
 
     createCrosshairLayer().render(renderContext);
 
@@ -285,7 +293,7 @@ describe("overlay layers", () => {
 
     expect(pathCalls).toHaveLength(4);
     expect(pathCalls[0]).toMatchObject({ name: "moveTo", x: 15, y: 0 });
-    expect(pathCalls[1]).toMatchObject({ name: "lineTo", x: 15, y: 80 });
+    expect(pathCalls[1]).toMatchObject({ name: "lineTo", x: 15, y: 100 });
     expect(pathCalls[2]).toMatchObject({ name: "moveTo", x: 0 });
     expect(pathCalls[2].y).toBeCloseTo(40);
     expect(pathCalls[3]).toMatchObject({ name: "lineTo", x: 100 });
@@ -379,7 +387,7 @@ describe("overlay layers", () => {
     expect((renderContext.context as unknown as FakeCanvasContext).calls).toEqual([]);
   });
 
-  it("renders tooltip values from the neutral candle under the crosshair", () => {
+  it("renders K-line market details from the neutral candle under the crosshair", () => {
     const renderContext = createRenderContext(
       createState({
         crosshair: createCrosshair({
@@ -398,15 +406,61 @@ describe("overlay layers", () => {
 
     const text = callsNamed(renderContext, "fillText").map((call) => call.args[0]);
     expect(text).toEqual([
-      "Time: 3",
-      "Open: 12",
-      "High: 16",
-      "Low: 10",
-      "Close: 15",
-      "Volume: 90",
-      "Turnover: 1350"
+      "3 Asia/Shanghai",
+      "Open      12",
+      "High      16",
+      "Low       10",
+      "Close     15",
+      "Change    +3 (+25.00%)",
+      "Amplitude 60.00%",
+      "Position  83.3%",
+      "Volume    90",
+      "Turnover  1,350"
     ]);
-    expect(text).not.toContain("Open: 999");
+    expect(text).not.toContain("Open      999");
+  });
+
+  it("renders the Chinese K-line tooltip with compact volume and turnover", () => {
+    const series = createSeries();
+    series.candles[1] = {
+      time: 2,
+      open: 25.2,
+      high: 25.6,
+      low: 25,
+      close: 25.49,
+      volume: 10,
+      turnover: 254.9
+    };
+    series.candles[2] = {
+      time: 3,
+      open: 26.25,
+      high: 28.04,
+      low: 26.05,
+      close: 28.04,
+      volume: 322_500,
+      turnover: 894_000_000
+    };
+    const renderContext = createRenderContext(createState({
+      series,
+      locale: "zh-CN",
+      crosshair: createCrosshair(),
+      formatTime: () => "2026-03-30"
+    }));
+
+    createTooltipLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "fillText").map((call) => call.args[0])).toEqual([
+      "2026-03-30 北京时间",
+      "开    26.25",
+      "高    28.04",
+      "低    26.05",
+      "收    28.04",
+      "涨跌  +2.55 (+10.00%)",
+      "振幅  7.64%",
+      "位置  100.0%",
+      "量    32.25万",
+      "额    8.94亿"
+    ]);
   });
 
   it("uses the host time formatter for the candle tooltip", () => {
@@ -419,14 +473,14 @@ describe("overlay layers", () => {
 
     createTooltipLayer().render(renderContext);
 
-    expect(callsNamed(renderContext, "fillText")[0]?.args[0]).toBe("Time: SH:3:1d");
+    expect(callsNamed(renderContext, "fillText")[0]?.args[0]).toBe("SH:3:1d Asia/Shanghai");
   });
 
   it("does not require host metadata to render the tooltip", () => {
     const renderContext = createRenderContext(createState({ crosshair: createCrosshair() }));
 
     expect(() => createTooltipLayer().render(renderContext)).not.toThrow();
-    expect(callsNamed(renderContext, "fillText")).toHaveLength(7);
+    expect(callsNamed(renderContext, "fillText")).toHaveLength(10);
   });
 
   it("draws no tooltip when crosshair is absent", () => {

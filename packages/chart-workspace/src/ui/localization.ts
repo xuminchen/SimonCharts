@@ -1,4 +1,9 @@
-import type { PriceScaleMode, SeriesType } from "@simoncharts/chart-engine";
+import type {
+  BuiltInDrawingType,
+  DrawingToolCategory,
+  PriceScaleMode,
+  SeriesType
+} from "@simoncharts/chart-engine";
 import type { AdjustMode, ChartLocale, Timeframe } from "../contracts";
 
 export interface ChartLabels {
@@ -10,6 +15,8 @@ export interface ChartLabels {
   readonly adjustModes: Readonly<Record<AdjustMode, string>>;
   readonly seriesTypes: Readonly<Record<SeriesType, string>>;
   readonly priceScaleModes: Readonly<Record<PriceScaleMode, string>>;
+  readonly drawingCategories: Readonly<Record<DrawingToolCategory, string>>;
+  readonly drawingTools: Readonly<Partial<Record<BuiltInDrawingType, string>>>;
   readonly searchSymbol: string;
   readonly indicators: string;
   readonly undo: string;
@@ -17,6 +24,7 @@ export interface ChartLabels {
   readonly settings: string;
   readonly grid: string;
   readonly bottomPanel: string;
+  readonly executions: string;
   readonly more: string;
   readonly fullscreen: string;
   readonly exitFullscreen: string;
@@ -72,6 +80,108 @@ const seriesTypes: Record<ChartLocale, Record<SeriesType, string>> = {
   }
 };
 
+const drawingCategories: Record<ChartLocale, Record<DrawingToolCategory, string>> = {
+  "zh-CN": {
+    basic: "趋势线工具",
+    channel: "通道",
+    fibonacci: "斐波那契",
+    annotation: "标注",
+    shape: "形状",
+    path: "笔刷与箭头",
+    position: "仓位",
+    measurement: "测量",
+    gann: "江恩",
+    pitchfork: "音叉",
+    pattern: "形态",
+    forecast: "预测"
+  },
+  "en-US": {
+    basic: "Trend Line Tools",
+    channel: "Channels",
+    fibonacci: "Fibonacci",
+    annotation: "Annotations",
+    shape: "Shapes",
+    path: "Brushes & Arrows",
+    position: "Positions",
+    measurement: "Measurement",
+    gann: "Gann",
+    pitchfork: "Pitchforks",
+    pattern: "Patterns",
+    forecast: "Forecast"
+  }
+};
+
+const zhDrawingTools: Record<BuiltInDrawingType, string> = {
+  trendLine: "趋势线",
+  ray: "射线",
+  extendedLine: "延长线",
+  horizontalLine: "水平线",
+  verticalLine: "垂直线",
+  crossLine: "十字线",
+  segment: "线段",
+  straightLine: "直线",
+  rayLine: "射线线段",
+  horizontalRayLine: "水平射线",
+  horizontalSegment: "水平线段",
+  horizontalStraightLine: "水平直线",
+  verticalRayLine: "垂直射线",
+  verticalSegment: "垂直线段",
+  verticalStraightLine: "垂直直线",
+  priceLine: "价格线",
+  parallelChannel: "平行通道",
+  regressionChannel: "回归通道",
+  priceChannelLine: "价格通道",
+  fibonacciRetracement: "斐波那契回撤",
+  fibonacciExtension: "斐波那契扩展",
+  fibTrendBasedExtension: "趋势斐波那契扩展",
+  fibTimeZone: "斐波那契时间周期",
+  fibFan: "斐波那契扇形",
+  fibArc: "斐波那契弧线",
+  fibChannel: "斐波那契通道",
+  fibWedge: "斐波那契楔形",
+  text: "文本",
+  callout: "标注气泡",
+  simpleAnnotation: "便笺",
+  simpleTag: "标签",
+  rectangle: "矩形",
+  rotatedRectangle: "旋转矩形",
+  circle: "圆",
+  ellipse: "椭圆",
+  polygon: "多边形",
+  triangle: "三角形",
+  arc: "弧形",
+  curve: "曲线",
+  path: "路径",
+  brush: "笔刷",
+  arrow: "箭头",
+  longPosition: "多头仓位",
+  shortPosition: "空头仓位",
+  profitLossRange: "盈亏范围",
+  datePriceRange: "日期和价格范围",
+  dateRange: "日期范围",
+  priceRange: "价格范围",
+  measure: "测量",
+  trendAngle: "趋势线角度",
+  gannFan: "江恩扇形",
+  gannBox: "江恩箱",
+  gannSquare: "江恩正方形",
+  pitchfork: "安德鲁音叉",
+  schiffPitchfork: "Schiff 音叉",
+  modifiedSchiffPitchfork: "改良 Schiff 音叉",
+  insidePitchfork: "内部音叉",
+  elliottImpulseWave: "艾略特脉冲波浪（12345）",
+  elliottCorrectionWave: "艾略特校正波浪（ABC）",
+  xabcdPattern: "XABCD 形态",
+  cypherPattern: "赛福形态",
+  headAndShouldersPattern: "头肩形态",
+  forecastPath: "预测路径"
+};
+
+const drawingTools: Record<ChartLocale, Partial<Record<BuiltInDrawingType, string>>> = {
+  "en-US": {},
+  "zh-CN": zhDrawingTools
+};
+
 export function labelsFor(locale: ChartLocale): ChartLabels {
   if (locale === "en-US") {
     return {
@@ -83,6 +193,8 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       adjustModes: { none: "Unadjusted", forward: "Forward adjusted", backward: "Backward adjusted" },
       seriesTypes: seriesTypes[locale],
       priceScaleModes: { linear: "Linear", log: "Logarithmic", percentage: "Percentage" },
+      drawingCategories: drawingCategories[locale],
+      drawingTools: drawingTools[locale],
       searchSymbol: "Search symbol",
       indicators: "Indicators",
       undo: "Undo",
@@ -90,6 +202,7 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       settings: "Settings",
       grid: "Grid",
       bottomPanel: "Inspector",
+      executions: "Executions",
       more: "More",
       fullscreen: "Fullscreen",
       exitFullscreen: "Exit fullscreen",
@@ -113,6 +226,8 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     adjustModes: { none: "不复权", forward: "前复权", backward: "后复权" },
     seriesTypes: seriesTypes[locale],
     priceScaleModes: { linear: "线性", log: "对数", percentage: "百分比" },
+    drawingCategories: drawingCategories[locale],
+    drawingTools: drawingTools[locale],
     searchSymbol: "搜索标的",
     indicators: "指标",
     undo: "撤销",
@@ -120,6 +235,7 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     settings: "设置",
     grid: "网格",
     bottomPanel: "检查器",
+    executions: "成交标记",
     more: "更多",
     fullscreen: "全屏",
     exitFullscreen: "退出全屏",

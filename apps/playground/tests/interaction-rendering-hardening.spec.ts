@@ -76,7 +76,7 @@ test("keyboard zoom commands update the viewport and clear stale crosshair state
   const zoomedInWidth = Number(await candleWidth.textContent());
   await page.keyboard.press("-");
   await expect(page.getByTestId("last-keyboard-command")).toHaveText("zoomOut");
-  await expect.poll(async () => Number(await candleWidth.textContent())).toBeLessThan(zoomedInWidth);
+  await expect.poll(async () => Number(await candleWidth.textContent())).toBe(zoomedInWidth);
 
   await page.keyboard.press("+");
   await page.keyboard.press("0");

@@ -3,7 +3,6 @@ import type { DrawingObject } from "../drawing/drawingTypes";
 import type { InteractionSessionState } from "../interaction/sessionTypes";
 import {
   createChartEngine,
-  fixtureDailyCandleSeries,
   type ChartEngine,
   type ChartEngineCommand,
   type ChartEngineState
@@ -12,6 +11,7 @@ import type { CandleSeries } from "../model/market";
 import type { ViewportState } from "../model/runtime";
 import type { IndicatorVisualOutput } from "../model/visual";
 import type { RenderSchedulerState } from "../render/scheduler/renderSchedulerTypes";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles";
 
 describe("chart engine facade", () => {
   const commandEffectCases: Array<{

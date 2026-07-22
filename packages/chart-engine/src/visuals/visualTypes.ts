@@ -29,6 +29,7 @@ export interface VisualAutoscaleRange {
 export interface VisualHitTestResult {
   outputId: string;
   outputType: VisualOutputType;
+  itemId?: string;
   time: number;
   value?: number;
   distance: number;

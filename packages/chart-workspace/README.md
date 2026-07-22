@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.18.tgz
+npm install ./simoncharts-charts-1.0.0-rc.26.tgz
 ```
 
 ## Embed the default chart
@@ -67,6 +67,37 @@ const visibleRange = chart.getVisibleRange();
 unsubscribeEvents();
 ```
 
+## Show host-owned execution marks
+
+Execution marks are opt-in, read-only host data. Add the `executions` feature, then supply or replace the current symbol's real executions. The SDK never creates trades, infers T classifications, or writes an execution back to the host.
+
+```ts
+import { advancedChartFeatures, type ChartExecution } from "@simoncharts/charts";
+
+const executions: readonly ChartExecution[] = [{
+  id: brokerExecutionId,
+  time: executionEpochMilliseconds,
+  side: "buy",
+  price: executionPrice,
+  quantity: executionQuantity,
+  label: "T买",
+  amount: executionAmount,
+  fee: executionFees,
+  tQuantity: matchedTQuantity
+}];
+
+const chart = createChart(container, {
+  // ...the required host configuration above
+  features: [...advancedChartFeatures, "executions"],
+  executions
+});
+
+chart.setExecutions(nextSymbolExecutions);
+chart.setExecutionsVisible(false);
+```
+
+Buys use the host theme's rising color and an upward arrow below price; sells use the falling color and a downward arrow above price. Minute views map by the real execution time and place a grouped marker at its latest real execution price. Daily, weekly, and monthly views attach to the containing real candle while details retain the unadjusted execution price. Same-candle executions of the same side and label are grouped without dropping their individual details; different labels on the same side are stacked. Changing the symbol clears the previous symbol's executions immediately, so the host must provide the new symbol's rows. Hover shows details on desktop, click or touch pins them, and clicking chart blank space closes them.
+
 Older pages are requested as the viewport demands them. Accepted history is prepended without moving the candle that was under the user's cursor, while the in-memory materialization remains bounded. `data-loaded` is emitted only after an accepted initial or history page has been materialized for the current symbol, timeframe, adjustment, cutoff, and `dataVersion`.
 
 ### Intraday scale and day-count contract
@@ -84,9 +115,11 @@ Older pages are requested as the viewport demands them. Accepted history is prep
 ```
 
 - `previousClose` is the official finite positive previous close for the symbol at the chart cutoff. `priceLimitPercent`, when present, is finite and within `(0, 100]`. The host owns board, risk-warning, listing-day, and rule-date decisions; the SDK does not guess them.
-- A one-day intraday view uses `previousClose` as `0%`. With `priceLimitPercent`, the right axis is fixed symmetrically to `-limit% … 0% … +limit%`; without it, the percentage axis auto-scales to the real data, which covers new or otherwise unrestricted symbols.
+- A one-day intraday view uses `previousClose` as `0%`. With `priceLimitPercent`, the right axis defaults symmetrically to `-limit% … 0% … +limit%`. If a real high or low exceeds that nominal range because of price-tick rounding, both sides expand to the next 0.1 percentage point after a 0.1-point drawing margin; without the limit, the percentage axis auto-scales to the real data.
 - `setIntradayDays(days)` accepts an integer from 1 through 9 and updates `ChartState.intradayDays`. The visible selector calls the same API.
 - A 2–9 day view selects the latest requested number of real Shanghai trading-day keys in the accepted cursor chain. Its `0%` baseline is the final real `1m` close immediately before the earliest selected day, and its vertical scale is automatic so cumulative movement is not clipped by a one-day limit.
+- Every selected trading day receives an equal-width horizontal slot. Real `09:30–11:30` and `13:00–15:00` minute bars occupy distinct slot centers, day separators stay at slot boundaries, and no lunch-break or calendar candles are inserted.
+- The intraday price path uses one red/green direction color for the complete window and remains visually continuous at real day boundaries. The yellow intraday average is recalculated independently for each trading day as cumulative `turnover / volume`; it is undefined until that day's cumulative volume becomes positive.
 - The SDK loads enough cursor history to identify the selected days and their preceding reference day, then fits all selected candles into the initial viewport. If the host has fewer real days, it displays only those days; it never creates calendar placeholders or synthetic candles.
 
 ## Opt into the advanced workbench
@@ -147,3 +180,9 @@ Accepted rc.15 finalized the preceding time-axis scope. It keeps the rc.12 publi
 Accepted rc.16 supersedes rc.15 only to constrain the center position of intraday dual-axis boundary labels, keeping the top and bottom price/percentage extremes fully visible. Its immutable 32-file artifact passed the unchanged `67 files / 1,069` repository tests, `12 files / 106` Charts tests, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, five runtime exports, and four public declaration files before byte-identical TradingReviewSystem acceptance. SHA-256 is `5e9f805c10eafa1fca09dfcee9850985aad1df6e116eea50a11963951a055baa`; SHA-512 is `92750a05e7cdc2f03f0a646200e17dd612c77fed0e5501b6f9c5c8f53fd1eb88d1b130a86433c7d44efab9fde09ee62f97eb04f6e8959e9bcaf26fc09e0b0cee`.
 
 Accepted rc.17 reserves a 34 px plot inset below the chart header so boundary-axis labels stay complete without overlapping OHLC. A latest viewport also remains exactly right-anchored during zoom (`to = lastIndex`, `scrollOffset = 0`); anchor-based zoom begins only after the user pans into history. Its immutable 32-file artifact passed `67 files / 1,070` repository tests, `12 files / 106` Charts tests, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, five runtime exports, and four public declaration files before byte-identical TradingReviewSystem acceptance. SHA-256 is `8f6a1be2e255d845da1a7d809c4a994a359c14a1798d52a92c117d7f076dba71`; SHA-512 is `dc3a3c526b2b10688f64984562e5f7612f4e1440ca4240d5581080c60b36c11260aa8972e98d8a197de57ba0b0f750a4bd33e356acba5779d35c6354610d6c88`.
+
+Accepted rc.22 adds the production multi-day intraday presentation contract: equal-width real trading-day slots, distinct `09:30–11:30` and `13:00–15:00` minute centers, real day separators, one direction-colored continuous price path, a symmetric percentage scale based on the real close before the first visible day, and a yellow per-day cumulative `turnover / volume` line. Runtime market fixtures remain excluded. Its package gate passed `68 files / 1,087` repository tests, `13 files / 114` Charts tests, combined Chrome `92/92`, Charts Chrome/Edge `41/41` per browser, 162 Engine runtime exports / 415 type symbols, five Charts runtime exports / four declaration files, and a 33-file artifact allowlist.
+
+Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
+
+Current rc.26 adds host-owned execution marks with dynamic data/visibility controls, A-share red-buy/green-sell arrows, B/S/T labels, same-candle grouping and stacking, real minute placement, containing daily/weekly/monthly placement, and read-only hover/click/touch details. It also preserves the rc.25 nominal one-day price-limit expansion behavior; multi-day auto-scaling and the real-data-only contract are unchanged. Its immutable 34-file artifact passed Engine `69 files / 1,107 tests`, Charts `14 files / 131 tests`, and Charts Chrome/Edge `42/42` per browser; SHA-256 is `44fca92c30e9ef1dc200e07c56a1e90f612cead15cd4aa10fb47cb899b72f616`.

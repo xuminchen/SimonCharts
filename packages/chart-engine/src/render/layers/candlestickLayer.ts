@@ -1,5 +1,5 @@
 import { priceToY, type PriceScale } from "../../viewport/priceScale";
-import { indexToX } from "../../viewport/viewport";
+import { indexToX, type TimeCoordinateMap } from "../../viewport/viewport";
 import type { Candle } from "../../model/market";
 import type { ViewportState } from "../../model/runtime";
 import type { ChartLayer, ChartLayout } from "../renderTypes";
@@ -23,8 +23,8 @@ export function createCandlestickLayer(): ChartLayer {
         context.strokeStyle = color;
         context.fillStyle = color;
         context.lineWidth = theme.lineWidths.candleWick;
-        drawWick(context, candle, index, viewport, layout, state.priceScale);
-        drawBody(context, candle, index, viewport, layout, state.priceScale);
+        drawWick(context, candle, index, viewport, layout, state.priceScale, state.timeCoordinates);
+        drawBody(context, candle, index, viewport, layout, state.priceScale, state.timeCoordinates);
       }
     }
   };
@@ -36,9 +36,10 @@ function drawWick(
   index: number,
   viewport: ViewportState,
   layout: ChartLayout,
-  priceScale: PriceScale
+  priceScale: PriceScale,
+  timeCoordinates?: TimeCoordinateMap
 ): void {
-  const x = indexToX(index, viewport, layout.plotArea.x);
+  const x = indexToX(index, viewport, layout.plotArea.x, timeCoordinates);
   const highY = priceToY(
     candle.high,
     priceScale,
@@ -64,9 +65,10 @@ function drawBody(
   index: number,
   viewport: ViewportState,
   layout: ChartLayout,
-  priceScale: PriceScale
+  priceScale: PriceScale,
+  timeCoordinates?: TimeCoordinateMap
 ): void {
-  const x = indexToX(index, viewport, layout.plotArea.x);
+  const x = indexToX(index, viewport, layout.plotArea.x, timeCoordinates);
   const openY = priceToY(
     candle.open,
     priceScale,
@@ -79,7 +81,7 @@ function drawBody(
     layout.plotArea.y,
     layout.plotArea.height
   );
-  const bodyWidth = Math.max(1, viewport.candleWidth * 0.7);
+  const bodyWidth = Math.max(1, timeCoordinates?.barWidth ?? viewport.candleWidth * 0.7);
   const bodyTop = Math.min(openY, closeY);
   const bodyHeight = Math.max(1, Math.abs(closeY - openY));
 

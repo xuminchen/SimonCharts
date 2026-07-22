@@ -4,7 +4,8 @@ import type { PriceScale } from "../viewport/priceScale";
 import {
   panViewportByPixels,
   resetViewportToLatest,
-  zoomViewportAtIndex
+  zoomViewportAtIndex,
+  type TimeCoordinateMap
 } from "../viewport/viewport";
 import { hitTestCandleAtX, priceAtY } from "./hitTest";
 
@@ -38,6 +39,7 @@ export interface CreateInteractionEngineOptions {
   priceScale: PriceScale;
   plotLeft?: number;
   plotTop?: number;
+  timeCoordinates?: TimeCoordinateMap;
   onEvent?: (event: InteractionEvent) => void;
 }
 
@@ -60,6 +62,7 @@ export function createInteractionEngine(options: CreateInteractionEngineOptions)
   const plotTop = options.plotTop ?? 0;
   const plotHeight = options.plotHeight;
   const onEvent = options.onEvent;
+  const timeCoordinates = options.timeCoordinates;
 
   let viewport =
     options.viewport ?? resetViewportToLatest(series.candles.length, Math.max(0, width));
@@ -106,7 +109,7 @@ export function createInteractionEngine(options: CreateInteractionEngineOptions)
       return;
     }
 
-    const hit = hitTestCandleAtX(series, viewport, input.x, plotLeft);
+    const hit = hitTestCandleAtX(series, viewport, input.x, plotLeft, timeCoordinates);
 
     if (!hit) {
       clearCrosshair();
@@ -130,14 +133,14 @@ export function createInteractionEngine(options: CreateInteractionEngineOptions)
         return;
       }
 
-      const hit = hitTestCandleAtX(series, viewport, input.x, plotLeft);
+      const hit = hitTestCandleAtX(series, viewport, input.x, plotLeft, timeCoordinates);
 
       if (!hit) {
         return;
       }
 
       const changed = updateViewport(
-        zoomViewportAtIndex(viewport, hit.index, input.deltaY, series.candles.length)
+        zoomViewportAtIndex(viewport, hit.index, input.deltaY, series.candles.length, width)
       );
 
       if (changed) {

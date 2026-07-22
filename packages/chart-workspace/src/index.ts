@@ -11,6 +11,8 @@ export type {
   ChartDatafeed,
   ChartEvent,
   ChartEventListener,
+  ChartExecution,
+  ChartExecutionSide,
   ChartFeature,
   ChartIntradayScale,
   ChartInstance,

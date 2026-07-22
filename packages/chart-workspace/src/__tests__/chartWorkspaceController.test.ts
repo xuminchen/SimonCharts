@@ -20,6 +20,7 @@ function dependencies(): ChartControllerDependencies {
     chartId: "test",
     drawingPersistenceEnabled: true,
     seriesTypePersistenceEnabled: true,
+    executionsEnabled: true,
     getCapabilities: vi.fn(async (symbol: ChartSymbol) => ({
       series: [
         { timeframe: "1d", adjustModes: symbol.kind === "index" ? ["none"] : ["none", "forward", "backward"] },
@@ -38,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, dirtyLayerCount: 0, lastInvalidationReasons: [], slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, dirtyLayerCount: 0, lastInvalidationReasons: [], slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -52,6 +53,26 @@ function dependencies(): ChartControllerDependencies {
 }
 
 describe("chart workspace controller", () => {
+  it("keeps the host-enabled execution switch visible by default", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+
+    expect(controller.getViewModel().executionsVisible).toBe(true);
+    expect(deps.runtime.setExecutionsVisible).toHaveBeenLastCalledWith(true);
+    controller.setExecutionsVisible(false);
+    expect(controller.getViewModel().executionsVisible).toBe(false);
+    expect(deps.runtime.setExecutionsVisible).toHaveBeenLastCalledWith(false);
+  });
+
+  it("clears host executions immediately when the symbol changes", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+
+    controller.setSymbol(index);
+
+    expect(deps.runtime.setExecutions).toHaveBeenCalledWith([]);
+  });
+
   it("does not load or save drawings when every drawing surface is disabled", async () => {
     const deps = dependencies();
     deps.drawingPersistenceEnabled = false;
@@ -117,23 +138,25 @@ describe("chart workspace controller", () => {
     });
   });
 
-  it("persists timeframe favorites without changing the active market selection", () => {
+  it("caps timeframe favorites at four without changing the active market selection", () => {
     const deps = dependencies();
     const controller = createChartController(deps);
+    const initialState = controller.getState();
 
-    controller.setFavoriteTimeframe("30m", true);
-    expect(controller.getViewModel().favoriteTimeframes).toEqual([
-      ...defaultPreferences.favoriteTimeframes,
-      "30m"
-    ]);
+    expect(controller.setFavoriteTimeframe("30m", true)).toBe(false);
+    expect(controller.getViewModel().favoriteTimeframes).toEqual(defaultPreferences.favoriteTimeframes);
+    expect(deps.persistence.savePreferences).not.toHaveBeenCalled();
+
+    expect(controller.setFavoriteTimeframe("60m", false)).toBe(true);
+    expect(controller.getViewModel().favoriteTimeframes).not.toContain("60m");
+    expect(controller.setFavoriteTimeframe("30m", true)).toBe(true);
+    expect(controller.getViewModel().favoriteTimeframes).toEqual(["15m", "1d", "intraday", "30m"]);
     expect(deps.persistence.savePreferences).toHaveBeenLastCalledWith({
       ...defaultPreferences,
-      favoriteTimeframes: [...defaultPreferences.favoriteTimeframes, "30m"]
+      favoriteTimeframes: ["15m", "1d", "intraday", "30m"]
     });
+    expect(controller.getState()).toEqual(initialState);
     expect(deps.dataCoordinator.start).not.toHaveBeenCalled();
-
-    controller.setFavoriteTimeframe("60m", false);
-    expect(controller.getViewModel().favoriteTimeframes).not.toContain("60m");
   });
 
   it("loads capabilities, normalizes index adjustment, and rejects unsupported selections", async () => {

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -53,6 +53,10 @@ try {
     path.join(hostRoot, "host-smoke.mjs"),
     createHostSmokeScript(),
     "utf8"
+  );
+  await copyFile(
+    path.join(projectRoot, "scripts", "fixtures", "dailyCandles.mjs"),
+    path.join(hostRoot, "dailyCandles.mjs")
   );
 
   run("npm", [
@@ -165,11 +169,11 @@ function createHostSmokeScript() {
   createEngineCapabilityManifest,
   deserializeChartLayoutSnapshot,
   engineApiVersion,
-  fixtureDailyCandleSeries,
   serializeChartLayoutSnapshot,
   supportedPriceScaleModes,
   supportedTimeframes
 } from "@simoncharts/chart-engine";
+import { fixtureDailyCandleSeries } from "./dailyCandles.mjs";
 
 function assert(condition, message) {
   if (!condition) {

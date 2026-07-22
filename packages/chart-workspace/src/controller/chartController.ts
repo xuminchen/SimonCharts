@@ -46,6 +46,7 @@ import type {
   DrawingPaletteState,
   FavoriteTimeframe
 } from "../persistence/browserPersistence";
+import { maxFavoriteTimeframes } from "../persistence/browserPersistence";
 import type {
   ChartEngineRuntime,
   DataWindowSnapshot,
@@ -86,6 +87,7 @@ export interface WorkspaceViewModel {
   canUndoDrawing: boolean;
   canRedoDrawing: boolean;
   gridVisible: boolean;
+  executionsVisible: boolean;
   calculationStatus: CalculationStatus;
   search: WorkspaceSearchState;
 }
@@ -103,7 +105,7 @@ export interface WorkspaceUiActions {
   loadMoreBefore(): void;
   retryHistory(): void;
   setSeriesType(type: SeriesType): void;
-  setFavoriteTimeframe(timeframe: FavoriteTimeframe, favorite: boolean): void;
+  setFavoriteTimeframe(timeframe: FavoriteTimeframe, favorite: boolean): boolean;
   setPriceScaleMode(mode: PriceScaleMode): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
@@ -111,6 +113,7 @@ export interface WorkspaceUiActions {
   undoDrawing(): void;
   redoDrawing(): void;
   setGridVisible(visible: boolean): void;
+  setExecutionsVisible(visible: boolean): void;
   setBottomPanel(state: BottomPanelState): void;
   setDrawingPalette(state: DrawingPaletteState): void;
 }
@@ -147,6 +150,7 @@ export interface ChartControllerDependencies {
   chartId: string;
   drawingPersistenceEnabled: boolean;
   seriesTypePersistenceEnabled: boolean;
+  executionsEnabled: boolean;
   initialSymbol: ChartSymbol;
   initialTimeframe?: Timeframe;
   initialAdjustMode?: AdjustMode;
@@ -225,7 +229,7 @@ export function createChartController(
     status: { type: "loading" },
     intradayView: false,
     seriesType: dependencies.seriesTypePersistenceEnabled ? persistedSeriesType : "candles",
-    favoriteTimeframes: [...preferences.favoriteTimeframes],
+    favoriteTimeframes: [...preferences.favoriteTimeframes.slice(0, maxFavoriteTimeframes)],
     priceScaleMode: preferences.priceScaleMode,
     indicators: dependencies.persistence.loadIndicators(),
     drawings: loadDrawings(state.symbol, state.adjustMode),
@@ -235,6 +239,7 @@ export function createChartController(
     canUndoDrawing: false,
     canRedoDrawing: false,
     gridVisible: preferences.gridVisible,
+    executionsVisible: dependencies.executionsEnabled,
     calculationStatus: { type: "idle" },
     search: { query: "", loading: false, results: [] }
   };
@@ -901,6 +906,7 @@ export function createChartController(
     },
     setSymbol(symbol) {
       if (!active || symbol.id === state.symbol.id) return;
+      dependencies.runtime.setExecutions([]);
       const preferredAdjust = normalizeAdjustMode(
         symbol,
         state.symbol.kind === "index" && symbol.kind === "stock" ? "forward" : state.adjustMode
@@ -1342,7 +1348,9 @@ export function createChartController(
       publish();
     },
     setFavoriteTimeframe(timeframe, favorite) {
-      if (!active || viewModel.favoriteTimeframes.includes(timeframe) === favorite) return;
+      if (!active) return false;
+      if (viewModel.favoriteTimeframes.includes(timeframe) === favorite) return true;
+      if (favorite && viewModel.favoriteTimeframes.length >= maxFavoriteTimeframes) return false;
       viewModel = {
         ...viewModel,
         favoriteTimeframes: favorite
@@ -1351,6 +1359,7 @@ export function createChartController(
       };
       savePreferences();
       publish();
+      return true;
     },
     setPriceScaleMode(mode) {
       if (!active || mode === viewModel.priceScaleMode) return;
@@ -1375,6 +1384,12 @@ export function createChartController(
       viewModel = { ...viewModel, gridVisible: visible };
       dependencies.runtime.setGridVisible(visible);
       savePreferences();
+      publish();
+    },
+    setExecutionsVisible(visible) {
+      if (!active || !dependencies.executionsEnabled || visible === viewModel.executionsVisible) return;
+      viewModel = { ...viewModel, executionsVisible: visible };
+      dependencies.runtime.setExecutionsVisible(visible);
       publish();
     },
     setBottomPanel(bottomPanel) {
@@ -1402,6 +1417,7 @@ export function createChartController(
   dependencies.runtime.setIndicators(viewModel.indicators);
   dependencies.runtime.setDrawings(viewModel.drawings);
   dependencies.runtime.setGridVisible(viewModel.gridVisible);
+  dependencies.runtime.setExecutionsVisible(viewModel.executionsVisible);
 
   return api;
 }

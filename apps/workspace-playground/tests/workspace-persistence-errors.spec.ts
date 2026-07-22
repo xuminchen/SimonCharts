@@ -23,7 +23,7 @@ async function chooseTimeframe(page: Page, timeframe: string): Promise<void> {
 async function createTrendLine(page: Page): Promise<void> {
   await page.getByTestId("drawing-palette-expand").click();
   await page.locator('[data-drawing-category="basic"]').click();
-  await page.getByRole("menuitem", { name: "Trend Line", exact: true }).click();
+  await page.locator('[data-drawing-tool="trendLine"]').click();
   const box = await page.locator("canvas.sc-overlay-canvas").boundingBox();
   if (!box) throw new Error("canvas missing");
   await page.mouse.click(box.x + 260, box.y + 180);

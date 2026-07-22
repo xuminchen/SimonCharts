@@ -5,7 +5,7 @@ import path from "node:path";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.18";
+const expectedVersion = "1.0.0-rc.26";
 let tempRoot;
 
 try {
@@ -77,9 +77,11 @@ function expect(condition, message) {
 function consumerSource() {
   return `import {
   ChartDatafeedError,
+  advancedChartFeatures,
   createChart,
   type ChartDatafeed,
   type ChartEvent,
+  type ChartExecution,
   type ChartVisibleRange,
   type ChartState
 } from "@simoncharts/charts";
@@ -105,13 +107,24 @@ const datafeed: ChartDatafeed = {
 };
 const container = document.querySelector<HTMLElement>("#app");
 if (!container) throw new Error("consumer mount missing");
+const executions: readonly ChartExecution[] = [{
+  id: "consumer-buy",
+  time: 1_784_192_400_000,
+  side: "buy",
+  price: 10,
+  quantity: 100,
+  label: "B",
+  tQuantity: 0
+}];
 const chart = createChart(container, {
   chartId: "external-consumer",
   persistenceScopeId: "consumer-user",
   dataContextId: "snapshot:consumer-v1",
   initialSymbol: symbol,
   dataCutoffTime: 1_784_192_400_000,
-  datafeed
+  datafeed,
+  executions,
+  features: [...advancedChartFeatures, "executions"]
 });
 const states: Readonly<ChartState>[] = [];
 const events: Readonly<ChartEvent>[] = [];
@@ -132,6 +145,9 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
 chart.setTimeframe("5m");
 chart.setView("intraday");
 chart.setView("timeframe");
+chart.setExecutions(executions);
+chart.setExecutionsVisible(false);
+chart.setExecutionsVisible(true);
 const visibleRange: Readonly<ChartVisibleRange> | undefined = chart.getVisibleRange();
 void visibleRange;
 unsubscribeEvents();

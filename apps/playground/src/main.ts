@@ -5,7 +5,7 @@ import {
   createInteractionEngine,
   createChartEngine,
   createChartLayout,
-  computeVisibleRange,
+  constrainViewportToWidth,
   createInitialViewport,
   createBandVisualRenderer,
   createHistogramVisualRenderer,
@@ -42,7 +42,6 @@ import {
   hitTestDrawing,
   hitTestDrawingEditHandle,
   renderOverlay,
-  fixtureDailyCandleSeries,
   projectDrawingObject,
   renderStaticChart,
   resizeCanvas,
@@ -89,6 +88,7 @@ import type {
   ViewportState
 } from "@simoncharts/chart-engine";
 import { createDrawingToolbar } from "./drawingToolbar";
+import { fixtureDailyCandleSeries } from "./fixtures/dailyCandles";
 import { playgroundVisualOutputs } from "./fixtures/visualFixtures";
 import { playgroundState } from "./playgroundState";
 import "./styles.css";
@@ -534,17 +534,11 @@ function syncLayout(): void {
   if (!viewport) {
     viewport = createInitialViewport(activeSeries.candles.length, layout.plotArea.width);
   } else if (layoutChanged) {
-    const visibleRange = computeVisibleRange(
+    viewport = constrainViewportToWidth(
       viewport,
       activeSeries.candles.length,
       layout.plotArea.width
     );
-
-    viewport = {
-      ...viewport,
-      scrollOffset: Math.max(0, activeSeries.candles.length - 1 - visibleRange.to),
-      visibleRange
-    };
   }
   if (!priceScale || layoutChanged) {
     updateMainPriceScale();

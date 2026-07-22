@@ -2,8 +2,16 @@ import type { ViewportState, VisibleRange } from "../model/runtime";
 
 const defaultCandleWidth = 8;
 const minCandleWidth = 0.05;
+const minZoomCandleWidth = 2;
 const maxCandleWidth = 48;
 const wheelZoomFactor = 1.25;
+
+export interface TimeCoordinateMap {
+  readonly positions: readonly number[];
+  readonly barWidth: number;
+  readonly dayStartIndices: readonly number[];
+  readonly dayStartOffsets: readonly number[];
+}
 
 export function createInitialViewport(candleCount: number, width: number): ViewportState {
   const viewport: ViewportState = {
@@ -39,23 +47,10 @@ export function computeVisibleRange(
   return { from, to };
 }
 
-export function indexToX(index: number, viewport: ViewportState, plotLeft: number): number {
-  const candleWidth = normalizeCandleWidth(viewport);
-
-  return plotLeft + (index - viewport.visibleRange.from) * candleWidth + candleWidth / 2;
-}
-
-export function xToIndex(x: number, viewport: ViewportState, plotLeft: number): number {
-  const candleWidth = normalizeCandleWidth(viewport);
-
-  return viewport.visibleRange.from + Math.floor((x - plotLeft) / candleWidth);
-}
-
-export function zoomViewportAtIndex(
+export function constrainViewportToWidth(
   viewport: ViewportState,
-  anchorIndex: number,
-  deltaY: number,
-  candleCount: number
+  candleCount: number,
+  width: number
 ): ViewportState {
   if (candleCount <= 0) {
     return {
@@ -65,13 +60,98 @@ export function zoomViewportAtIndex(
     };
   }
 
+  const plotWidth = Math.max(1, width);
+  const visibleCount = getBoundedVisibleCount(viewport.candleWidth, candleCount, plotWidth);
+  const maxScrollOffset = candleCount - visibleCount;
+  const scrollOffset = clamp(Math.floor(viewport.scrollOffset), 0, maxScrollOffset);
+  const to = candleCount - 1 - scrollOffset;
+
+  return {
+    ...viewport,
+    candleWidth: plotWidth / visibleCount,
+    scrollOffset,
+    visibleRange: { from: to - visibleCount + 1, to }
+  };
+}
+
+export function indexToX(
+  index: number,
+  viewport: ViewportState,
+  plotLeft: number,
+  timeCoordinates?: TimeCoordinateMap
+): number {
+  const mapped = timeCoordinates?.positions[index];
+  if (mapped !== undefined && Number.isFinite(mapped)) return plotLeft + mapped;
   const candleWidth = normalizeCandleWidth(viewport);
-  const nextCandleWidth = clampCandleWidth(
+
+  return plotLeft + (index - viewport.visibleRange.from) * candleWidth + candleWidth / 2;
+}
+
+export function xToIndex(
+  x: number,
+  viewport: ViewportState,
+  plotLeft: number,
+  timeCoordinates?: TimeCoordinateMap
+): number {
+  if (timeCoordinates !== undefined && timeCoordinates.positions.length > 0) {
+    return nearestMappedIndex(x - plotLeft, timeCoordinates.positions);
+  }
+  const candleWidth = normalizeCandleWidth(viewport);
+
+  return viewport.visibleRange.from + Math.floor((x - plotLeft) / candleWidth);
+}
+
+function nearestMappedIndex(x: number, positions: readonly number[]): number {
+  if (x <= positions[0]!) return 0;
+  const lastIndex = positions.length - 1;
+  if (x >= positions[lastIndex]!) return lastIndex;
+
+  let lower = 0;
+  let upper = lastIndex;
+  while (lower + 1 < upper) {
+    const middle = lower + Math.floor((upper - lower) / 2);
+    if (positions[middle]! < x) lower = middle;
+    else upper = middle;
+  }
+
+  return x - positions[lower]! < positions[upper]! - x ? lower : upper;
+}
+
+export function zoomViewportAtIndex(
+  viewport: ViewportState,
+  anchorIndex: number,
+  deltaY: number,
+  candleCount: number,
+  plotWidth?: number
+): ViewportState {
+  if (candleCount <= 0) {
+    return {
+      ...viewport,
+      visibleRange: { from: 0, to: -1 },
+      scrollOffset: 0
+    };
+  }
+
+  if (
+    deltaY >= 0 &&
+    viewport.visibleRange.from <= 0 &&
+    viewport.visibleRange.to >= candleCount - 1
+  ) {
+    return viewport;
+  }
+
+  const candleWidth = normalizeCandleWidth(viewport);
+  const requestedCandleWidth = clampCandleWidth(
     deltaY < 0 ? candleWidth * wheelZoomFactor : candleWidth / wheelZoomFactor
   );
   const visibleCount = getVisibleCount(viewport);
-  const plotWidth = visibleCount * candleWidth;
-  const nextVisibleCount = Math.max(1, Math.ceil(plotWidth / nextCandleWidth));
+  const resolvedPlotWidth = Math.max(1, plotWidth ?? visibleCount * candleWidth);
+  const nextVisibleCount = getBoundedVisibleCount(
+    requestedCandleWidth,
+    candleCount,
+    resolvedPlotWidth
+  );
+  const nextCandleWidth = resolvedPlotWidth / nextVisibleCount;
   const anchorRatio = clamp(
     (anchorIndex - viewport.visibleRange.from + 0.5) / Math.max(1, visibleCount),
     0,
@@ -143,7 +223,7 @@ function normalizeCandleWidth(viewport: ViewportState): number {
 }
 
 function clampCandleWidth(candleWidth: number): number {
-  return clamp(candleWidth, minCandleWidth, maxCandleWidth);
+  return clamp(candleWidth, minZoomCandleWidth, maxCandleWidth);
 }
 
 function getVisibleCount(viewport: ViewportState): number {
@@ -154,6 +234,24 @@ function getVisibleCount(viewport: ViewportState): number {
   }
 
   return visibleCount;
+}
+
+function getBoundedVisibleCount(candleWidth: number, candleCount: number, width: number): number {
+  const plotWidth = Math.max(1, width);
+  const maximumVisibleCount = Math.min(
+    candleCount,
+    Math.max(1, Math.floor(plotWidth / minZoomCandleWidth))
+  );
+  const minimumVisibleCount = Math.min(
+    candleCount,
+    Math.max(1, Math.ceil(plotWidth / maxCandleWidth))
+  );
+  const requestedVisibleCount = Math.max(
+    1,
+    Math.ceil(plotWidth / clampCandleWidth(candleWidth) - 1e-9)
+  );
+
+  return clamp(requestedVisibleCount, minimumVisibleCount, maximumVisibleCount);
 }
 
 function clamp(value: number, min: number, max: number): number {

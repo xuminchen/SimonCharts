@@ -157,9 +157,10 @@ test("applies the light theme and English series labels", async ({ page }) => {
   await expect(root).toHaveAttribute("data-state", "ready");
   await expect(root).toHaveAttribute("data-theme", "light");
   await expect(root).toHaveAttribute("lang", "en-US");
+  await expect(page.locator(".sc-chart-region")).toHaveAttribute("lang", "en-US");
   await page.getByTestId("series-type-select").click();
-  await expect(page.locator('[data-series-type="hollowCandles"]')).toHaveText("Hollow candles");
-  await expect(page.locator('[data-series-type="pointAndFigure"]')).toHaveText("Point & figure");
+  await expect(page.locator('[data-series-type="hollowCandles"] .sc-series-type-label')).toHaveText("Hollow candles");
+  await expect(page.locator('[data-series-type="pointAndFigure"] .sc-series-type-label')).toHaveText("Point & figure");
   const lightPixels = await page.locator("canvas.sc-static-canvas").evaluate((element) => {
     const canvas = element as HTMLCanvasElement;
     const pixels = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;

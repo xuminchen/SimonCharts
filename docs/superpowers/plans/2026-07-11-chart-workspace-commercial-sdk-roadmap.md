@@ -1,6 +1,6 @@
 # SimonCharts Commercial Workspace SDK Implementation Roadmap
 
-> 2026-07-18 状态：本路线图的 Workspace 默认产品形态已由 `1.0.0-rc.2` 完成重置；当前 `@simoncharts/charts@1.0.0-rc.18` 保留分时双轴、独立量区、完整窗口锁、K 线右锚定、紧凑时间轴、最新日 OHLC 和 Advanced Charts 类周期/图形菜单，并增加固定顺序的周期星标快捷栏；完成时间标签碰撞与双轴边界裁切修复，并以 34 px 绘图区上边距隔离 OHLC 头；latest 视口缩放固定 `to = lastIndex`、`scrollOffset = 0`，只有向历史平移后才使用锚点缩放。默认仍仅创建周期、复权和指标且不触碰 drawings 持久化，完整能力仅通过 `advancedChartFeatures` 显式开启。既有 Engine、数据一致性、cutoff、持久化和发布证据任务继续有效，旧包名/API 不再有效。
+> 2026-07-19 状态：当前 `@simoncharts/charts@1.0.0-rc.22` 将真实多日分时收敛为等宽交易日、242 个中心对齐时段槽、无重叠午休、真实日分隔和连续价格线；黄色分时均线按上海交易日重置累计成交额/累计成交量，窗口价格线统一按方向着红绿，价格、均线、量柱、十字光标与对称涨跌幅轴共用坐标。生产 SDK 不 mock、补点或构造行情。33 文件候选已通过 Vitest 68 文件/1,087 项、合并 Chrome 92/92、Charts Chrome/Edge 各 41/41、Charts unit 13 文件/114 项、Engine 162 runtime exports/415 type symbols、Charts 5 runtime exports/4 declarations；SHA-256 为 `f87be50ae320476e8a9d69329f28d6d0c84bc7d30f1c1ba0b9e7cc1a24e37238`，SHA-512 为 `b3e5180a7b97d1f5f8975224125f0552a42fb6fc010c3fe47e4cc0ccd8870ef39660f29a141fde1ce21b00c86246a4a87a9487dae30617d137001c4c9889f20a`。既有 Engine、数据一致性、cutoff、持久化和发布证据任务继续有效，旧包名/API 不再有效。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each linked plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

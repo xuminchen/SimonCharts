@@ -1,8 +1,8 @@
 # SimonCharts Commercial Chart Workspace SDK Design
 
-## 0. RC.17 现行产品合同（2026-07-18，优先于下文历史合同）
+## 0. RC.22 现行产品合同（2026-07-19，优先于下文历史合同）
 
-本规格原先把合作方产品定义为默认全功能 Workspace。该形态已被真实复盘宿主否决：工具复杂度过高，图表与业务动作割裂。`1.0.0-rc.2` 至 `rc.8` 完成嵌入式产品重置、分时/连续历史、量柱着色、宿主 view/range/event 合同与并发隔离；`rc.9` 把显式 advanced 模式重建为 Advanced Charts 类图表工作台；`rc.10` 补齐分时涨跌幅坐标和 2–9 日真实多日分时；`rc.11` 修正缓存淘汰基准与窄屏 fit；`rc.12` 完成分时双轴、量价分区、禁缩放、K 线右锚定、时间命中/标签修复以及 Advanced Charts 类周期和图形菜单；`rc.15` 消除十字光标时间徽标与静态日期相交时遗留的局部日期碎片；`rc.16` 限制分时双轴上下边界刻度的中心位置；当前 `rc.17` 为图表头预留 34 px 绘图区上边距，并收紧 latest 视口缩放右锚定语义。下文凡与本节冲突的旧包名/API、默认完整工作台、悬浮绘图窗、横向底部面板和 1280 px 最小宽度描述均视为历史记录，不再是现行合同。
+本规格原先把合作方产品定义为默认全功能 Workspace。该形态已被真实复盘宿主否决：工具复杂度过高，图表与业务动作割裂。`1.0.0-rc.2` 至 `rc.8` 完成嵌入式产品重置、分时/连续历史、量柱着色、宿主 view/range/event 合同与并发隔离；`rc.9` 把显式 advanced 模式重建为 Advanced Charts 类图表工作台；`rc.10` 至 `rc.20` 依次完成多日分时、Advanced Charts 类交互与普通 K 线有界缩放；`rc.21` 从生产包移除行情 fixture；当前 `rc.22` 以真实多日分时的等宽交易日槽、日内均线和统一坐标完成呈现收敛，继续坚持真实数据为空即为空。下文凡与本节冲突的旧包名/API、默认完整工作台、悬浮绘图窗、横向底部面板和 1280 px 最小宽度描述均视为历史记录，不再是现行合同。
 
 现行定位是 Advanced Charts 类可嵌入 SDK：
 
@@ -50,24 +50,27 @@ chart.setIntradayDays(5);
 - 默认 features 精确为 `timeframes`、`adjustment`、`indicators`；宿主负责选股和业务流程。
 - `ChartFeature` 稳定集合为 `symbol-search`、`timeframes`、`adjustment`、`series-type`、`price-scale`、`indicators`、`drawing-tools`、`drawing-history`、`settings`、`bottom-panel`。
 - feature 控制真实 DOM 构造和事件绑定；关闭的工具不得创建后隐藏。默认不得出现原始图表枚举、固定绘图轨、撤销重做、设置或右侧检查器。
-- `advancedChartFeatures` 是显式完整工作台开关，继续覆盖 17 种图表、16 个指标、63 个绘图和 3 种价格刻度。
+- `advancedChartFeatures` 是显式完整工作台开关，继续覆盖 17 种图表、16 个指标、63 个真实绘图工具和 3 种价格刻度；17 种图形与 63 个绘图工具均以双语菜单和可见的语义 SVG 图标呈现。
+- 菜单只能暴露 Engine 已能创建、编辑、序列化和恢复的绘图工具；不得为对齐参考产品而伪造未实现工具或放置不可工作的锁定占位项。
 - `theme` 稳定支持 `dark | light`，`locale` 稳定支持 `zh-CN | en-US`，图表必须随容器响应式工作。
 - cutoff、dataVersion、分页、持久化隔离、安全错误、取消和销毁合同全部沿用。
-- 周期组在 capability 含 `1m` 时按 `分时 / 1分 / 5分 / 15分 / 30分 / 60分 / 日 / 周 / 月` 呈现；`分时`仅把同一 `1m` revision 临时绘成 close 折线，普通 `1分`仍为 K 线。最简模式不得持久化该临时 line，高级模式的手工系列类型选择继续持久化。
+- 生产 SDK 不提供、不生成也不回退到任何行情 fixture；只渲染宿主 datafeed 返回并通过校验的真实数据。宿主真实数据为空时保持空状态，不复制、插值或构造 K 线。确定性 fixture 只允许存在于测试、脚本和私有 playground，不得进入生产包导出或运行路径。
+- 周期组在 capability 含 `1m` 时按 `分时 / 1分 / 5分 / 15分 / 30分 / 60分 / 日 / 周 / 月` 呈现；`分时`和 2–9 日分时固定为同一 `1m` revision 的 close 折线，普通周期默认蜡烛图。最简模式不得持久化该临时 line，高级模式的手工系列类型选择继续持久化。
+- advanced 周期下拉承载完整 capability 集，星标只决定固定顺序的外部快捷项且最多四个；尝试固定第五个时保持原偏好不变并提示 `最多固定 4 个周期，请先取消一个`。已固定但当前 symbol 不支持的周期仍须在菜单中可见并允许取消固定。
 - `ChartState.view` 明确区分 `intraday | timeframe`，`ChartState.intradayDays` 使用 `IntradayDayCount`；宿主可用 `setView`、`setIntradayDays`、`getVisibleRange`、`setVisibleRange`、`resetToLatest` 和 `subscribeEvents` 与业务状态联动。
 - 宿主通过 capability 的 `intradayScale` 返回当前 symbol 与 cutoff 下有限且大于零的官方 `previousClose`；`priceLimitPercent` 存在时必须在 `(0, 100]` 内并表示当前交易日适用的固定涨跌幅，不存在时表示不应用固定幅度。板块、风险警示、上市日和规则生效日判断均属于宿主，SDK 不硬编码交易所规则。
 - 单日分时以宿主 `previousClose` 为 `0%`；有 `priceLimitPercent` 时纵轴固定对称显示 `-limit% … 0% … +limit%`，未提供幅度时按真实行情自动缩放，覆盖新股等无固定幅度场景。
-- 分时左轴显示真实价格、右轴显示相对区间基准的涨跌幅；主线按区间末值相对基准统一显示上涨红、下跌绿、平盘中性色。1–9 日分时始终完整 fit，用户滚轮、拖拽、价格/时间轴、键盘或宿主 `setVisibleRange` 均不得缩放或平移分时窗口。
-- 普通分钟周期按视口需求跨交易日连续分页；多日分时从同一真实 `1m` revision 解析最新 2–9 个交易日，以所选最早交易日前一真实交易日的最后一根分钟收盘为 `0%`，纵轴自动缩放，并在初次材料化后 fit 全部所选 K 线。历史 prepend 不得改变用户可见锚点或蜡烛宽度。
+- 分时左轴显示真实价格、右轴显示相对区间基准的涨跌幅；主线按窗口末值相对基准统一显示上涨红、下跌绿、平盘中性色。黄色分时均线按每个上海交易日分别累计真实成交额/真实成交量，跨交易日归零重算。1–9 日分时始终完整 fit，用户滚轮、拖拽、价格/时间轴、键盘或宿主 `setVisibleRange` 均不得缩放或平移分时窗口。
+- 普通分钟周期按视口需求跨交易日连续分页；多日分时从同一真实 `1m` revision 解析最新 2–9 个交易日，以所选最早交易日前一真实交易日的最后一根分钟收盘为 `0%`。每个真实交易日占相同宽度并使用 242 个中心对齐的交易时段槽位，午休被压缩但 11:30 与 13:00 不重叠；真实日边界显示分隔线，价格线跨边界连续。价格、分时均线、量柱和十字光标共用该时间坐标，涨跌幅轴按真实窗口最大绝对偏离保持上下对称。
 - SDK 为多日窗口加载足以识别 N 个目标交易日及其前一基准日的游标历史；宿主实际数据不足 N 日时只展示现有真实交易日，不填充自然日、不插值、不复制或合成 K 线。
 - advanced 模式的固定信息架构为 `40px 顶栏 / 44px 左绘图轨 / 中央图表 / 默认折叠的 40px 右检查器 / 26px 状态栏`；绘图区在图表头下预留 34 px 上边距，边界刻度必须完整且不得与 OHLC 头重叠；右检查器只承载对象、属性和数据窗口。
-- 普通 K 线位于 latest 视口时，任何缩放都保持 `to = lastIndex`、`scrollOffset = 0`；只有用户先向历史平移后，缩放才围绕交互锚点保持历史位置。
-- 十字光标必须联动 OHLC、成交量、指标值和价格/时间轴标签；平移保持同一捕获手势，滚轮/键盘缩放、价格轴纵拖、时间轴横拖、双击复位、绘图命中/整体/锚点编辑、右键菜单和原生全屏均为 SDK 行为。
+- 普通 K 线位于 latest 视口时，任何缩放都保持 `to = lastIndex`、`scrollOffset = 0`；只有用户先向历史平移后，缩放才围绕交互锚点保持历史位置。缩小的响应式可见数量上限为 `floor(plotWidth / 2)`，柱宽不得小于 2 px；到达下限时首末实际 K 线/日期边缘贴合绘图区两侧，索引不得为负，继续缩小必须幂等。滚轮、键盘、时间轴拖动、容器 resize 和宿主 `setVisibleRange` 共用同一约束。
+- 十字光标的垂直虚线必须连续贯穿主图和独立量柱区，横线只留在主图；普通 K 线头显示 OHLC 与涨跌额/涨跌幅，悬浮数据窗显示日期、OHLC、涨跌额/涨跌幅、振幅、位置、成交量和成交额，并随 `zh-CN | en-US` locale 本地化。平移保持同一捕获手势，滚轮/键盘缩放、价格轴纵拖、时间轴横拖、双击复位、绘图命中/整体/锚点编辑、右键菜单和原生全屏均为 SDK 行为。
 - Charts 不构造观察列表、资讯、经纪商、订单、账户或多图交易布局；这些属于宿主或 Trading Platform 产品面。
 
-当前交付候选为 `@simoncharts/charts@1.0.0-rc.18`。默认嵌入模式用于 TradingReviewSystem 业务详情；独立高级图表页必须显式传入 `advancedChartFeatures`。
+当前交付候选为 `@simoncharts/charts@1.0.0-rc.22`。默认嵌入模式用于 TradingReviewSystem 业务详情；独立高级图表页必须显式传入 `advancedChartFeatures`。
 
-> 状态：rc.17 已完成不可变发布、package/browser 与 TradingReviewSystem 真实宿主验收。32 文件制品 SHA-256 为 `8f6a1be2e255d845da1a7d809c4a994a359c14a1798d52a92c117d7f076dba71`，SHA-512 为 `dc3a3c526b2b10688f64984562e5f7612f4e1440ca4240d5581080c60b36c11260aa8972e98d8a197de57ba0b0f750a4bd33e356acba5779d35c6354610d6c88`；全仓 67 文件/1,070 项、Charts 12 文件/106 项、合并 Chrome 92 项、Charts Chrome/Edge 各 41 项、5 个 runtime exports 与 4 个 declarations 通过。rc.10 至 rc.16 均作为被最终复核取代的不可变历史候选保留。
+> 状态：rc.22 已完成不可变制品与 package/browser 门禁。33 文件制品 SHA-256 为 `f87be50ae320476e8a9d69329f28d6d0c84bc7d30f1c1ba0b9e7cc1a24e37238`，SHA-512 为 `b3e5180a7b97d1f5f8975224125f0552a42fb6fc010c3fe47e4cc0ccd8870ef39660f29a141fde1ce21b00c86246a4a87a9487dae30617d137001c4c9889f20a`；Vitest 68 文件/1,087 项、合并 Chrome 92/92、Charts Chrome/Edge 各 41/41、Charts unit 13 文件/114 项、Engine 162 runtime exports/415 type symbols、Charts 5 runtime exports/4 declarations 通过。生产 SDK 仍无 runtime mock、补点或行情构造；rc.21 及更早版本继续作为不可变历史候选保留。
 
 ## 1. 背景与问题
 
@@ -584,7 +587,13 @@ RC 打包命令在生成文件前重新执行 Workspace 门禁，并在 `dist/pa
 
 发布编排明确分两层：package-only 门禁串行执行 Engine 完整门禁和 Workspace 包/浏览器门禁，不依赖宿主；final 门禁在其后追加已安装同一候选 `.tgz` 的 TradingReviewSystem 鉴权宿主验收。最终商业验收不得用 package-only 结果替代，打包流程也不得循环等待尚未安装该候选包的宿主。
 
-## 13. 完成定义
+## 13. 单日分时名义涨跌幅越界规则
+
+宿主提供的 `priceLimitPercent` 是板块与交易规则对应的名义幅度，不保证按最小报价单位取整后的真实涨跌幅严格落在该小数内。单日分时因此以名义幅度作为最小对称范围，并检查真实分钟 K 线的最高价和最低价相对官方前收的绝对涨跌幅。
+
+当全部真实高低价均在名义范围内时，坐标保持原范围；一旦越界，范围按最大真实绝对涨跌幅增加 `0.1` 个百分点绘制余量，再向上取整到 `0.1` 个百分点，并继续保持上下对称。`9.65 → 10.62` 的 `+10.0518%` 对应 `±10.2%`。多日分时自动缩放、无固定涨跌幅标的和真实数据唯一来源合同均不改变。
+
+## 14. 完成定义
 
 v1 只有同时满足以下条件才算完成：
 

@@ -23,7 +23,11 @@ export function getTimeAxisLabels(
 
   const labels: TimeAxisLabel[] = [];
   let previousLabel: string | undefined;
-  for (const index of getTimeTickIndices(bounds, timeAxisArea.width)) {
+  const indices = state.intradayDays !== undefined && state.intradayDays > 1
+    ? state.timeCoordinates?.dayStartIndices ?? getTimeTickIndices(bounds, timeAxisArea.width)
+    : getTimeTickIndices(bounds, timeAxisArea.width);
+  for (const index of indices) {
+    if (index < bounds.from || index > bounds.to) continue;
     const candle = series.candles[index];
     if (!candle) continue;
 
@@ -34,8 +38,14 @@ export function getTimeAxisLabels(
     if (label === previousLabel) continue;
     previousLabel = label;
     const halfWidth = measureText(context, label, theme.typography.fontSize) / 2;
+    const dayStartOffsetIndex = state.timeCoordinates?.dayStartIndices.indexOf(index) ?? -1;
+    const mappedDayStart = dayStartOffsetIndex < 0
+      ? undefined
+      : state.timeCoordinates?.dayStartOffsets[dayStartOffsetIndex];
     const x = clamp(
-      indexToX(index, viewport, plotArea.x),
+      mappedDayStart === undefined
+        ? indexToX(index, viewport, plotArea.x, state.timeCoordinates)
+        : plotArea.x + mappedDayStart,
       timeAxisArea.x + halfWidth,
       timeAxisArea.x + timeAxisArea.width - halfWidth
     );
