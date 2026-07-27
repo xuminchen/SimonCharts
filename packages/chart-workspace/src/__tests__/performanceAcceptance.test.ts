@@ -3,6 +3,7 @@ import {
   createChartLayout,
   createMainPanelPriceScale,
   indexToX,
+  priceAtY,
   priceToY,
   type IndicatorResult,
   type SeriesRenderModel,
@@ -11,6 +12,7 @@ import {
 import type { MaterializedSeries } from "../data/materializedSeries";
 import type { CheckpointedCalculationRuntime } from "../runtime/checkpointedCalculationRuntime";
 import { createChartEngineRuntime } from "../runtime/chartEngineRuntime";
+import { indicatorOutputId } from "../runtime/indicatorRuntime";
 import { readWorkspaceChartTheme } from "../runtime/workspaceTheme";
 
 class FakeCanvas {
@@ -296,6 +298,263 @@ describe("workspace engine runtime", () => {
     overlayCanvas.dispatch("pointerleave", {});
     expect(snapshots.at(-1)?.candle.time).toBe(100);
     runtime.destroy();
+  });
+
+  it("publishes one complete crosshair snapshot per frame and one explicit leave", async () => {
+    const overlayCanvas = new FakeCanvas();
+    const source = materialized(1, 100);
+    const frames = new Map<number, () => void>();
+    const events: Array<import("../runtime/chartEngineRuntime").RuntimeCrosshairSnapshot | undefined> = [];
+    const renderErrors: unknown[] = [];
+    const calculationStates: import("../runtime/checkpointedCalculationRuntime").CalculationStatus[] = [];
+    let nextFrame = 1;
+    let currentViewport: ViewportState | undefined;
+    let listening = true;
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    const points = (value: number) => source.series.candles.map((candle) => ({
+      time: candle.time,
+      value
+    }));
+    const indicatorResults = (dif = 1, bandUpper = 110, bandLower = 90) => new Map<string, IndicatorResult>([
+      ["macd-a", {
+        outputs: [
+          { id: indicatorOutputId("macd-a", "MACD-DIF"), label: "DIF", type: "line", panelId: "macd", values: points(dif) },
+          { id: indicatorOutputId("macd-a", "MACD-DEA"), label: "DEA", type: "line", panelId: "macd", values: points(2) },
+          { id: indicatorOutputId("macd-a", "MACD-HISTOGRAM"), label: "MACD", type: "histogram", panelId: "macd", values: points(3) }
+        ]
+      }],
+      ["boll-a", {
+        outputs: [{
+          id: indicatorOutputId("boll-a", "BOLL-BAND"),
+          label: "BOLL",
+          type: "band",
+          upper: points(bandUpper),
+          lower: points(bandLower)
+        }]
+      }],
+      ["sar-a", {
+        outputs: [{
+          id: indicatorOutputId("sar-a", "SAR"),
+          label: "SAR",
+          type: "marker",
+          marks: source.series.candles.map((candle, index) => ({
+            id: `sar-${index}`,
+            time: candle.time,
+            price: 80 + index
+          }))
+        }]
+      }],
+      ["hidden-a", {
+        outputs: [{
+          id: indicatorOutputId("hidden-a", "MA"),
+          label: "MA",
+          type: "line",
+          values: points(999)
+        }]
+      }]
+    ]);
+    let deferNextCalculation = false;
+    let resolveDeferredCalculation: ((results: Map<string, IndicatorResult>) => void) | undefined;
+    const calculateIndicators = vi.fn(() => {
+      if (!deferNextCalculation) return Promise.resolve(indicatorResults());
+      deferNextCalculation = false;
+      return new Promise<Map<string, IndicatorResult>>((resolve) => {
+        resolveDeferredCalculation = resolve;
+      });
+    });
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        calculateIndicators,
+        async calculateSeries(input) {
+          return { type: input.type, source: source.series, sourceIndexOffset: 0, points: [] };
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onViewportChanged: (viewport) => { currentViewport = viewport; },
+      onCalculationStatusChanged: (status) => calculationStates.push(status),
+      hasCrosshairListeners: () => listening,
+      onCrosshairChanged: (snapshot) => events.push(snapshot),
+      onRenderError: (error) => renderErrors.push(error)
+    });
+    runtime.setMaterializedSeries(source);
+    runtime.setIndicators([
+      { instanceId: "macd-a", id: "MACD", params: { fast: 12, slow: 26, signal: 9 }, visible: true },
+      { instanceId: "boll-a", id: "BOLL", params: { period: 20, deviation: 2 }, visible: true },
+      { instanceId: "sar-a", id: "SAR", params: { step: 0.02, max: 0.2 }, visible: true },
+      { instanceId: "hidden-a", id: "MA", params: { period: 5 }, visible: false }
+    ]);
+    await vi.waitFor(() => expect(calculateIndicators).toHaveBeenCalled());
+    await vi.waitFor(() => expect(calculationStates.at(-1)).toEqual({ type: "idle" }));
+    flushFrames();
+
+    const layout = createChartLayout(800, 500);
+    const targetIndex = Math.floor(
+      (currentViewport!.visibleRange.from + currentViewport!.visibleRange.to) / 2
+    );
+    const x = indexToX(targetIndex, currentViewport!, layout.plotArea.x);
+    events.length = 0;
+    for (let index = 0; index < 100; index += 1) {
+      overlayCanvas.dispatch("pointermove", {
+        clientX: x,
+        clientY: 150 + index / 10,
+        pointerType: "mouse"
+      });
+    }
+    expect(events).toEqual([]);
+    flushFrames();
+    expect(renderErrors).toEqual([]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      offsetX: x,
+      offsetY: 159.9,
+      candle: source.series.candles[targetIndex]
+    });
+
+    const firstPrice = events[0]!.crosshair.price;
+    overlayCanvas.dispatch("pointermove", { clientX: x, clientY: 220, pointerType: "mouse" });
+    flushFrames();
+    expect(events.at(-1)?.crosshair.time).toBe(events[0]!.crosshair.time);
+    expect(events.at(-1)?.crosshair.price).not.toBe(firstPrice);
+    expect(events.at(-1)?.studies.map((study) => study.indicator.id)).toEqual([
+      "MACD",
+      "BOLL",
+      "SAR"
+    ]);
+    expect(events.at(-1)?.studies[0]?.outputs).toEqual([
+      { id: "MACD-DIF", title: "DIF", type: "line", value: 1 },
+      { id: "MACD-DEA", title: "DEA", type: "line", value: 2 },
+      { id: "MACD-HISTOGRAM", title: "MACD", type: "histogram", value: 3 }
+    ]);
+    expect(events.at(-1)?.studies[1]?.outputs).toEqual([
+      { id: "BOLL-BAND", title: "BOLL", type: "band", upper: 110, lower: 90 }
+    ]);
+    expect(events.at(-1)?.studies[2]?.outputs).toEqual([
+      { id: "SAR", title: "SAR", type: "marker", value: 80 + targetIndex }
+    ]);
+
+    deferNextCalculation = true;
+    runtime.setIndicators([
+      { instanceId: "macd-a", id: "MACD", params: { fast: 5, slow: 26, signal: 9 }, visible: true },
+      { instanceId: "boll-a", id: "BOLL", params: { period: 20, deviation: 10 }, visible: true },
+      { instanceId: "sar-a", id: "SAR", params: { step: 0.02, max: 0.2 }, visible: true }
+    ]);
+    flushFrames();
+    expect(events.at(-1)?.studies.every((study) => study.outputs.length === 0)).toBe(true);
+    const recalculated = indicatorResults(9, 220, 1);
+    resolveDeferredCalculation!(recalculated);
+    await vi.waitFor(() => expect(calculationStates.at(-1)).toEqual({ type: "idle" }));
+    flushFrames();
+    expect(events.at(-1)?.studies[0]?.outputs[0]).toEqual({
+      id: "MACD-DIF",
+      title: "DIF",
+      type: "line",
+      value: 9
+    });
+    const expectedScale = createMainPanelPriceScale(
+      source.series,
+      currentViewport!.visibleRange,
+      "linear",
+      [
+        ...recalculated.get("macd-a")!.outputs,
+        ...recalculated.get("boll-a")!.outputs,
+        ...recalculated.get("sar-a")!.outputs
+      ],
+      []
+    );
+    expect(events.at(-1)?.crosshair.price).toBeCloseTo(
+      priceAtY(220, expectedScale, layout.plotArea.y, layout.plotArea.height)
+    );
+
+    const leavesBeforeScaleChange = events.filter((event) => event === undefined).length;
+    runtime.setPriceScaleMode("percentage");
+    flushFrames();
+    expect(events.filter((event) => event === undefined)).toHaveLength(leavesBeforeScaleChange + 1);
+
+    const movesBeforeDrawing = events.filter((event) => event !== undefined).length;
+    runtime.setDrawingTool("trendLine");
+    overlayCanvas.dispatch("pointermove", { clientX: x, clientY: 210, pointerType: "mouse" });
+    flushFrames();
+    expect(events.filter((event) => event !== undefined)).toHaveLength(movesBeforeDrawing + 1);
+    expect(events.at(-1)?.offsetY).toBe(210);
+    runtime.setDrawingTool("select");
+
+    const leavesBeforePointerLeave = events.filter((event) => event === undefined).length;
+    overlayCanvas.dispatch("pointerleave", {});
+    overlayCanvas.dispatch("pointerleave", {});
+    flushFrames();
+    expect(events.filter((event) => event === undefined)).toHaveLength(leavesBeforePointerLeave + 1);
+
+    expect(runtime.setVisibleRange({
+      from: source.series.candles[0]!.time,
+      to: source.series.candles[19]!.time
+    })).toBe(true);
+    flushFrames();
+    const firstX = indexToX(0, currentViewport!, layout.plotArea.x);
+    overlayCanvas.dispatch("pointermove", { clientX: firstX, clientY: 180, pointerType: "mouse" });
+    flushFrames();
+    expect(events.at(-1)).toMatchObject({
+      symbolId: source.selection.symbol.id,
+      timeframe: source.selection.timeframe,
+      adjustMode: source.selection.adjustMode,
+      dataVersion: source.series.dataVersion,
+      referencePrice: null,
+      change: null,
+      changePercent: null,
+      candle: source.series.candles[0]
+    });
+
+    const eventsBeforeFastResume = events.length;
+    runtime.clearCrosshair();
+    runtime.setMaterializedSeries(source);
+    overlayCanvas.dispatch("pointermove", { clientX: firstX, clientY: 190, pointerType: "mouse" });
+    expect(events).toHaveLength(eventsBeforeFastResume);
+    flushFrames();
+    expect(events.slice(eventsBeforeFastResume)).toEqual([
+      undefined,
+      expect.objectContaining({
+        symbolId: source.selection.symbol.id,
+        timeframe: source.selection.timeframe
+      })
+    ]);
+
+    const leavesBeforeSuspension = events.filter((event) => event === undefined).length;
+    runtime.clearCrosshair();
+    expect(events.filter((event) => event === undefined)).toHaveLength(leavesBeforeSuspension);
+    flushFrames();
+    expect(events.filter((event) => event === undefined)).toHaveLength(leavesBeforeSuspension + 1);
+    const suspendedEventCount = events.length;
+    overlayCanvas.dispatch("pointermove", { clientX: firstX, clientY: 190, pointerType: "mouse" });
+    overlayCanvas.dispatch("pointerleave", {});
+    flushFrames();
+    expect(events).toHaveLength(suspendedEventCount);
+    runtime.setMaterializedSeries(source);
+    flushFrames();
+    overlayCanvas.dispatch("pointermove", { clientX: x, clientY: 190, pointerType: "mouse" });
+    flushFrames();
+    const movesAfterResume = events.filter((event) => event !== undefined).length;
+
+    listening = false;
+    overlayCanvas.dispatch("pointermove", { clientX: x, clientY: 180, pointerType: "mouse" });
+    flushFrames();
+    expect(events.filter((event) => event !== undefined)).toHaveLength(movesAfterResume);
+
+    listening = true;
+    overlayCanvas.dispatch("pointermove", { clientX: x, clientY: 190, pointerType: "mouse" });
+    runtime.destroy();
+    flushFrames();
+    expect(events.filter((event) => event !== undefined)).toHaveLength(movesAfterResume);
   });
 
   it("renders a fixed one-day intraday percentage axis and fits the complete day on first paint", () => {

@@ -641,6 +641,7 @@ export function createChartController(
   };
 
   const invalidateViewMaterialization = (): void => {
+    dependencies.runtime.clearCrosshair();
     selectionRevision += 1;
     materializationIntentGeneration += 1;
     currentMaterialized = undefined;
@@ -770,6 +771,7 @@ export function createChartController(
 
   const beginSelection = (): void => {
     if (state.capabilities === undefined) return;
+    dependencies.runtime.clearCrosshair();
     invalidateSelectionMaterialization(true);
     state = { ...state, loading: true };
     viewModel = { ...viewModel, status: { type: "loading" }, dataWindow: undefined };
@@ -784,6 +786,7 @@ export function createChartController(
     preferredAdjustMode: AdjustMode
   ): Promise<void> => {
     if (!active) return;
+    dependencies.runtime.clearCrosshair();
     const preferredView = state.view;
     requestedTimeframe = undefined;
     requestedAdjustMode = undefined;

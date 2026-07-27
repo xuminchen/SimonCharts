@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.29.tgz
+npm install ./simoncharts-charts-1.0.0-rc.30.tgz
 ```
 
 ## Embed the default chart
@@ -66,6 +66,29 @@ chart.resetToLatest();
 const visibleRange = chart.getVisibleRange();
 // On host teardown: unsubscribeEvents();
 ```
+
+## Subscribe to crosshair data
+
+`subscribeCrosshair()` publishes the latest real crosshair position once per animation frame without making unrelated lifecycle subscribers pay the per-pointer payload cost. `crosshair-moved` includes the exact host candle, accepted selection and data revision, raw price and change values, canvas-local CSS pixel offsets, and every output of each visible study. Missing warm-up or reference values stay `null`; leaving or clearing the chart emits one `crosshair-left`.
+
+```ts
+const stopCrosshair = chart.subscribeCrosshair((event) => {
+  if (event.type === "crosshair-moved") {
+    syncExternalPanel({
+      time: event.crosshair.time,
+      price: event.crosshair.price,
+      candle: event.crosshair.candle,
+      studies: event.crosshair.studies
+    });
+  } else if (event.type === "crosshair-left") {
+    clearExternalPanel();
+  }
+});
+
+// On host teardown: stopCrosshair();
+```
+
+`time` uses the same Unix epoch milliseconds as `Candle.time`; `symbolId`, `timeframe`, `adjustMode`, and `dataVersion` identify the accepted host revision. `referencePrice`, `change`, and `changePercent` are `null` when no real prior reference exists. Same-candle vertical movement still publishes updated `price` and `offsetY`; a pointer burst is coalesced to its latest position for that frame. Events are defensive snapshots, so one listener cannot mutate another listener's payload. Hidden studies, synthetic candles, formatted display strings, and latest-candle fallbacks are not added.
 
 ## Program the chart and persist its layout
 
@@ -277,4 +300,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.29 adds independent study instances and `ChartLayoutV2` while preserving rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.30 adds frame-batched public crosshair movement and leave events with complete real candle and visible-study values while preserving rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

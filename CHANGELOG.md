@@ -1,5 +1,13 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.30 - 2026-07-27
+
+- Added dedicated public `crosshair-moved` and `crosshair-left` subscriptions without adding per-pointer work to unrelated lifecycle listeners.
+- Published the accepted symbol/timeframe/adjustment/data revision, exact host candles, raw crosshair price, nullable real-reference change values, canvas-local offsets, and every output of each visible study instance without fabricating or formatting data.
+- Coalesced pointer bursts to the latest position once per animation frame while preserving same-candle vertical movement.
+- Cleared crosshair state across leave, selection replacement, cancellation, and destroy boundaries, retained the first real move after fast rematerialization, and isolated every listener with a defensive event snapshot.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,116 tests`, combined Chrome `102/102`, Charts `14 files / 140 tests`, and Charts Chrome/Edge `51/51` per browser; SHA-256 is `a837f0a39c13595d3959c5c6a8b90804b69373326a236c0162c397bd220bd02c`, SHA-512 is `33af89105f88c813be383f5861fa15775a086a00c0e29fe6fd8e5e5d95b6eedd42ef85ecf403842c347a865338078744ba288ccf578881413c64fe32a24539f4`.
+
 ## @simoncharts/charts 1.0.0-rc.29 - 2026-07-26
 
 - Added stable study instances and `createStudy()`, `getStudyById()`, `getAllStudies()`, and `removeStudy()` APIs so multiple copies of one indicator definition can coexist.

@@ -7,6 +7,9 @@ import {
 } from "../index";
 import type {
   ChartDatafeed,
+  ChartCrosshairEvent,
+  ChartCrosshairSnapshot,
+  ChartCrosshairStudyOutput,
   ChartDrawing,
   ChartDrawingTool,
   ChartEntity,
@@ -98,6 +101,7 @@ describe("charts public contract", () => {
     expectTypeOf<ChartInstance>().toHaveProperty("retry");
     expectTypeOf<ChartInstance>().toHaveProperty("subscribe");
     expectTypeOf<ChartInstance>().toHaveProperty("subscribeEvents");
+    expectTypeOf<ChartInstance>().toHaveProperty("subscribeCrosshair");
     expectTypeOf<ChartInstance>().toHaveProperty("destroy");
     expectTypeOf<ChartOptions>().toHaveProperty("chartId");
     expectTypeOf<ChartOptions>().toHaveProperty("persistenceScopeId");
@@ -146,6 +150,30 @@ describe("charts public contract", () => {
       .toEqualTypeOf<Readonly<ChartEntity>>();
     expectTypeOf<Extract<ChartEvent, { type: "entity-removed" }>["entity"]>()
       .toEqualTypeOf<Readonly<ChartEntity>>();
+    expectTypeOf<Extract<ChartCrosshairEvent, { type: "crosshair-moved" }>["crosshair"]>()
+      .toEqualTypeOf<Readonly<ChartCrosshairSnapshot>>();
+    expectTypeOf<Extract<ChartCrosshairEvent, { type: "crosshair-left" }>["type"]>()
+      .toEqualTypeOf<"crosshair-left">();
+    expectTypeOf<ChartCrosshairSnapshot["referencePrice"]>().toEqualTypeOf<number | null>();
+    expectTypeOf<ChartCrosshairSnapshot["change"]>().toEqualTypeOf<number | null>();
+    expectTypeOf<ChartCrosshairSnapshot["candle"]>().toEqualTypeOf<
+      Readonly<import("../index").Candle>
+    >();
+    expectTypeOf<ChartCrosshairStudyOutput>().toMatchTypeOf<
+      | {
+          readonly id: string;
+          readonly title: string;
+          readonly type: "line" | "histogram" | "marker";
+          readonly value: number | null;
+        }
+      | {
+          readonly id: string;
+          readonly title: string;
+          readonly type: "band";
+          readonly upper: number | null;
+          readonly lower: number | null;
+        }
+    >();
     expectTypeOf<ChartError>().toHaveProperty("recoverable");
     expectTypeOf<ChartFeature>().toEqualTypeOf<
       | "symbol-search"

@@ -320,6 +320,50 @@ export interface ChartVisibleRange {
   readonly to: number;
 }
 
+export type ChartCrosshairStudyOutput =
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "line" | "histogram" | "marker";
+      readonly value: number | null;
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "band";
+      readonly upper: number | null;
+      readonly lower: number | null;
+    };
+
+export interface ChartCrosshairStudyValues {
+  readonly entityId: ChartIndicatorEntityId;
+  readonly indicatorId: ChartIndicatorId;
+  readonly title: string;
+  readonly outputs: readonly ChartCrosshairStudyOutput[];
+}
+
+export interface ChartCrosshairSnapshot {
+  readonly symbolId: string;
+  readonly timeframe: Timeframe;
+  readonly adjustMode: AdjustMode;
+  readonly dataVersion: string;
+  readonly time: number;
+  readonly price: number;
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly candle: Readonly<Candle>;
+  readonly referencePrice: number | null;
+  readonly change: number | null;
+  readonly changePercent: number | null;
+  readonly studies: readonly ChartCrosshairStudyValues[];
+}
+
+export type ChartCrosshairEvent =
+  | { readonly type: "crosshair-moved"; readonly crosshair: Readonly<ChartCrosshairSnapshot> }
+  | { readonly type: "crosshair-left" };
+
+export type ChartCrosshairListener = (event: Readonly<ChartCrosshairEvent>) => void;
+
 export interface ChartLayoutV2 {
   readonly schemaVersion: 2;
   readonly seriesType: ChartSeriesType;
@@ -387,5 +431,6 @@ export interface ChartInstance {
   retry(): void;
   subscribe(listener: ChartStateListener): () => void;
   subscribeEvents(listener: ChartEventListener): () => void;
+  subscribeCrosshair(listener: ChartCrosshairListener): () => void;
   destroy(): void;
 }

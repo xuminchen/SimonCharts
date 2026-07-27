@@ -5,7 +5,7 @@ import path from "node:path";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.29";
+const expectedVersion = "1.0.0-rc.30";
 let tempRoot;
 
 try {
@@ -180,6 +180,36 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
     void view;
   }
 });
+const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
+  if (event.type === "crosshair-moved") {
+    const time: number = event.crosshair.time;
+    const price: number = event.crosshair.price;
+    const referencePrice: number | null = event.crosshair.referencePrice;
+    const change: number | null = event.crosshair.change;
+    const open: number = event.crosshair.candle.open;
+    const dataVersion: string = event.crosshair.dataVersion;
+    for (const study of event.crosshair.studies) {
+      const studyId: ChartIndicatorEntityId = study.entityId;
+      for (const output of study.outputs) {
+        const rawValue: number | null = output.type === "band"
+          ? output.upper
+          : output.value;
+        void rawValue;
+      }
+      void studyId;
+    }
+    void time;
+    void price;
+    void referencePrice;
+    void change;
+    void open;
+    void dataVersion;
+  }
+  if (event.type === "crosshair-left") {
+    const leaveType: "crosshair-left" = event.type;
+    void leaveType;
+  }
+});
 chart.setTimeframe("5m");
 chart.setView("intraday");
 chart.setView("timeframe");
@@ -228,6 +258,7 @@ if (!markEntities.some((entity) => entity.id === markEntityId)) {
 }
 if (!chart.removeEntity(markEntityId)) throw new Error("entity API did not remove its mark");
 void visibleRange;
+unsubscribeCrosshair();
 unsubscribeEvents();
 unsubscribe();
 chart.destroy();

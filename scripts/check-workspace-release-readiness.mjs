@@ -2,7 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
-const expectedVersion = "1.0.0-rc.29";
+const expectedVersion = "1.0.0-rc.30";
 const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 const readJson = async (relativePath) => JSON.parse(await readFile(path.join(root, relativePath), "utf8"));

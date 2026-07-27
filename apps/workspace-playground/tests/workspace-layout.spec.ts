@@ -39,6 +39,265 @@ for (const viewport of [
   });
 }
 
+test("publishes frame-batched public crosshair events with isolated real-data snapshots", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  const studyId = await page.evaluate(() => {
+    const chart = window.__chart;
+    if (!chart) throw new Error("public chart handle missing");
+    const probe = {
+      first: [] as unknown[],
+      second: [] as unknown[],
+      stops: [] as Array<() => void>
+    };
+    const id = chart.createStudy({
+      instanceId: "crosshair-macd",
+      id: "MACD",
+      params: { fast: 12, slow: 26, signal: 9 },
+      visible: true
+    });
+    probe.stops.push(chart.subscribeCrosshair((event) => {
+      if (event.type !== "crosshair-moved") return;
+      probe.first.push(structuredClone(event));
+      const mutable = event as unknown as {
+        crosshair: {
+          candle: { open: number };
+          studies: Array<{ outputs: Array<{ value?: number }> }>;
+        };
+      };
+      mutable.crosshair.candle.open = -999;
+      const output = mutable.crosshair.studies[0]?.outputs[0];
+      if (output && "value" in output) output.value = -999;
+    }));
+    probe.stops.push(chart.subscribeCrosshair((event) => {
+      if (event.type === "crosshair-moved" || event.type === "crosshair-left") {
+        probe.second.push(structuredClone(event));
+      }
+    }));
+    (window as typeof window & { __crosshairProbe?: typeof probe }).__crosshairProbe = probe;
+    return id;
+  });
+  const canvas = page.locator("canvas.sc-overlay-canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas missing");
+  await page.mouse.move(box.x + box.width / 2, box.y + 180);
+  await expect.poll(() => page.evaluate(() => {
+    const probe = (window as typeof window & {
+      __crosshairProbe?: { second: Array<{ type?: string; crosshair?: { studies?: Array<{ outputs?: unknown[] }> } }> };
+    }).__crosshairProbe;
+    const moved = probe?.second.filter((event) => event.type === "crosshair-moved").at(-1);
+    return moved?.crosshair?.studies?.[0]?.outputs?.length ?? 0;
+  })).toBeGreaterThan(0);
+
+  const firstFrame = await page.evaluate(async () => {
+    const probe = (window as typeof window & {
+      __crosshairProbe?: { first: unknown[]; second: unknown[] };
+    }).__crosshairProbe!;
+    probe.first.length = 0;
+    probe.second.length = 0;
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-overlay-canvas")!;
+    const rect = canvas.getBoundingClientRect();
+    for (let index = 0; index < 100; index += 1) {
+      canvas.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + 150 + index / 10,
+        pointerType: "mouse"
+      }));
+    }
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return structuredClone(probe.second);
+  }) as Array<{
+    type: string;
+    crosshair?: {
+      time: number;
+      price: number;
+      offsetY: number;
+      candle: { open: number };
+      studies: Array<{ entityId: string; outputs: Array<{ value?: number }> }>;
+    };
+  }>;
+  expect(firstFrame).toHaveLength(1);
+  expect(firstFrame[0]?.type).toBe("crosshair-moved");
+  expect(firstFrame[0]?.crosshair?.offsetY).toBeCloseTo(159.9);
+  expect(firstFrame[0]?.crosshair?.candle.open).toBeGreaterThan(0);
+  expect(firstFrame[0]?.crosshair?.studies[0]?.entityId).toBe(studyId);
+  expect(firstFrame[0]?.crosshair?.studies[0]?.outputs[0]?.value).not.toBe(-999);
+
+  const secondFrame = await page.evaluate(async () => {
+    const probe = (window as typeof window & {
+      __crosshairProbe?: { second: unknown[] };
+    }).__crosshairProbe!;
+    window.__chart!.setDrawingTool("trendLine");
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-overlay-canvas")!;
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + 220,
+      pointerType: "mouse"
+    }));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    window.__chart!.setDrawingTool("select");
+    return structuredClone(probe.second);
+  }) as typeof firstFrame;
+  expect(secondFrame).toHaveLength(2);
+  expect(secondFrame[1]?.crosshair?.time).toBe(firstFrame[0]?.crosshair?.time);
+  expect(secondFrame[1]?.crosshair?.price).not.toBe(firstFrame[0]?.crosshair?.price);
+
+  const leaveEvents = await page.evaluate(async () => {
+    const probe = (window as typeof window & {
+      __crosshairProbe?: { second: unknown[]; stops: Array<() => void> };
+    }).__crosshairProbe!;
+    probe.second.length = 0;
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-overlay-canvas")!;
+    canvas.dispatchEvent(new PointerEvent("pointerleave"));
+    canvas.dispatchEvent(new PointerEvent("pointerleave"));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const events = structuredClone(probe.second);
+    probe.stops.forEach((stop) => stop());
+    probe.second.length = 0;
+    return events;
+  }) as Array<{ type: string }>;
+  expect(leaveEvents.map((event) => event.type)).toEqual(["crosshair-left"]);
+});
+
+test("suspends crosshair events while a new symbol is loading", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  const canvas = page.locator("canvas.sc-overlay-canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas missing");
+  await page.evaluate(() => {
+    const events: Array<{ type: string; symbolId?: string }> = [];
+    const stop = window.__chart!.subscribeCrosshair((event) => {
+      events.push({
+        type: event.type,
+        ...(event.type === "crosshair-moved" ? { symbolId: event.crosshair.symbolId } : {})
+      });
+    });
+    (window as typeof window & {
+      __selectionCrosshairProbe?: { events: typeof events; stop: () => void };
+    }).__selectionCrosshairProbe = { events, stop };
+  });
+  await page.mouse.move(box.x + box.width / 2, box.y + 180);
+  await expect.poll(() => page.evaluate(() => {
+    const probe = (window as typeof window & {
+      __selectionCrosshairProbe?: { events: Array<{ type: string }> };
+    }).__selectionCrosshairProbe;
+    return probe?.events.at(-1)?.type;
+  })).toBe("crosshair-moved");
+
+  const fastRematerialized = await page.evaluate(async () => {
+    const probe = (window as typeof window & {
+      __selectionCrosshairProbe?: { events: Array<{ type: string; symbolId?: string }> };
+    }).__selectionCrosshairProbe!;
+    probe.events.length = 0;
+    const chart = window.__chart!;
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-overlay-canvas")!;
+    const rect = canvas.getBoundingClientRect();
+    chart.setTimeframe("5m");
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const stateBeforeMove = chart.getState();
+    canvas.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      clientX: rect.left + rect.width / 2 + 10,
+      clientY: rect.top + 220,
+      pointerType: "mouse"
+    }));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return { stateBeforeMove, events: structuredClone(probe.events) };
+  });
+  expect(fastRematerialized.stateBeforeMove).toMatchObject({ timeframe: "5m", loading: false });
+  expect(fastRematerialized.events).toEqual([
+    { type: "crosshair-left" },
+    { type: "crosshair-moved", symbolId: "stock:SSE:600000" }
+  ]);
+
+  const duringLoad = await page.evaluate(async () => {
+    const probe = (window as typeof window & {
+      __selectionCrosshairProbe?: { events: Array<{ type: string; symbolId?: string }> };
+    }).__selectionCrosshairProbe!;
+    probe.events.length = 0;
+    window.__chart!.setSymbol({
+      id: "stock:SSE:slow",
+      code: "600001",
+      name: "慢速股票",
+      exchange: "SSE",
+      kind: "stock"
+    });
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-overlay-canvas")!;
+    const rect = canvas.getBoundingClientRect();
+    for (let index = 0; index < 10; index += 1) {
+      canvas.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: rect.left + 200 + index,
+        clientY: rect.top + 160,
+        pointerType: "mouse"
+      }));
+    }
+    canvas.dispatchEvent(new PointerEvent("pointerleave"));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return structuredClone(probe.events);
+  });
+  expect(duringLoad).toEqual([{ type: "crosshair-left" }]);
+
+  await expect.poll(() => page.evaluate(() => ({
+    symbolId: window.__chart?.getState().symbol.id,
+    loading: window.__chart?.getState().loading
+  })), { timeout: 5_000 }).toEqual({ symbolId: "stock:SSE:slow", loading: false });
+  const resumed = await page.evaluate(async () => {
+    const probe = (window as typeof window & {
+      __selectionCrosshairProbe?: {
+        events: Array<{ type: string; symbolId?: string }>;
+        stop: () => void;
+      };
+    }).__selectionCrosshairProbe!;
+    probe.events.length = 0;
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-overlay-canvas")!;
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + 180,
+      pointerType: "mouse"
+    }));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const events = structuredClone(probe.events);
+    probe.stop();
+    return events;
+  });
+  expect(resumed).toEqual([
+    { type: "crosshair-moved", symbolId: "stock:SSE:slow" }
+  ]);
+  await page.evaluate(() => {
+    const chart = window.__chart!;
+    let stop: () => void = () => undefined;
+    stop = chart.subscribeCrosshair((event) => {
+      if (event.type !== "crosshair-left") return;
+      stop();
+      chart.setSymbol({
+        id: "stock:SSE:fast",
+        code: "600002",
+        name: "快速股票",
+        exchange: "SSE",
+        kind: "stock"
+      });
+    });
+    chart.setSymbol({
+      id: "stock:SSE:600000",
+      code: "600000",
+      name: "浦发银行",
+      exchange: "SSE",
+      kind: "stock"
+    });
+  });
+  await expect.poll(() => page.evaluate(() => ({
+    symbolId: window.__chart?.getState().symbol.id,
+    loading: window.__chart?.getState().loading
+  })), { timeout: 5_000 }).toEqual({ symbolId: "stock:SSE:fast", loading: false });
+});
+
 test("opens only real clamped chart, price-axis, and time-axis context menus", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");

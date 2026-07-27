@@ -59,7 +59,16 @@ import {
   type VisualTooltipRow,
   type ViewportState
 } from "@simoncharts/chart-engine";
-import type { Candle, ChartExecution, ChartMark, ChartVisibleRange } from "../contracts";
+import type {
+  AdjustMode,
+  Candle,
+  ChartCrosshairStudyOutput,
+  ChartExecution,
+  ChartIndicator,
+  ChartMark,
+  ChartVisibleRange,
+  Timeframe
+} from "../contracts";
 import type { MaterializedSeries } from "../data/materializedSeries";
 import { shanghaiTradingDayKey } from "../data/pagedSeriesStore";
 import type { CalculationStatus, CheckpointedCalculationRuntime } from "./checkpointedCalculationRuntime";
@@ -107,6 +116,27 @@ export interface DataWindowSnapshot {
   intradaySummary?: DataWindowIntradaySummary;
 }
 
+interface RuntimeCrosshairStudyValues {
+  readonly indicator: ChartIndicator;
+  readonly title: string;
+  readonly outputs: readonly ChartCrosshairStudyOutput[];
+}
+
+export interface RuntimeCrosshairSnapshot {
+  readonly symbolId: string;
+  readonly timeframe: Timeframe;
+  readonly adjustMode: AdjustMode;
+  readonly dataVersion: string;
+  readonly crosshair: ChartCrosshairState;
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly candle: Readonly<Candle>;
+  readonly referencePrice: number | null;
+  readonly change: number | null;
+  readonly changePercent: number | null;
+  readonly studies: readonly RuntimeCrosshairStudyValues[];
+}
+
 export interface ExecutionTooltipSnapshot {
   readonly markId: string;
   readonly x: number;
@@ -122,6 +152,7 @@ export interface ChartEngineRuntime {
   getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
   setVisibleRange(range: ChartVisibleRange): boolean;
   resetToLatest(): void;
+  clearCrosshair(): void;
   setSeriesType(type: SeriesType): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
   setMarks(marks: readonly ChartMark[]): void;
@@ -156,6 +187,8 @@ export interface ChartEngineRuntimeOptions {
   onVisibleRangeChanged?: (range: Readonly<ChartVisibleRange>) => void;
   onCalculationStatusChanged?: (status: CalculationStatus) => void;
   onDataWindowChanged?: (snapshot: DataWindowSnapshot | undefined) => void;
+  hasCrosshairListeners?: () => boolean;
+  onCrosshairChanged?: (snapshot: RuntimeCrosshairSnapshot | undefined) => void;
   onExecutionTooltipChanged?: (snapshot: ExecutionTooltipSnapshot | undefined) => void;
   onMarkClicked?: (mark: Readonly<ChartMark>) => void;
   onDrawingsChanged?: (drawings: readonly DrawingObject[], selectedDrawingIds: readonly string[]) => void;
@@ -216,6 +249,14 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let indicatorConfigs: readonly IndicatorConfig[] = [];
   let seriesModel: SeriesRenderModel | undefined;
   let crosshair: ChartCrosshairState | undefined;
+  let crosshairPoint: { x: number; y: number } | undefined;
+  let crosshairEventsSuspended = false;
+  let resumeCrosshairEventsAfterFlush = false;
+  let interactionEventPoint: { x: number; y: number } | undefined;
+  let pendingCrosshairEvent:
+    | { crosshair: ChartCrosshairState; point: { x: number; y: number } }
+    | { crosshair: undefined }
+    | undefined;
   let maxMaterializedCandleCount = 0;
   let indicatorGeneration = 0;
   let seriesGeneration = 0;
@@ -487,7 +528,176 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     });
   }
 
+  function queueCrosshairEvent(
+    nextCrosshair: ChartCrosshairState | undefined,
+    point?: { x: number; y: number }
+  ): void {
+    if (crosshairEventsSuspended) return;
+    if (
+      options.onCrosshairChanged === undefined ||
+      (options.hasCrosshairListeners !== undefined && !options.hasCrosshairListeners())
+    ) {
+      pendingCrosshairEvent = undefined;
+      return;
+    }
+    pendingCrosshairEvent = nextCrosshair === undefined
+      ? { crosshair: undefined }
+      : point === undefined
+        ? undefined
+        : { crosshair: { ...nextCrosshair }, point: { ...point } };
+  }
+
+  function previousCloseAt(index: number, candle: Readonly<Candle>): number {
+    return materialized?.intradayScale?.previousClose
+      ?? chartEngine.getState().series.candles[index - 1]?.close
+      ?? candle.open;
+  }
+
+  function crosshairReferencePriceAt(index: number): number | undefined {
+    if (materialized?.intradayDays !== undefined) {
+      return materialized.intradayScale?.previousClose;
+    }
+    return chartEngine.getState().series.candles[index - 1]?.close;
+  }
+
+  function buildCrosshairSnapshot(
+    pending: Extract<NonNullable<typeof pendingCrosshairEvent>, { crosshair: ChartCrosshairState }>
+  ): RuntimeCrosshairSnapshot | undefined {
+    const candles = chartEngine.getState().series.candles;
+    const candle = candles[pending.crosshair.index];
+    if (
+      materialized === undefined ||
+      candle === undefined ||
+      candle.time !== pending.crosshair.time
+    ) return undefined;
+    const valueAt = (points: readonly { time: number; value: number | null }[]): number | null => {
+      const aligned = points[pending.crosshair.index];
+      return (aligned?.time === candle.time
+        ? aligned
+        : points.find((point) => point.time === candle.time))?.value ?? null;
+    };
+    const studies = indicatorConfigs
+      .filter((config) => config.visible)
+      .map((config): RuntimeCrosshairStudyValues => {
+        const prefix = indicatorOutputPrefix(config.instanceId);
+        const outputs = visualOutputs
+          .filter((output) => output.id.startsWith(prefix))
+          .map((output): ChartCrosshairStudyOutput => {
+            const id = output.id.slice(prefix.length);
+            if (output.type === "band") {
+              return {
+                id,
+                title: output.label,
+                type: "band",
+                upper: valueAt(output.upper),
+                lower: valueAt(output.lower)
+              };
+            }
+            if (output.type === "marker") {
+              const aligned = output.marks[pending.crosshair.index];
+              const mark = aligned?.time === candle.time
+                ? aligned
+                : output.marks.find((candidate) => candidate.time === candle.time);
+              return {
+                id,
+                title: output.label,
+                type: "marker",
+                value: mark?.price ?? null
+              };
+            }
+            return {
+              id,
+              title: output.label,
+              type: output.type,
+              value: valueAt(output.values)
+            };
+          });
+        return {
+          indicator: {
+            ...config,
+            params: { ...config.params }
+          },
+          title: `${config.id} ${Object.values(config.params).join(",")}`.trim(),
+          outputs
+        };
+      });
+    const referencePrice = crosshairReferencePriceAt(pending.crosshair.index);
+    const change = referencePrice === undefined ? null : candle.close - referencePrice;
+    return {
+      symbolId: materialized.selection.symbol.id,
+      timeframe: materialized.selection.timeframe,
+      adjustMode: materialized.selection.adjustMode,
+      dataVersion: materialized.series.dataVersion,
+      crosshair: { ...pending.crosshair },
+      offsetX: pending.point.x,
+      offsetY: pending.point.y,
+      candle: { ...candle },
+      referencePrice: referencePrice ?? null,
+      change,
+      changePercent: referencePrice === undefined || referencePrice === 0
+        ? null
+        : ((candle.close - referencePrice) / referencePrice) * 100,
+      studies
+    };
+  }
+
+  function flushCrosshairEvent(): void {
+    const pending = pendingCrosshairEvent;
+    pendingCrosshairEvent = undefined;
+    if (
+      pending === undefined ||
+      options.onCrosshairChanged === undefined ||
+      (options.hasCrosshairListeners !== undefined && !options.hasCrosshairListeners())
+    ) {
+      if (resumeCrosshairEventsAfterFlush) {
+        resumeCrosshairEventsAfterFlush = false;
+        crosshairEventsSuspended = false;
+        queueCurrentCrosshairAfterResume();
+      }
+      return;
+    }
+    if (pending.crosshair === undefined) options.onCrosshairChanged(undefined);
+    else {
+      const snapshot = buildCrosshairSnapshot(pending);
+      if (snapshot !== undefined) options.onCrosshairChanged(snapshot);
+    }
+    if (resumeCrosshairEventsAfterFlush) {
+      resumeCrosshairEventsAfterFlush = false;
+      crosshairEventsSuspended = false;
+      queueCurrentCrosshairAfterResume();
+    }
+  }
+
+  function queueCurrentCrosshairAfterResume(): void {
+    if (crosshair === undefined || crosshairPoint === undefined) return;
+    queueCrosshairEvent(crosshair, crosshairPoint);
+    if (pendingCrosshairEvent?.crosshair !== undefined) {
+      scheduler.invalidate({ layers: ["crosshair"], reason: "crosshairEventsResumed" });
+    }
+  }
+
+  function clearCrosshairState(): boolean {
+    if (crosshair === undefined) return false;
+    crosshair = undefined;
+    crosshairPoint = undefined;
+    queueCrosshairEvent(undefined);
+    session.handleInput({ type: "crosshair", crosshair });
+    chartEngine.setInteractionState(session.getState());
+    return true;
+  }
+
+  function refreshCrosshairAtPoint(): void {
+    if (crosshairPoint === undefined || interaction === undefined) return;
+    interactionEventPoint = crosshairPoint;
+    try {
+      interaction.handlePointerMove(crosshairPoint);
+    } finally {
+      interactionEventPoint = undefined;
+    }
+  }
+
   function rebuildInteraction(): void {
+    clearCrosshairState();
     updatePriceScale();
     const state = chartEngine.getState();
     interaction = createInteractionEngine({
@@ -504,7 +714,15 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
           applyViewport(event.viewport, "viewportChanged", false);
           return;
         }
+        const previousCrosshair = crosshair;
         crosshair = event.crosshair;
+        if (crosshair === undefined) {
+          crosshairPoint = undefined;
+          if (previousCrosshair !== undefined) queueCrosshairEvent(undefined);
+        } else {
+          crosshairPoint = interactionEventPoint ?? crosshairPoint;
+          queueCrosshairEvent(crosshair, crosshairPoint);
+        }
         session.handleInput({ type: "crosshair", crosshair });
         chartEngine.setInteractionState(session.getState());
         emitDataWindow();
@@ -540,9 +758,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
           volume: candle.volume,
           turnover: candle.turnover
         };
-    const previousClose = materialized?.intradayScale?.previousClose
-      ?? candles[index - 1]?.close
-      ?? candle.open;
+    const previousClose = previousCloseAt(index, candle);
     const change = candle.close - previousClose;
     const indicatorRows = indicatorConfigs
       .filter((config) => config.visible)
@@ -616,6 +832,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
           : { ...executionTooltip, pinned: executionTooltipPinned });
         const context = resizeCanvas(options.overlayCanvas, layout.width, layout.height, options.devicePixelRatio ?? 1);
         renderOverlay({ context, state: renderState });
+        flushCrosshairEvent();
       } else if (pass === "static") {
         const context = resizeCanvas(options.staticCanvas, layout.width, layout.height, options.devicePixelRatio ?? 1);
         const layers = createStaticLayers();
@@ -624,6 +841,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         renderStaticChart({ context, state: renderState }, layers, { clear: true, paintBackground: true });
       }
     } catch (error) {
+      if (pass === "overlay") {
+        pendingCrosshairEvent = undefined;
+        if (resumeCrosshairEventsAfterFlush) {
+          resumeCrosshairEventsAfterFlush = false;
+          crosshairEventsSuspended = false;
+        }
+      }
       options.onRenderError?.(error);
     }
   }
@@ -846,7 +1070,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     hoveredDrawingId = undefined;
     if (activePointerId !== undefined) release(activePointerId);
     activePointerId = undefined;
-    crosshair = undefined;
+    clearCrosshairState();
     session.handleInput({ type: input });
     chartEngine.setInteractionState(session.getState());
     emitDataWindow();
@@ -1043,9 +1267,14 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       );
       return;
     }
+    interactionEventPoint = p;
+    try {
+      interaction?.handlePointerMove(p);
+    } finally {
+      interactionEventPoint = undefined;
+    }
     if (handleDrawingPointerMove(p)) return;
     updateDrawingHover(p);
-    interaction?.handlePointerMove(p);
   }) as EventListener);
 
   const finishPointer = (event: PointerEvent, canceled = false) => {
@@ -1149,9 +1378,10 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       );
       syncVisualOutputs();
       updatePriceScale();
+      refreshCrosshairAtPoint();
       lastDataWindowIndex = undefined;
       emitDataWindow(true);
-      scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals"], reason: "indicatorsCalculated" });
+      scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "crosshair"], reason: "indicatorsCalculated" });
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) options.onRenderError?.(error);
     } finally {
@@ -1162,6 +1392,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   return {
     setMaterializedSeries(input, anchorTime) {
       if (destroyed) return;
+      const eventsWereSuspended = crosshairEventsSuspended;
       const previousMaterialized = materialized;
       const previousSeries = chartEngine.getState().series;
       const previousAnchorIndex = anchorTime === undefined
@@ -1178,10 +1409,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         previousMaterialized?.intradayScale?.priceLimitPercent !== input.intradayScale?.priceLimitPercent ||
         previousMaterialized?.intradayDays !== input.intradayDays
       ) manualPriceScale = undefined;
-      crosshair = undefined;
-      session.handleInput({ type: "crosshair", crosshair });
-      chartEngine.setInteractionState(session.getState());
+      clearCrosshairState();
       lastDataWindowIndex = undefined;
+      visualOutputs = [];
       materialized = input;
       currentIntradaySummary = summarizeLatestIntradayDay(input);
       intradayAverage = input.intradayDays === undefined
@@ -1227,6 +1457,14 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       }
       chartEngine.setViewport(viewport);
       rebuildInteraction();
+      if (
+        eventsWereSuspended &&
+        pendingCrosshairEvent?.crosshair === undefined
+      ) {
+        resumeCrosshairEventsAfterFlush = true;
+      } else {
+        crosshairEventsSuspended = false;
+      }
       options.onViewportChanged?.(viewport);
       emitVisibleRange();
       emitMaterializationDemand();
@@ -1279,6 +1517,16 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (destroyed) return;
       resetChartView();
     },
+    clearCrosshair() {
+      if (destroyed) return;
+      const cleared = clearCrosshairState();
+      crosshairEventsSuspended = true;
+      resumeCrosshairEventsAfterFlush = false;
+      if (!cleared) return;
+      emitDataWindow();
+      rebuildInteraction();
+      scheduler.invalidate({ layers: ["crosshair", "tooltip"], reason: "crosshairCleared" });
+    },
     setSeriesType(type) {
       if (destroyed) return;
       seriesGeneration += 1;
@@ -1301,10 +1549,25 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         if (!destroyed && generation === seriesGeneration) options.onCalculationStatusChanged?.({ type: "idle" });
       });
     },
-    setIndicators(configs) { if (destroyed) return; indicatorConfigs = configs.map((config) => structuredClone(config)); indicatorGeneration += 1; void calculateIndicators(indicatorConfigs, indicatorGeneration); },
-    setMarks(nextMarks) { if (destroyed) return; marks = nextMarks.map((mark) => ({ ...mark })); rebuildMarkOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals"], reason: "marksChanged" }); },
-    setExecutions(nextExecutions) { if (destroyed) return; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals", "tooltip"], reason: "executionsChanged" }); },
-    setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals", "tooltip"], reason: "executionVisibilityChanged" }); },
+    setIndicators(configs) {
+      if (destroyed) return;
+      indicatorConfigs = configs.map((config) => structuredClone(config));
+      visualOutputs = [];
+      syncVisualOutputs();
+      updatePriceScale();
+      refreshCrosshairAtPoint();
+      lastDataWindowIndex = undefined;
+      emitDataWindow(true);
+      scheduler.invalidate({
+        layers: ["axis", "indicators", "visuals", "crosshair"],
+        reason: "indicatorsChanged"
+      });
+      indicatorGeneration += 1;
+      void calculateIndicators(indicatorConfigs, indicatorGeneration);
+    },
+    setMarks(nextMarks) { if (destroyed) return; marks = nextMarks.map((mark) => ({ ...mark })); rebuildMarkOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair"], reason: "marksChanged" }); },
+    setExecutions(nextExecutions) { if (destroyed) return; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionsChanged" }); },
+    setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionVisibilityChanged" }); },
     setPriceScaleMode(mode) { if (destroyed) return; manualPriceScale = undefined; viewport = { ...viewport, priceScaleMode: mode }; chartEngine.dispatch({ type: "setPriceScaleMode", mode }); rebuildInteraction(); scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"], reason: "priceScaleChanged" }); },
     setDrawings(drawings) { if (destroyed) return; drawingHandleDragOperation = undefined; drawingMoveDragOperation = undefined; hoveredDrawingId = undefined; drawingEditor = createEditor(drawings); syncDrawings(); emitDrawingHistoryState(); },
     setDrawingTool(tool) { if (destroyed) return; drawingEditor.setTool(tool); },
@@ -1318,6 +1581,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (destroyed) return;
       options.onExecutionTooltipChanged?.(undefined);
       destroyed = true;
+      pendingCrosshairEvent = undefined;
+      crosshairPoint = undefined;
       indicatorGeneration += 1;
       seriesGeneration += 1;
       for (const [type, listener, listenerOptions] of listeners) options.overlayCanvas.removeEventListener(type, listener, listenerOptions);

@@ -1,5 +1,8 @@
 import type {
   AdjustMode,
+  ChartCrosshairEvent,
+  ChartCrosshairListener,
+  ChartCrosshairSnapshot,
   ChartEvent,
   ChartEventListener,
   ChartDrawing,
@@ -55,7 +58,10 @@ import {
   toEntityId,
   toEngineDrawings
 } from "./programmableApi";
-import { createChartEngineRuntime } from "./runtime/chartEngineRuntime";
+import {
+  createChartEngineRuntime,
+  type RuntimeCrosshairSnapshot
+} from "./runtime/chartEngineRuntime";
 import { createCheckpointedCalculationRuntime } from "./runtime/checkpointedCalculationRuntime";
 import { createWorkspaceShell } from "./ui/workspaceShell";
 
@@ -255,6 +261,7 @@ export function createChart(
   let destroyed = false;
   const stateListeners = new Set<ChartStateListener>();
   const eventListeners = new Set<ChartEventListener>();
+  const crosshairListeners = new Set<ChartCrosshairListener>();
   let lastNotifiedState = "";
   let lastNotifiedLayout = "";
   let applyingLayout = false;
@@ -267,7 +274,9 @@ export function createChart(
     options?.dataContextId ?? ""
   ] as const;
   const eventQueue: ChartEvent[] = [];
+  const crosshairEventQueue: ChartCrosshairEvent[] = [];
   let dispatchingEvents = false;
+  let dispatchingCrosshairEvents = false;
   const emitEvents = (events: readonly ChartEvent[]): void => {
     eventQueue.push(...events);
     if (dispatchingEvents) return;
@@ -290,6 +299,57 @@ export function createChart(
     }
   };
   const emitEvent = (event: ChartEvent): void => emitEvents([event]);
+  const emitCrosshairEvent = (event: ChartCrosshairEvent): void => {
+    crosshairEventQueue.push(event);
+    if (dispatchingCrosshairEvents) return;
+    dispatchingCrosshairEvents = true;
+    try {
+      for (let index = 0; index < crosshairEventQueue.length && !destroyed; index += 1) {
+        const queued = crosshairEventQueue[index]!;
+        for (const listener of [...crosshairListeners]) {
+          if (destroyed) break;
+          try {
+            listener(structuredClone(queued));
+          } catch {
+            // Host listeners are isolated from chart events.
+          }
+        }
+      }
+    } finally {
+      crosshairEventQueue.length = 0;
+      dispatchingCrosshairEvents = false;
+    }
+  };
+  const publicCrosshairSnapshot = (
+    snapshot: RuntimeCrosshairSnapshot,
+    activeController: ChartController
+  ): ChartCrosshairSnapshot => {
+    const state = activeController.getState();
+    return {
+      symbolId: snapshot.symbolId,
+      timeframe: snapshot.timeframe,
+      adjustMode: snapshot.adjustMode,
+      dataVersion: snapshot.dataVersion,
+      time: snapshot.crosshair.time,
+      price: snapshot.crosshair.price,
+      offsetX: snapshot.offsetX,
+      offsetY: snapshot.offsetY,
+      candle: { ...snapshot.candle },
+      referencePrice: snapshot.referencePrice,
+      change: snapshot.change,
+      changePercent: snapshot.changePercent,
+      studies: snapshot.studies.map((study) => ({
+        entityId: toEntityId(
+          { kind: "indicator", value: study.indicator },
+          state,
+          entityScope
+        ) as ChartIndicatorEntityId,
+        indicatorId: study.indicator.id,
+        title: study.title,
+        outputs: study.outputs.map((output) => ({ ...output }))
+      }))
+    };
+  };
   const emitEntityChanges = (viewModel: Readonly<WorkspaceViewModel>): void => {
     if (applyingLayout) return;
     const nextEntities = entitySnapshot(viewModel, entityScope);
@@ -394,6 +454,7 @@ export function createChart(
       retry: () => undefined,
       subscribe: () => () => undefined,
       subscribeEvents: () => () => undefined,
+      subscribeCrosshair: () => () => undefined,
       destroy: () => {
         if (destroyed) return;
         destroyed = true;
@@ -446,6 +507,16 @@ export function createChart(
     onMarkClicked: (mark) => emitEvent({ type: "mark-clicked", mark }),
     onCalculationStatusChanged: (status) => controller?.handleCalculationStatus(status),
     onDataWindowChanged: (snapshot) => shell.renderDataWindow(snapshot),
+    hasCrosshairListeners: () => crosshairListeners.size > 0,
+    onCrosshairChanged: (snapshot) => {
+      if (controller === undefined) return;
+      emitCrosshairEvent(snapshot === undefined
+        ? { type: "crosshair-left" }
+        : {
+            type: "crosshair-moved",
+            crosshair: publicCrosshairSnapshot(snapshot, controller)
+          });
+    },
     onExecutionTooltipChanged: (snapshot) => shell.renderExecutionTooltip(snapshot),
     onDrawingsChanged: (drawings, selectedDrawingIds) => controller?.handleDrawingsChanged(drawings, selectedDrawingIds),
     onDrawingHistoryChanged: (history) => controller?.handleDrawingHistoryChanged(history),
@@ -770,6 +841,17 @@ export function createChart(
         eventListeners.delete(listener);
       };
     },
+    subscribeCrosshair: (listener: ChartCrosshairListener) => {
+      if (typeof listener !== "function") throw new TypeError("Chart crosshair listener must be a function");
+      if (destroyed) return () => undefined;
+      crosshairListeners.add(listener);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        crosshairListeners.delete(listener);
+      };
+    },
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
@@ -778,6 +860,7 @@ export function createChart(
       controller!.destroy();
       stateListeners.clear();
       eventListeners.clear();
+      crosshairListeners.clear();
       lastEntitySnapshot = undefined;
       checkpointStore.clear();
       shell.destroy();
