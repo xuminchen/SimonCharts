@@ -477,6 +477,37 @@ describe("workspace engine runtime", () => {
       priceAtY(220, expectedScale, layout.plotArea.y, layout.plotArea.height)
     );
 
+    const movesBeforeDrawingScale = events.filter((event) => event !== undefined).length;
+    const drawingPrices = [500, 550];
+    runtime.setDrawings([{
+      id: "autoscale-crosshair",
+      type: "datePriceRange",
+      anchors: [
+        { time: source.series.candles[targetIndex - 5]!.time, price: drawingPrices[0] },
+        { time: source.series.candles[targetIndex + 5]!.time, price: drawingPrices[1] }
+      ],
+      affectsPriceScale: true
+    }]);
+    flushFrames();
+    const drawingScale = createMainPanelPriceScale(
+      source.series,
+      currentViewport!.visibleRange,
+      "linear",
+      [
+        ...recalculated.get("macd-a")!.outputs,
+        ...recalculated.get("boll-a")!.outputs,
+        ...recalculated.get("sar-a")!.outputs
+      ],
+      [],
+      drawingPrices
+    );
+    expect(events.filter((event) => event !== undefined))
+      .toHaveLength(movesBeforeDrawingScale + 1);
+    expect(events.at(-1)?.offsetY).toBe(220);
+    expect(events.at(-1)?.crosshair.price).toBeCloseTo(
+      priceAtY(220, drawingScale, layout.plotArea.y, layout.plotArea.height)
+    );
+
     const leavesBeforeScaleChange = events.filter((event) => event === undefined).length;
     runtime.setPriceScaleMode("percentage");
     flushFrames();
@@ -597,6 +628,18 @@ describe("workspace engine runtime", () => {
     expect(runtime.getVisibleRange()).toEqual({ from: 1, to: 241 });
     expect(renderErrors).toEqual([]);
     expect(staticCanvas.texts).toEqual(expect.arrayContaining(["+10.00%", "0.00%", "-10.00%"]));
+
+    staticCanvas.texts.splice(0);
+    runtime.setDrawings([{
+      id: "intraday-plan",
+      type: "datePriceRange",
+      anchors: [{ time: 40, price: 120 }, { time: 60, price: 130 }],
+      affectsPriceScale: true
+    }]);
+    frame?.();
+    expect(Math.max(
+      ...staticCanvas.texts.map(Number).filter((value) => Number.isFinite(value))
+    )).toBeGreaterThanOrEqual(130);
     runtime.destroy();
   });
 
@@ -638,6 +681,83 @@ describe("workspace engine runtime", () => {
       "85.00"
     ]));
     expect(staticCanvas.strokeStyles).toContain("#d6a700");
+    runtime.destroy();
+  });
+
+  it("rejects a multi-day drawing range that overflows the previous-close percentage scale", () => {
+    const staticCanvas = new FakeCanvas();
+    let frame: (() => void) | undefined;
+    const source = materialized(1, 2);
+    source.series.candles = [
+      { time: 1, open: 1e-207, high: 2e-207, low: 1e-207, close: 1e-207, volume: 1, turnover: 1e-207 },
+      { time: 2, open: 1e-207, high: 2e-207, low: 1e-207, close: 1e-207, volume: 1, turnover: 1e-207 }
+    ];
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: (callback) => { frame = callback; return 1; },
+      cancelFrame: () => undefined,
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration
+    });
+
+    runtime.setMaterializedSeries({
+      ...source,
+      intradayDays: 2,
+      intradayScale: { previousClose: 1e-307 }
+    });
+    runtime.setDrawings([{
+      id: "overflowing-plan",
+      type: "datePriceRange",
+      anchors: [{ time: 1, price: 0.08561 }, { time: 2, price: 0.08561 }],
+      affectsPriceScale: true
+    }]);
+    frame?.();
+
+    expect(staticCanvas.texts.every((text) => !/Infinity|NaN/.test(text))).toBe(true);
+
+    staticCanvas.texts.splice(0);
+    const representable = materialized(1, 2);
+    representable.series.candles = [
+      { time: 1, open: 1e-307, high: 2e-307, low: 1e-307, close: 1e-307, volume: 1, turnover: 1e-307 },
+      { time: 2, open: 1e-307, high: 2e-307, low: 1e-307, close: 1e-307, volume: 1, turnover: 1e-307 }
+    ];
+    runtime.setMaterializedSeries({
+      ...representable,
+      intradayDays: 2,
+      intradayScale: { previousClose: 1 }
+    });
+    runtime.setDrawings([{
+      id: "representable-plan",
+      type: "datePriceRange",
+      anchors: [{ time: 1, price: 10 }, { time: 2, price: 10 }],
+      affectsPriceScale: true
+    }]);
+    frame?.();
+    expect(Math.max(
+      ...staticCanvas.texts.map(Number).filter((value) => Number.isFinite(value))
+    )).toBeGreaterThanOrEqual(10);
+
+    staticCanvas.texts.splice(0);
+    const largePreviousClose = Number.MAX_VALUE * 0.44;
+    const largeDrawingPrice = Number.MAX_VALUE * 0.91;
+    runtime.setMaterializedSeries({
+      ...representable,
+      intradayDays: 2,
+      intradayScale: { previousClose: largePreviousClose }
+    });
+    runtime.setDrawings([{
+      id: "large-representable-plan",
+      type: "datePriceRange",
+      anchors: [{ time: 1, price: largeDrawingPrice }, { time: 2, price: largeDrawingPrice }],
+      affectsPriceScale: true
+    }]);
+    frame?.();
+    expect(Math.max(
+      ...staticCanvas.texts.map(Number).filter((value) => Number.isFinite(value))
+    )).toBeGreaterThanOrEqual(largeDrawingPrice);
     runtime.destroy();
   });
 
@@ -780,6 +900,148 @@ describe("workspace engine runtime", () => {
     overlayCanvas.dispatch("pointermove", { pointerId: 4, clientX: 700 + viewport.candleWidth * 2, clientY: 100 });
     overlayCanvas.dispatch("pointerup", { pointerId: 4, clientX: 700 + viewport.candleWidth * 2, clientY: 100 });
     expect(viewports.at(-1)?.scrollOffset).toBe(beforePan + 2);
+    runtime.destroy();
+  });
+
+  it("auto-scales only eligible drawing ranges", () => {
+    const staticCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onRenderError(error) { throw error; }
+    });
+    runtime.setMaterializedSeries(materialized(1, 100));
+    flushFrames();
+    const numericAxisValues = () => staticCanvas.texts
+      .map((text) => Number(text))
+      .filter((value) => Number.isFinite(value));
+    const renderWith = (drawing: import("@simoncharts/chart-engine").DrawingObject) => {
+      staticCanvas.texts.splice(0);
+      runtime.setDrawings([drawing]);
+      flushFrames();
+      return numericAxisValues();
+    };
+    const base = {
+      id: "planned-range",
+      type: "datePriceRange" as const,
+      anchors: [{ time: 40, price: 500 }, { time: 60, price: 550 }]
+    };
+
+    expect(Math.max(...renderWith(base))).toBeLessThan(300);
+    expect(Math.max(...renderWith({ ...base, affectsPriceScale: true }))).toBeGreaterThan(550);
+    expect(Math.max(...renderWith({
+      ...base,
+      type: "priceRange",
+      affectsPriceScale: true
+    }))).toBeGreaterThan(550);
+    expect(Math.max(...renderWith({
+      ...base,
+      affectsPriceScale: true,
+      visible: false
+    }))).toBeLessThan(300);
+    expect(Math.max(...renderWith({
+      ...base,
+      affectsPriceScale: true,
+      anchors: [{ time: 1_000, price: 500 }, { time: 1_100, price: 550 }]
+    }))).toBeLessThan(300);
+    expect(Math.min(...renderWith({
+      ...base,
+      affectsPriceScale: true,
+      anchors: [{ time: 40, price: 1 }, { time: 60, price: 5 }]
+    }))).toBeLessThan(1);
+    expect(Math.max(...renderWith({
+      ...base,
+      affectsPriceScale: true,
+      anchors: [{ time: 40, price: Number.NaN }, { time: 60, price: 550 }]
+    }))).toBeLessThan(300);
+
+    for (const timeframe of ["1m", "5m", "15m", "30m", "60m"] as const) {
+      const source = materialized(1, 100);
+      source.selection = { ...source.selection, timeframe };
+      source.series = { ...source.series, timeframe };
+      runtime.setMaterializedSeries(source);
+      flushFrames();
+      expect(Math.max(...renderWith({ ...base, affectsPriceScale: true })))
+        .toBeGreaterThan(550);
+    }
+    runtime.setPriceScaleMode("log");
+    flushFrames();
+    expect(renderWith({
+      ...base,
+      affectsPriceScale: true,
+      anchors: [{ time: 40, price: 0 }, { time: 60, price: -1 }]
+    }).every((value) => Number.isFinite(value))).toBe(true);
+    runtime.destroy();
+  });
+
+  it("pans through a non-interactive range without changing the drawing", () => {
+    const overlayCanvas = new FakeCanvas();
+    const source = materialized(1, 100);
+    const viewports: ViewportState[] = [];
+    const drawingUpdates = vi.fn();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined,
+      onViewportChanged: (next) => viewports.push(structuredClone(next)),
+      onDrawingsChanged: drawingUpdates
+    });
+    runtime.setMaterializedSeries(source);
+    const viewport = viewports.at(-1)!;
+    const scale = createMainPanelPriceScale(source.series, viewport.visibleRange, "linear", [], []);
+    const plotArea = createChartLayout(800, 500).plotArea;
+    const x = indexToX(50, viewport, plotArea.x);
+    const y = priceToY(140, scale, plotArea.y, plotArea.height);
+    runtime.setDrawings([{
+      id: "passive-range",
+      type: "datePriceRange",
+      anchors: [{ time: 40, price: 130 }, { time: 60, price: 150 }],
+      interactive: false,
+      affectsPriceScale: true,
+      locked: true
+    }]);
+
+    overlayCanvas.dispatch("pointermove", {
+      pointerId: 7,
+      clientX: x,
+      clientY: y,
+      pointerType: "mouse"
+    });
+    expect(overlayCanvas.style.cursor).toBe("crosshair");
+    const beforePan = viewports.at(-1)!.scrollOffset;
+    overlayCanvas.dispatch("pointerdown", { pointerId: 7, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointermove", {
+      pointerId: 7,
+      clientX: x + viewport.candleWidth * 2,
+      clientY: y
+    });
+    overlayCanvas.dispatch("pointerup", {
+      pointerId: 7,
+      clientX: x + viewport.candleWidth * 2,
+      clientY: y
+    });
+
+    expect(viewports.at(-1)!.scrollOffset).not.toBe(beforePan);
+    expect(drawingUpdates).not.toHaveBeenCalled();
     runtime.destroy();
   });
 

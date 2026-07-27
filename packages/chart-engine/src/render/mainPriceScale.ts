@@ -5,6 +5,8 @@ import type { IndicatorVisualOutput } from "../model/visual";
 import { computeVisiblePriceBounds } from "../viewport/priceRange";
 import {
   createPriceScaleFromBounds,
+  priceToScaleValue,
+  scaleValueToPrice,
   type PriceScale
 } from "../viewport/priceScale";
 
@@ -13,13 +15,27 @@ export function createMainPanelPriceScale(
   visibleRange: VisibleRange,
   mode: PriceScaleMode,
   visualOutputs: readonly IndicatorVisualOutput[],
-  movingAverages: readonly (readonly MovingAveragePoint[])[]
+  movingAverages: readonly (readonly MovingAveragePoint[])[],
+  additionalPrices: readonly number[] = [],
+  percentageBasePrice?: number
 ): PriceScale {
   const rawBounds = computeVisiblePriceBounds(series, visibleRange);
   const indexByTime = new Map(series.candles.map((candle, index) => [candle.time, index]));
   const lastIndex = series.candles.length - 1;
   const from = Math.max(0, Math.min(lastIndex, visibleRange.from));
   const to = Math.max(from, Math.min(lastIndex, visibleRange.to));
+  const firstVisibleCandle = series.candles[from];
+  if (
+    mode === "percentage" &&
+    percentageBasePrice !== undefined &&
+    (!Number.isFinite(percentageBasePrice) || percentageBasePrice <= 0)
+  ) {
+    throw new Error("Percentage price scale requires a finite positive base price");
+  }
+  const basePrice =
+    mode === "percentage" && percentageBasePrice !== undefined
+      ? percentageBasePrice
+      : firstVisibleCandle?.close ?? 1;
 
   for (const output of visualOutputs) {
     if (output.visible === false || (output.panelId !== undefined && output.panelId !== "main")) {
@@ -64,9 +80,53 @@ export function createMainPanelPriceScale(
     }
   }
 
-  const firstVisibleCandle = series.candles[from];
+  for (let index = 0; index < additionalPrices.length; index += 2) {
+    const prices = additionalPrices.slice(index, index + 2);
+    if (
+      prices.length !== 2 ||
+      prices.some((price) => !Number.isFinite(price) || (mode === "log" && price <= 0))
+    ) continue;
+    const nextBounds = {
+      min: Math.min(rawBounds.min, ...prices),
+      max: Math.max(rawBounds.max, ...prices)
+    };
+    if (createSafePriceScale(nextBounds, basePrice, mode) === undefined) continue;
+    rawBounds.min = nextBounds.min;
+    rawBounds.max = nextBounds.max;
+  }
 
-  return createPriceScaleFromBounds(rawBounds, firstVisibleCandle?.close ?? 1, mode);
+  return (
+    createSafePriceScale(rawBounds, basePrice, mode) ??
+    createSafePriceScale(rawBounds, firstVisibleCandle?.close ?? 1, "linear")!
+  );
+}
+
+function createSafePriceScale(
+  bounds: { min: number; max: number },
+  basePrice: number,
+  mode: PriceScaleMode
+): PriceScale | undefined {
+  const padded = createPriceScaleFromBounds(bounds, basePrice, mode);
+  if (isFinitePriceScale(padded)) return padded;
+
+  const provisional: PriceScale = { mode, basePrice, min: 0, max: 1 };
+  const unpadded: PriceScale = {
+    mode,
+    basePrice,
+    min: priceToScaleValue(bounds.min, provisional),
+    max: priceToScaleValue(bounds.max, provisional)
+  };
+  return isFinitePriceScale(unpadded) ? unpadded : undefined;
+}
+
+function isFinitePriceScale(scale: PriceScale): boolean {
+  return (
+    Number.isFinite(scale.min) &&
+    Number.isFinite(scale.max) &&
+    Number.isFinite(scale.max - scale.min) &&
+    Number.isFinite(scaleValueToPrice(scale.min, scale)) &&
+    Number.isFinite(scaleValueToPrice(scale.max, scale))
+  );
 }
 
 function getOutputValues(

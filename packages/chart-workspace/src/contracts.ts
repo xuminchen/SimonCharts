@@ -230,6 +230,8 @@ export interface ChartDrawing {
   readonly text?: string;
   readonly visible?: boolean;
   readonly locked?: boolean;
+  readonly interactive?: boolean;
+  readonly affectsPriceScale?: boolean;
   readonly zIndex?: number;
   readonly metadata?: Readonly<Record<string, ChartJsonValue>>;
 }

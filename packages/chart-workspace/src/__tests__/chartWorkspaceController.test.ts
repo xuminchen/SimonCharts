@@ -124,7 +124,13 @@ describe("chart workspace controller", () => {
     expect(deps.persistence.loadDrawings).not.toHaveBeenCalled();
 
     controller.handleDrawingsChanged([
-      { id: "d1", type: "trendLine", anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }] }
+      {
+        id: "d1",
+        type: "trendLine",
+        anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }],
+        interactive: false,
+        affectsPriceScale: true
+      }
     ]);
     expect(deps.persistence.saveDrawings).not.toHaveBeenCalled();
   });

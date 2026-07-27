@@ -361,8 +361,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         toScreen: (drawing) => projectDrawingObject(drawing, coordinateContext()),
         toDomain: (drawing) => unprojectDrawingObject(drawing, coordinateContext())
       },
-      onEvent: () => {
-        syncDrawings();
+      onEvent: (event) => {
+        if (
+          event.type === "drawingCreated" ||
+          event.type === "drawingUpdated" ||
+          event.type === "drawingDeleted"
+        ) refreshDrawingScale("drawingChanged");
+        else syncDrawings();
         emitDrawingState();
       }
     });
@@ -414,6 +419,87 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     scheduler.invalidate({ layers: ["drawings"], reason: "drawingsChanged" });
   }
 
+  function drawingAutoscalePrices(
+    mode: PriceScaleMode,
+    percentageBasePrice?: number
+  ): number[] {
+    const state = drawingEditor.getState();
+    const candles = chartEngine.getState().series.candles;
+    const lastIndex = candles.length - 1;
+    if (lastIndex < 0) return [];
+    const from = Math.max(0, Math.min(lastIndex, viewport.visibleRange.from));
+    const to = Math.max(from, Math.min(lastIndex, viewport.visibleRange.to));
+    const visibleFrom = candles[from]!.time;
+    const visibleTo = candles[to]!.time;
+
+    return state.drawings.flatMap((drawing) => {
+      if (
+        drawing.affectsPriceScale !== true ||
+        drawing.visible === false ||
+        (drawing.type !== "datePriceRange" && drawing.type !== "priceRange")
+      ) return [];
+      const anchors = drawing.anchors.slice(0, 2);
+      if (
+        anchors.length !== 2 ||
+        anchors.some((anchor) =>
+          !Number.isFinite(anchor.time) ||
+          !Number.isFinite(anchor.price) ||
+          (mode === "log" && (anchor.price ?? 0) <= 0)
+        )
+      ) return [];
+      const times = anchors.map((anchor) => anchor.time!);
+      if (Math.max(...times) < visibleFrom || Math.min(...times) > visibleTo) return [];
+      if (mode === "percentage" && percentageBasePrice !== undefined) {
+        const referenced: PriceScale = {
+          mode,
+          basePrice: percentageBasePrice,
+          min: 0,
+          max: 1
+        };
+        const extent = Math.max(...anchors.map((anchor) =>
+          Math.abs(priceToScaleValue(anchor.price!, referenced))
+        ));
+        if (!Number.isFinite(extent) || !Number.isFinite(extent * 2)) return [];
+      }
+      return anchors.map((anchor) => anchor.price!);
+    });
+  }
+
+  function symmetricIntradayScale(
+    automatic: PriceScale,
+    previousClose: number
+  ): PriceScale | undefined {
+    const referenced: PriceScale = {
+      mode: "percentage",
+      basePrice: previousClose,
+      min: 0,
+      max: 1
+    };
+    const referencedMin = priceToScaleValue(
+      scaleValueToPrice(automatic.min, automatic),
+      referenced
+    );
+    const referencedMax = priceToScaleValue(
+      scaleValueToPrice(automatic.max, automatic),
+      referenced
+    );
+    const extent = Math.max(Math.abs(referencedMin), Math.abs(referencedMax));
+    const candidate = {
+      ...referenced,
+      min: -extent,
+      max: extent
+    };
+    if (
+      !Number.isFinite(referencedMin) ||
+      !Number.isFinite(referencedMax) ||
+      !Number.isFinite(extent) ||
+      !Number.isFinite(candidate.max - candidate.min) ||
+      !Number.isFinite(scaleValueToPrice(candidate.min, candidate)) ||
+      !Number.isFinite(scaleValueToPrice(candidate.max, candidate))
+    ) return undefined;
+    return candidate;
+  }
+
   function syncLayout(): void {
     const width = Math.max(1, Math.floor(options.themeRoot.clientWidth || options.staticCanvas.clientWidth || 1));
     const height = Math.max(1, Math.floor(options.themeRoot.clientHeight || options.staticCanvas.clientHeight || 1));
@@ -449,13 +535,34 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   function updatePriceScale(): void {
     const state = chartEngine.getState();
     const intradayScale = materialized?.intradayScale;
-    const automatic = createMainPanelPriceScale(
-      state.series,
-      viewport.visibleRange,
+    let drawingPrices = drawingAutoscalePrices(
       intradayScale === undefined ? viewport.priceScaleMode : "percentage",
-      activeVisualOutputs(),
-      intradayAverage === undefined ? [] : [intradayAverage]
+      intradayScale?.previousClose
     );
+    const createAutomaticScale = (prices: readonly number[]) =>
+      createMainPanelPriceScale(
+        state.series,
+        viewport.visibleRange,
+        intradayScale === undefined ? viewport.priceScaleMode : "percentage",
+        activeVisualOutputs(),
+        intradayAverage === undefined ? [] : [intradayAverage],
+        prices,
+        intradayScale?.previousClose
+      );
+    if (intradayScale !== undefined && intradayScale.priceLimitPercent === undefined) {
+      let acceptedPrices: number[] = [];
+      for (let index = 0; index < drawingPrices.length; index += 2) {
+        const candidatePrices = [...acceptedPrices, ...drawingPrices.slice(index, index + 2)];
+        if (
+          symmetricIntradayScale(
+            createAutomaticScale(candidatePrices),
+            intradayScale.previousClose
+          ) !== undefined
+        ) acceptedPrices = candidatePrices;
+      }
+      drawingPrices = acceptedPrices;
+    }
+    const automatic = createAutomaticScale(drawingPrices);
     if (intradayScale === undefined) {
       priceScale = manualPriceScale ?? automatic;
     } else if (manualPriceScale !== undefined) {
@@ -464,7 +571,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       const extent = calculateFixedIntradayPercentExtent(
         state.series.candles,
         intradayScale.previousClose,
-        intradayScale.priceLimitPercent
+        intradayScale.priceLimitPercent,
+        drawingPrices
       );
       priceScale = {
         mode: "percentage",
@@ -473,29 +581,21 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         max: extent
       };
     } else {
-      const referenced: PriceScale = {
-        mode: "percentage",
-        basePrice: intradayScale.previousClose,
-        min: 0,
-        max: 1
-      };
-      const referencedMin = priceToScaleValue(
-        scaleValueToPrice(automatic.min, automatic),
-        referenced
-      );
-      const referencedMax = priceToScaleValue(
-        scaleValueToPrice(automatic.max, automatic),
-        referenced
-      );
-      const extent = Math.max(Math.abs(referencedMin), Math.abs(referencedMax));
-      priceScale = {
-        ...referenced,
-        min: -extent,
-        max: extent
-      };
+      priceScale =
+        symmetricIntradayScale(automatic, intradayScale.previousClose) ??
+        automatic;
     }
     interaction?.setPriceScale(priceScale);
     syncDrawings();
+  }
+
+  function refreshDrawingScale(reason: string): void {
+    updatePriceScale();
+    refreshCrosshairAtPoint();
+    scheduler.invalidate({
+      layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"],
+      reason
+    });
   }
 
   function applyViewport(next: ViewportState, reason: string, replaceInteraction: boolean): void {
@@ -1099,13 +1199,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     if (modifier && event.key.toLowerCase() === "z") {
       if (event.shiftKey) drawingEditor.redo();
       else drawingEditor.undo();
-      syncDrawings();
+      refreshDrawingScale("drawingHistoryChanged");
       emitDrawingState();
       return true;
     }
     if (modifier && event.key.toLowerCase() === "y") {
       drawingEditor.redo();
-      syncDrawings();
+      refreshDrawingScale("drawingHistoryChanged");
       emitDrawingState();
       return true;
     }
@@ -1569,11 +1669,11 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     setExecutions(nextExecutions) { if (destroyed) return; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionsChanged" }); },
     setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionVisibilityChanged" }); },
     setPriceScaleMode(mode) { if (destroyed) return; manualPriceScale = undefined; viewport = { ...viewport, priceScaleMode: mode }; chartEngine.dispatch({ type: "setPriceScaleMode", mode }); rebuildInteraction(); scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"], reason: "priceScaleChanged" }); },
-    setDrawings(drawings) { if (destroyed) return; drawingHandleDragOperation = undefined; drawingMoveDragOperation = undefined; hoveredDrawingId = undefined; drawingEditor = createEditor(drawings); syncDrawings(); emitDrawingHistoryState(); },
+    setDrawings(drawings) { if (destroyed) return; drawingHandleDragOperation = undefined; drawingMoveDragOperation = undefined; hoveredDrawingId = undefined; drawingEditor = createEditor(drawings); refreshDrawingScale("drawingsReplaced"); emitDrawingHistoryState(); },
     setDrawingTool(tool) { if (destroyed) return; drawingEditor.setTool(tool); },
     executeDrawingCommand(command) { if (destroyed) return; drawingEditor.executeCommand(command); },
-    undoDrawing() { if (destroyed) return; drawingEditor.undo(); syncDrawings(); emitDrawingState(); },
-    redoDrawing() { if (destroyed) return; drawingEditor.redo(); syncDrawings(); emitDrawingState(); },
+    undoDrawing() { if (destroyed) return; drawingEditor.undo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
+    redoDrawing() { if (destroyed) return; drawingEditor.redo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
     setGridVisible(visible) { if (destroyed) return; if (chartEngine.getState().settings.gridVisible !== visible) { chartEngine.dispatch({ type: "toggleGrid" }); scheduler.invalidate({ layers: ["grid"], reason: "gridVisibilityChanged" }); } },
     retryRender() { if (destroyed) return; scheduler.invalidate({ layers: ["grid", "axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"], reason: "retryRender", layoutRequired: true }); },
     getMetrics() { return { ...scheduler.getState().metrics, maxMaterializedCandleCount }; },

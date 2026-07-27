@@ -98,6 +98,19 @@ describe("drawing coordinates", () => {
     expect(projected[0].y).not.toBe(projected[1].y);
   });
 
+  it("keeps log-incompatible domain prices without projecting an invalid y", () => {
+    const projected = projectDrawingObject({
+      id: "invalid-log-price",
+      type: "datePriceRange",
+      anchors: [{ time: 100, price: 0 }, { time: 200, price: -1 }]
+    }, createContext(series, "log"));
+
+    expect(projected.anchors).toEqual([
+      { time: 100, price: 0, x: expect.any(Number), y: undefined },
+      { time: 200, price: -1, x: expect.any(Number), y: undefined }
+    ]);
+  });
+
   it("moves transient x on pan and zoom while keeping canonical time and price stable", () => {
     const drawing: DrawingObject = {
       id: "viewport-line",

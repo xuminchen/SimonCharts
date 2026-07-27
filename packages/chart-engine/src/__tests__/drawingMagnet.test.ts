@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDrawingAnchorMagnetTargets,
   createMainPanelPriceScale,
   createOhlcMagnetTargetsFromSeries,
   getMagnetSnapState,
@@ -32,6 +33,28 @@ const viewport: ViewportState = {
 const linearPriceScale = { mode: "linear", basePrice: 1, min: 10, max: 20 } as const;
 
 describe("OHLC magnet target projection", () => {
+  it("does not expose non-interactive drawing anchors as magnet targets", () => {
+    expect(createDrawingAnchorMagnetTargets([
+      {
+        id: "active",
+        type: "trendLine",
+        anchors: [{ x: 1, y: 2 }]
+      },
+      {
+        id: "passive",
+        type: "trendLine",
+        anchors: [{ x: 3, y: 4 }],
+        interactive: false
+      }
+    ])).toEqual([{
+      type: "drawingAnchor",
+      x: 1,
+      y: 2,
+      drawingId: "active",
+      anchorIndex: 0
+    }]);
+  });
+
   it("creates targets for visible candle OHLC values", () => {
     expect(
       createOhlcMagnetTargetsFromSeries({

@@ -38,6 +38,8 @@ describe("drawing model", () => {
       style: { color: "#2563eb", lineWidth: 2 },
       visible: true,
       locked: false,
+      interactive: false,
+      affectsPriceScale: true,
       metadata: { hostId: "opaque" }
     };
 
@@ -119,6 +121,22 @@ describe("drawing model", () => {
         anchors: "not-array"
       })
     ).toThrow("Drawing object anchors must be an array");
+  });
+
+  it("rejects non-boolean drawing interaction and scale flags", () => {
+    const drawing = {
+      id: "range",
+      type: "datePriceRange",
+      anchors: [{ time: 1, price: 10 }, { time: 2, price: 12 }]
+    };
+
+    expect(() => parseDrawingObject({ ...drawing, interactive: "false" }))
+      .toThrow("Drawing object interactive must be a boolean");
+    expect(() => deserializeDrawingObject({
+      schemaVersion: 1,
+      ...drawing,
+      affectsPriceScale: 1
+    })).toThrow("Drawing object affectsPriceScale must be a boolean");
   });
 });
 

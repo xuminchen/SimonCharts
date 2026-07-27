@@ -43,7 +43,8 @@ describe("drawing selection box", () => {
     const drawings = [
       drawing("a", 0, 0, 10, 10),
       { ...drawing("hidden", 0, 0, 10, 10), visible: false },
-      { ...drawing("locked", 0, 0, 10, 10), locked: true }
+      { ...drawing("locked", 0, 0, 10, 10), locked: true },
+      { ...drawing("passive", 0, 0, 10, 10), interactive: false }
     ];
 
     expect(
@@ -67,9 +68,12 @@ describe("drawing selection box", () => {
 
   it("finishes as an additive selectDrawingsInBounds command", () => {
     const operation = beginDrawingSelectionBox({
-      drawings: [drawing("a", 0, 0, 10, 10)],
+      drawings: [
+        drawing("a", 0, 0, 10, 10),
+        { ...drawing("passive", 200, 200, 210, 210), interactive: false }
+      ],
       startPoint: { x: 100, y: 100 },
-      currentSelectedDrawingIds: ["existing"],
+      currentSelectedDrawingIds: ["existing", "passive"],
       additive: true
     });
 

@@ -26,6 +26,63 @@ describe("intraday presentation", () => {
     ], 9.65, 10)).toBeCloseTo(10.2);
   });
 
+  it("expands a fixed intraday scale for finite additional drawing prices", () => {
+    const point = candle(Date.UTC(2026, 6, 17, 1, 30), 1, 10);
+
+    expect(calculateFixedIntradayPercentExtent([point], 10, 10, [12.01, 8.2]))
+      .toBeCloseTo(20.2);
+    expect(calculateFixedIntradayPercentExtent(
+      [point],
+      10,
+      10,
+      [Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_VALUE]
+    )).toBe(10);
+    expect(calculateFixedIntradayPercentExtent(
+      [{ ...point, open: 100, high: 100, low: 100, close: 100 }],
+      100,
+      10,
+      [Number.MAX_VALUE]
+    )).toBe(10);
+    expect(calculateFixedIntradayPercentExtent(
+      [point],
+      10,
+      10,
+      [Number.MAX_VALUE, 20, 12.01, 8.2]
+    )).toBeCloseTo(20.2);
+    const microscopic = {
+      ...point,
+      open: 1e-307,
+      high: 1e-307,
+      low: 1e-307,
+      close: 1e-307
+    };
+    const extremeExtent = calculateFixedIntradayPercentExtent(
+      [microscopic],
+      1e-307,
+      10,
+      [0.05, 0.05]
+    );
+    expect(extremeExtent).toBeGreaterThanOrEqual(5e307);
+    expect(Number.isFinite(extremeExtent * 2)).toBe(true);
+    const observed = Math.abs((1e98 / 1 - 1) * 100);
+    expect(calculateFixedIntradayPercentExtent(
+      [{ ...point, open: 1, high: 1, low: 1, close: 1 }],
+      1,
+      10,
+      [1e98, 1e98]
+    )).toBeGreaterThanOrEqual(observed);
+    const maximumPriceExtent = calculateFixedIntradayPercentExtent(
+      [{ ...point, open: 1e308, high: 1e308, low: 1e308, close: 1e308 }],
+      1e308,
+      10,
+      [Number.MAX_VALUE, Number.MAX_VALUE]
+    );
+    expect(maximumPriceExtent).toBeGreaterThanOrEqual(
+      Math.abs((Number.MAX_VALUE / 1e308 - 1) * 100)
+    );
+    expect(Number.isFinite(1e308 * (1 + maximumPriceExtent / 100))).toBe(true);
+  });
+
   it("calculates the cumulative intraday average and resets it on every Shanghai trading day", () => {
     const firstDay = Date.UTC(2026, 6, 15, 1, 30);
     const secondDay = Date.UTC(2026, 6, 16, 1, 30);

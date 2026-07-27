@@ -62,15 +62,26 @@ function projectAnchor(
 ): DrawingAnchor {
   const index = resolveAnchorIndex(anchor, context.series);
   const price = anchor.price;
+  let y = anchor.y;
+  if (typeof price === "number") {
+    if (context.priceScale.mode === "log" && price <= 0) {
+      y = undefined;
+    } else {
+      const projectedY = priceToY(
+        price,
+        context.priceScale,
+        context.plotArea.y,
+        context.plotArea.height
+      );
+      y = Number.isFinite(projectedY) ? projectedY : undefined;
+    }
+  }
 
   return {
     time: anchor.time,
     price,
     x: indexToX(index, context.viewport, context.plotArea.x, context.timeCoordinates),
-    y:
-      typeof price === "number"
-        ? priceToY(price, context.priceScale, context.plotArea.y, context.plotArea.height)
-        : anchor.y
+    y
   };
 }
 

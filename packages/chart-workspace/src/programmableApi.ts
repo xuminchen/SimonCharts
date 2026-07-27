@@ -356,7 +356,19 @@ export function parseDrawings(value: unknown): ChartDrawing[] {
     const item = record(candidate, `Chart drawing ${index}`);
     onlyKeys(
       item,
-      ["id", "type", "anchors", "style", "text", "visible", "locked", "zIndex", "metadata"],
+      [
+        "id",
+        "type",
+        "anchors",
+        "style",
+        "text",
+        "visible",
+        "locked",
+        "interactive",
+        "affectsPriceScale",
+        "zIndex",
+        "metadata"
+      ],
       `Chart drawing ${index}`
     );
     const id = identifier(item.id, `Chart drawing ${index} id`);
@@ -395,6 +407,12 @@ export function parseDrawings(value: unknown): ChartDrawing[] {
     if (item.locked !== undefined && typeof item.locked !== "boolean") {
       throw new TypeError(`Chart drawing ${index} lock state must be boolean`);
     }
+    if (item.interactive !== undefined && typeof item.interactive !== "boolean") {
+      throw new TypeError(`Chart drawing ${index} interaction state must be boolean`);
+    }
+    if (item.affectsPriceScale !== undefined && typeof item.affectsPriceScale !== "boolean") {
+      throw new TypeError(`Chart drawing ${index} price scale state must be boolean`);
+    }
     const zIndex = item.zIndex === undefined
       ? undefined
       : finite(item.zIndex, `Chart drawing ${index} zIndex`);
@@ -421,6 +439,10 @@ export function parseDrawings(value: unknown): ChartDrawing[] {
       ...(text === undefined ? {} : { text }),
       ...(item.visible === undefined ? {} : { visible: item.visible as boolean }),
       ...(item.locked === undefined ? {} : { locked: item.locked as boolean }),
+      ...(item.interactive === undefined ? {} : { interactive: item.interactive as boolean }),
+      ...(item.affectsPriceScale === undefined
+        ? {}
+        : { affectsPriceScale: item.affectsPriceScale as boolean }),
       ...(zIndex === undefined ? {} : { zIndex }),
       ...(metadata === undefined ? {} : {
         metadata: metadata as Readonly<Record<string, ChartJsonValue>>
@@ -525,6 +547,10 @@ export function toEngineDrawings(drawings: readonly ChartDrawing[]): DrawingObje
     ...(drawing.text === undefined ? {} : { text: drawing.text }),
     ...(drawing.visible === undefined ? {} : { visible: drawing.visible }),
     ...(drawing.locked === undefined ? {} : { locked: drawing.locked }),
+    ...(drawing.interactive === undefined ? {} : { interactive: drawing.interactive }),
+    ...(drawing.affectsPriceScale === undefined
+      ? {}
+      : { affectsPriceScale: drawing.affectsPriceScale }),
     ...(drawing.zIndex === undefined ? {} : { zIndex: drawing.zIndex }),
     ...(drawing.metadata === undefined ? {} : { metadata: structuredClone(drawing.metadata) })
   }));
@@ -539,6 +565,10 @@ export function fromEngineDrawings(drawings: readonly DrawingObject[]): ChartDra
     ...(drawing.text === undefined ? {} : { text: drawing.text }),
     ...(drawing.visible === undefined ? {} : { visible: drawing.visible }),
     ...(drawing.locked === undefined ? {} : { locked: drawing.locked }),
+    ...(drawing.interactive === undefined ? {} : { interactive: drawing.interactive }),
+    ...(drawing.affectsPriceScale === undefined
+      ? {}
+      : { affectsPriceScale: drawing.affectsPriceScale }),
     ...(drawing.zIndex === undefined ? {} : { zIndex: drawing.zIndex }),
     ...(drawing.metadata === undefined ? {} : { metadata: drawing.metadata })
   })));

@@ -84,6 +84,20 @@ describe("drawing hit test", () => {
     ).toEqual(["unlocked"]);
   });
 
+  it("never hit-tests non-interactive drawings while locked remains independent", () => {
+    const registry = createDistanceRegistry();
+    const drawings = [
+      createDrawing("interactive", 6),
+      createDrawing("locked", 2, { locked: true }),
+      createDrawing("passive", 1, { interactive: false })
+    ];
+
+    expect(hitTestDrawing(drawings, { x: 0, y: 0 }, { registry })?.drawing.id).toBe("locked");
+    expect(
+      hitTestDrawingAll(drawings, { x: 0, y: 0 }, { registry }).map((match) => match.drawing.id)
+    ).toEqual(["locked", "interactive"]);
+  });
+
   it("prefers later drawings when hit distances are equal", () => {
     const registry = createDistanceRegistry();
 
@@ -125,6 +139,18 @@ describe("drawing hit test", () => {
     );
 
     expect(hit).toEqual({ drawingId: "d1", anchorIndex: 0, distance: expect.any(Number) });
+    expect(
+      hitTestDrawingAnchor(
+        {
+          id: "passive",
+          type: "trendLine",
+          anchors: [{ x: 10, y: 20 }],
+          interactive: false
+        },
+        { x: 10, y: 20 },
+        2
+      )
+    ).toBeUndefined();
     expect(
       hitTestDrawingAnchor(
         {

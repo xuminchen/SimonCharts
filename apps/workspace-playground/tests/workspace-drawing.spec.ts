@@ -85,6 +85,101 @@ test("commits every continuous drawing mode only on pointer up", async ({ page }
   }
 });
 
+test("renders an autoscaled non-interactive range without blocking chart pan", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  const drawing = await page.evaluate(() => {
+    const chart = window.__chart!;
+    const visible = chart.getVisibleRange();
+    if (!visible) throw new Error("visible range missing");
+    const span = visible.to - visible.from;
+    const range = {
+      id: "planned-price-range",
+      type: "datePriceRange" as const,
+      anchors: [
+        { time: visible.from + span * 0.25, price: 150 },
+        { time: visible.from + span * 0.75, price: 170 }
+      ],
+      style: {
+        color: "#ff00ff",
+        textColor: "#00ffff",
+        lineWidth: 3
+      },
+      interactive: false,
+      affectsPriceScale: true,
+      locked: true
+    };
+    chart.setDrawings([range]);
+    return range;
+  });
+  const canvas = page.locator("canvas.sc-static-canvas");
+  const coloredBounds = async () => canvas.evaluate((element) => {
+    const target = element as HTMLCanvasElement;
+    const pixels = target.getContext("2d")!.getImageData(0, 0, target.width, target.height).data;
+    let count = 0;
+    let minX = target.width;
+    let minY = target.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (
+        Math.abs(pixels[index]! - 255) > 3 ||
+        pixels[index + 1]! > 3 ||
+        Math.abs(pixels[index + 2]! - 255) > 3
+      ) continue;
+      const pixel = index / 4;
+      const x = pixel % target.width;
+      const y = Math.floor(pixel / target.width);
+      count += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+    const rect = target.getBoundingClientRect();
+    return {
+      count,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      scaleX: target.width / rect.width,
+      scaleY: target.height / rect.height
+    };
+  });
+  await expect.poll(async () => (await coloredBounds()).count).toBeGreaterThan(0);
+  const beforeHover = await coloredBounds();
+  expect(beforeHover.minY).toBeGreaterThanOrEqual(0);
+  expect(beforeHover.maxY).toBeLessThan(await canvas.evaluate((element) =>
+    (element as HTMLCanvasElement).height
+  ));
+  const overlay = page.locator("canvas.sc-overlay-canvas");
+  const overlayBox = await overlay.boundingBox();
+  if (!overlayBox) throw new Error("overlay missing");
+  const x = overlayBox.x + ((beforeHover.minX + beforeHover.maxX) / 2) / beforeHover.scaleX;
+  const y = overlayBox.y + ((beforeHover.minY + beforeHover.maxY) / 2) / beforeHover.scaleY;
+
+  await page.mouse.move(x, y);
+  await expect(overlay).toHaveCSS("cursor", "crosshair");
+  await expect.poll(async () => (await coloredBounds()).count).toBe(beforeHover.count);
+  const before = await page.evaluate(() => ({
+    visibleRange: window.__chart!.getVisibleRange(),
+    drawings: window.__chart!.getDrawings()
+  }));
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 100, y);
+  await page.mouse.up();
+  const after = await page.evaluate(() => ({
+    visibleRange: window.__chart!.getVisibleRange(),
+    drawings: window.__chart!.getDrawings()
+  }));
+
+  expect(after.visibleRange).not.toEqual(before.visibleRange);
+  expect(after.drawings).toEqual(before.drawings);
+  expect(after.drawings[0]).toMatchObject(drawing);
+});
+
 test("creates, edits, serializes, and restores all 63 drawing tools", async ({ page }) => {
   test.setTimeout(120_000);
   const errors: string[] = [];

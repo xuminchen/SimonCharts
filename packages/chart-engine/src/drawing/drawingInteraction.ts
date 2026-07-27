@@ -32,6 +32,10 @@ export interface DrawingSelectionOptions {
 const rotateHandleOffset = 24;
 
 export function getDrawingEditHandles(drawing: DrawingObject): DrawingEditHandle[] {
+  if (drawing.interactive === false) {
+    return [];
+  }
+
   const handles: DrawingEditHandle[] = [];
 
   drawing.anchors.forEach((anchor, index) => {
@@ -172,6 +176,10 @@ function resizeHandle(
 }
 
 function shouldIncludeDrawing(drawing: DrawingObject, options: DrawingSelectionOptions): boolean {
+  if (drawing.interactive === false) {
+    return false;
+  }
+
   if (!options.includeHidden && drawing.visible === false) {
     return false;
   }

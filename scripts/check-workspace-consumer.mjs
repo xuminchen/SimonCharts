@@ -5,7 +5,7 @@ import path from "node:path";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.30";
+const expectedVersion = "1.0.0-rc.31";
 let tempRoot;
 
 try {
@@ -134,6 +134,8 @@ const drawings: readonly ChartDrawing[] = [{
   id: "consumer-support",
   type: "horizontalLine",
   anchors: [{ time: 1_784_192_400_000, price: 10 }],
+  interactive: false,
+  affectsPriceScale: true,
   metadata: { source: "external-consumer" }
 }];
 const marks: readonly ChartMark[] = [{

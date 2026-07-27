@@ -30,6 +30,14 @@ export function deserializeDrawingObject(value: unknown): DrawingObject {
     drawing.locked = serialized.locked;
   }
 
+  if (serialized.interactive !== undefined) {
+    drawing.interactive = serialized.interactive;
+  }
+
+  if (serialized.affectsPriceScale !== undefined) {
+    drawing.affectsPriceScale = serialized.affectsPriceScale;
+  }
+
   if (serialized.zIndex !== undefined) {
     drawing.zIndex = serialized.zIndex;
   }
@@ -87,6 +95,20 @@ export function parseDrawingObject(value: unknown): DrawingObject {
 
   if (value.locked !== undefined) {
     drawing.locked = value.locked as DrawingObject["locked"];
+  }
+
+  if (value.interactive !== undefined) {
+    if (typeof value.interactive !== "boolean") {
+      throw new Error("Drawing object interactive must be a boolean");
+    }
+    drawing.interactive = value.interactive;
+  }
+
+  if (value.affectsPriceScale !== undefined) {
+    if (typeof value.affectsPriceScale !== "boolean") {
+      throw new Error("Drawing object affectsPriceScale must be a boolean");
+    }
+    drawing.affectsPriceScale = value.affectsPriceScale;
   }
 
   if (value.zIndex !== undefined) {

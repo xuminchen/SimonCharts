@@ -26,7 +26,10 @@ export function beginDrawingMoveDrag(
 ): DrawingMoveDragOperation | undefined {
   const selectedIds = new Set(options.selectedDrawingIds);
   const hasEditableSelectedDrawing = options.drawings.some(
-    (drawing) => selectedIds.has(drawing.id) && drawing.locked !== true
+    (drawing) =>
+      selectedIds.has(drawing.id) &&
+      drawing.locked !== true &&
+      drawing.interactive !== false
   );
 
   if (!hasEditableSelectedDrawing) {
@@ -87,7 +90,7 @@ function previewDrawings(
   const selectedIds = new Set(operation.selectedDrawingIds);
 
   return operation.drawings.map((drawing) => {
-    if (!selectedIds.has(drawing.id) || drawing.locked) {
+    if (!selectedIds.has(drawing.id) || drawing.locked || drawing.interactive === false) {
       return cloneDrawing(drawing);
     }
 

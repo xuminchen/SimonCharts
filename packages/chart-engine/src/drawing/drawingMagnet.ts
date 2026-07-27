@@ -205,6 +205,8 @@ export function createDrawingAnchorMagnetTargets(
   const targets: MagnetSnapTarget[] = [];
 
   for (const drawing of drawings) {
+    if (drawing.interactive === false) continue;
+
     drawing.anchors.forEach((anchor, anchorIndex) => {
       if (!hasFinitePoint(anchor)) {
         return;

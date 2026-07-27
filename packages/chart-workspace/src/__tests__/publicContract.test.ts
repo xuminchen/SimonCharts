@@ -36,7 +36,14 @@ import type {
   SeriesPage,
   SeriesRequest
 } from "../index";
-import { parseIndicatorInput, parseLayout, toEntityId } from "../programmableApi";
+import {
+  fromEngineDrawings,
+  parseDrawings,
+  parseIndicatorInput,
+  parseLayout,
+  toEngineDrawings,
+  toEntityId
+} from "../programmableApi";
 
 describe("charts public contract", () => {
   it("keeps the approved datafeed signatures", () => {
@@ -63,6 +70,11 @@ describe("charts public contract", () => {
       .toEqualTypeOf<(indicators: readonly ChartIndicator[]) => void>();
     expectTypeOf<ChartInstance["setDrawings"]>()
       .toEqualTypeOf<(drawings: readonly ChartDrawing[]) => void>();
+    expectTypeOf<Pick<ChartDrawing, "interactive" | "affectsPriceScale">>()
+      .toEqualTypeOf<{
+        readonly interactive?: boolean;
+        readonly affectsPriceScale?: boolean;
+      }>();
     expectTypeOf<ChartInstance["setMarks"]>()
       .toEqualTypeOf<(marks: readonly ChartMark[]) => void>();
     expectTypeOf<ChartInstance["createStudy"]>()
@@ -226,6 +238,8 @@ describe("charts public contract", () => {
         id: "range",
         type: "datePriceRange",
         anchors: [{ time: 1, price: 10 }, { time: 2, price: 12 }],
+        interactive: false,
+        affectsPriceScale: true,
         metadata: { rangeLabel: "计划区间", levels: [1, 2] }
       }],
       gridVisible: false
@@ -288,6 +302,39 @@ describe("charts public contract", () => {
     }).drawings[0]?.metadata;
     expect(Object.hasOwn(prototypeKey ?? {}, "__proto__")).toBe(true);
     expect(Object.getPrototypeOf(prototypeKey)).toBe(Object.prototype);
+  });
+
+  it("validates and defensively converts drawing interaction and scale flags", () => {
+    const source = [{
+      id: "range",
+      type: "datePriceRange",
+      anchors: [{ time: 1, price: 10 }, { time: 2, price: 12 }],
+      interactive: false,
+      affectsPriceScale: true
+    }] as const;
+    const parsed = parseDrawings(source);
+    const engine = toEngineDrawings(parsed);
+    const restored = fromEngineDrawings(engine);
+
+    expect(restored).toEqual(source);
+    expect(parseDrawings([{
+      id: "default",
+      type: "datePriceRange",
+      anchors: [{ time: 1, price: 10 }, { time: 2, price: 12 }]
+    }])[0]).not.toHaveProperty("interactive");
+    expect(parseDrawings([{
+      id: "default",
+      type: "datePriceRange",
+      anchors: [{ time: 1, price: 10 }, { time: 2, price: 12 }]
+    }])[0]).not.toHaveProperty("affectsPriceScale");
+    expect(() => parseDrawings([{ ...source[0], interactive: "false" }]))
+      .toThrow("interaction state must be boolean");
+    expect(() => parseDrawings([{ ...source[0], affectsPriceScale: 1 }]))
+      .toThrow("price scale state must be boolean");
+
+    engine[0]!.anchors[0]!.price = 999;
+    engine[0]!.interactive = true;
+    expect(parsed[0]).toEqual(source[0]);
   });
 
   it("keeps same-type study instances independent", () => {

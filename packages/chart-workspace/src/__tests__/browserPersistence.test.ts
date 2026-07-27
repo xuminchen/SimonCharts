@@ -19,7 +19,13 @@ class MemoryStorage implements Storage {
 }
 
 const stock: ChartSymbol = { id: "stock:SSE:600000", code: "600000", name: "浦发银行", exchange: "SSE", kind: "stock" };
-const drawings = [{ id: "d1", type: "trendLine" as const, anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }] }];
+const drawings = [{
+  id: "d1",
+  type: "trendLine" as const,
+  anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }],
+  interactive: false,
+  affectsPriceScale: true
+}];
 
 describe("browser persistence", () => {
   it("starts the advanced inspector collapsed", () => {

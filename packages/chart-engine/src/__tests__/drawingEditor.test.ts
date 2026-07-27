@@ -174,6 +174,30 @@ describe("drawing editor", () => {
     expect(editor.getState().drawings[0].anchors).toEqual([{ x: 1, y: 1 }]);
   });
 
+  it("does not select or edit non-interactive drawings", () => {
+    const editor = createDrawingEditor({
+      drawings: [
+        {
+          id: "passive",
+          type: "trendLine",
+          anchors: [{ x: 1, y: 1 }],
+          interactive: false
+        },
+        { id: "active", type: "trendLine", anchors: [{ x: 2, y: 2 }] }
+      ]
+    });
+
+    editor.selectDrawing("passive");
+    expect(editor.getState().selectedDrawingIds).toEqual([]);
+    editor.selectDrawings(["passive", "active"]);
+    expect(editor.getState().selectedDrawingIds).toEqual(["active"]);
+    expect(editor.getSelectedEditHandles().every((handle) => handle.drawingId === "active")).toBe(true);
+    editor.executeCommand({ type: "nudgeSelected", delta: { dx: 3, dy: 4 } });
+    expect(editor.getState().drawings[0]!.anchors).toEqual([{ x: 1, y: 1 }]);
+    editor.dragAnchor("passive", 0, { x: 9, y: 9 });
+    expect(editor.getState().drawings[0]!.anchors).toEqual([{ x: 1, y: 1 }]);
+  });
+
   it("drags a drawing anchor", () => {
     const editor = createDrawingEditor({
       drawings: [{ id: "d1", type: "trendLine", anchors: [{ x: 1, y: 1 }] }]

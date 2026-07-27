@@ -11,6 +11,8 @@ export interface SerializedDrawingObjectV1 {
   text?: string;
   visible?: boolean;
   locked?: boolean;
+  interactive?: boolean;
+  affectsPriceScale?: boolean;
   zIndex?: number;
   metadata?: Record<string, unknown>;
 }
@@ -39,6 +41,14 @@ export function toSerializedDrawingV1(drawing: DrawingObject): SerializedDrawing
 
   if (drawing.locked !== undefined) {
     serialized.locked = drawing.locked;
+  }
+
+  if (drawing.interactive !== undefined) {
+    serialized.interactive = drawing.interactive;
+  }
+
+  if (drawing.affectsPriceScale !== undefined) {
+    serialized.affectsPriceScale = drawing.affectsPriceScale;
   }
 
   if (drawing.zIndex !== undefined) {

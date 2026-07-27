@@ -107,6 +107,8 @@ export interface DrawingObject {
   text?: string;
   visible?: boolean;
   locked?: boolean;
+  interactive?: boolean;
+  affectsPriceScale?: boolean;
   zIndex?: number;
   metadata?: Record<string, unknown>;
 }

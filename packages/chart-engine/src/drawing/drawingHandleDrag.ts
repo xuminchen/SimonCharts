@@ -70,7 +70,7 @@ export function beginDrawingHandleDrag(
 ): DrawingHandleDragOperation | undefined {
   const drawing = options.drawings.find((item) => item.id === options.handle.drawingId);
 
-  if (!drawing || drawing.locked) {
+  if (!drawing || drawing.locked || drawing.interactive === false) {
     return undefined;
   }
 
@@ -225,7 +225,10 @@ function previewDrawings(
 
   const selectedIds = new Set(operation.selectedDrawingIds);
   const selectedDrawings = operation.drawings.filter(
-    (drawing) => selectedIds.has(drawing.id) && drawing.locked !== true
+    (drawing) =>
+      selectedIds.has(drawing.id) &&
+      drawing.locked !== true &&
+      drawing.interactive !== false
   );
   const transformed = new Map<string, DrawingObject>();
 

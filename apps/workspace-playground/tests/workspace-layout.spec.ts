@@ -522,6 +522,8 @@ test("programs and atomically restores a versioned public layout", async ({ page
         id: "support",
         type: "horizontalLine",
         anchors: [{ time: Date.UTC(2026, 5, 5, 1, 30), price: 98 }],
+        interactive: false,
+        affectsPriceScale: true,
         metadata: { rangeLabel: "支撑" }
       }],
       gridVisible: false
@@ -582,7 +584,12 @@ test("programs and atomically restores a versioned public layout", async ({ page
       params: { period: 5 },
       visible: false
     }],
-    drawings: [{ id: "support", metadata: { rangeLabel: "支撑" } }],
+    drawings: [{
+      id: "support",
+      interactive: false,
+      affectsPriceScale: true,
+      metadata: { rangeLabel: "支撑" }
+    }],
     gridVisible: false
   });
   expect(result.marks).toEqual([expect.objectContaining({ id: "earnings", label: "E" })]);
@@ -660,6 +667,8 @@ test("manages stable chart entities and publishes exact lifecycle events", async
       id: "entity-support",
       type: "horizontalLine" as const,
       anchors: [{ time: Date.UTC(2026, 5, 5, 1, 30), price: 98 }],
+      interactive: false,
+      affectsPriceScale: true,
       metadata: { alpha: 1, beta: 2 }
     };
     const drawingId = chart.createEntity({ kind: "drawing", value: drawing });
@@ -733,6 +742,7 @@ test("manages stable chart entities and publishes exact lifecycle events", async
     const leaked = chart.getEntity(markId) as any;
     leaked.value.price = 1;
     const defensiveCopy = (chart.getEntity(markId) as any)?.value.price === 100;
+    const drawingSnapshot = chart.getEntity(drawingId);
     const removed = chart.removeEntity(drawingId);
     const removedAgain = chart.removeEntity(drawingId);
     const indicatorEntities = chart.getEntities("indicator");
@@ -747,6 +757,7 @@ test("manages stable chart entities and publishes exact lifecycle events", async
       mismatchError,
       invalidSymbolError,
       defensiveCopy,
+      drawingSnapshot,
       removed,
       removedAgain,
       indicatorEntities,
@@ -770,6 +781,15 @@ test("manages stable chart entities and publishes exact lifecycle events", async
         visible: false
       }
     }],
+    drawingSnapshot: {
+      id: result.drawingId,
+      kind: "drawing",
+      value: {
+        id: "entity-support",
+        interactive: false,
+        affectsPriceScale: true
+      }
+    },
     missingDrawing: undefined,
     events: [
       { type: "entity-created", id: result.indicatorId },

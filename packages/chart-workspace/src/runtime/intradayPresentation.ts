@@ -16,19 +16,58 @@ const overflowStepPercent = 0.1;
 export function calculateFixedIntradayPercentExtent(
   candles: readonly Candle[],
   previousClose: number,
-  priceLimitPercent: number
+  priceLimitPercent: number,
+  additionalPrices: readonly number[] = []
 ): number {
-  let observedExtent = priceLimitPercent;
+  const nominalExtent = symmetricPercentageExtentIsSafe(previousClose, priceLimitPercent)
+    ? priceLimitPercent
+    : 0;
+  let observedExtent = nominalExtent;
   for (const candle of candles) {
-    observedExtent = Math.max(
-      observedExtent,
+    const extent = Math.max(
       Math.abs((candle.high / previousClose - 1) * 100),
       Math.abs((candle.low / previousClose - 1) * 100)
     );
+    if (symmetricPercentageExtentIsSafe(previousClose, extent)) {
+      observedExtent = Math.max(observedExtent, extent);
+    }
   }
-  if (observedExtent <= priceLimitPercent + Number.EPSILON * 100) return priceLimitPercent;
-  return Math.ceil((observedExtent + overflowPaddingPercent) / overflowStepPercent)
+  for (let index = 0; index < additionalPrices.length; index += 2) {
+    const prices = additionalPrices.slice(index, index + 2);
+    const extents = prices.map((price) => Math.abs((price / previousClose - 1) * 100));
+    const extent = Math.max(...extents);
+    if (
+      prices.length !== 2 ||
+      !symmetricPercentageExtentIsSafe(previousClose, extent)
+    ) continue;
+    observedExtent = Math.max(observedExtent, extent);
+  }
+  if (observedExtent <= nominalExtent + Number.EPSILON * 100) return nominalExtent;
+  const padded = observedExtent + overflowPaddingPercent;
+  const paddedExtent =
+    symmetricPercentageExtentIsSafe(previousClose, padded) ? padded : observedExtent;
+  const roundedExtent = Math.ceil(
+    (paddedExtent - Number.EPSILON * Math.max(1, Math.abs(paddedExtent)) * 16) /
+      overflowStepPercent
+  )
     * overflowStepPercent;
+  const safeExtent = symmetricPercentageExtentIsSafe(previousClose, roundedExtent)
+    ? roundedExtent
+    : paddedExtent;
+  return Math.max(observedExtent, safeExtent);
+}
+
+function symmetricPercentageExtentIsSafe(
+  previousClose: number,
+  extent: number
+): boolean {
+  return (
+    Number.isFinite(extent) &&
+    extent >= 0 &&
+    Number.isFinite(extent * 2) &&
+    Number.isFinite(previousClose * (1 - extent / 100)) &&
+    Number.isFinite(previousClose * (1 + extent / 100))
+  );
 }
 
 export function calculateIntradayAverage(

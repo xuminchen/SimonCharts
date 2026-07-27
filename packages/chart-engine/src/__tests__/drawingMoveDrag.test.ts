@@ -35,6 +35,13 @@ describe("drawing move drag", () => {
         startPoint: { x: 10, y: 20 }
       })
     ).toBeUndefined();
+    expect(
+      beginDrawingMoveDrag({
+        drawings: [{ ...drawing("passive", 0, 0, 10, 10), interactive: false }],
+        selectedDrawingIds: ["passive"],
+        startPoint: { x: 10, y: 20 }
+      })
+    ).toBeUndefined();
   });
 
   it("creates preview movement and commands for editable selected drawings", () => {

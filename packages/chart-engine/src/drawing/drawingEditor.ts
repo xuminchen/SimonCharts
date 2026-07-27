@@ -236,7 +236,9 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
       cancelActiveCreation();
     },
     selectDrawing(id) {
-      selectedDrawingIds = drawings.some((drawing) => drawing.id === id) ? [id] : [];
+      selectedDrawingIds = drawings.some(
+        (drawing) => drawing.id === id && drawing.interactive !== false
+      ) ? [id] : [];
       emit({ type: "selectionChanged", selectedDrawingIds: [...selectedDrawingIds] });
     },
     selectDrawings(ids) {
@@ -355,7 +357,13 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
     dragAnchor(id, anchorIndex, point) {
       const drawing = drawings.find((existing) => existing.id === id);
 
-      if (!drawing || drawing.locked || anchorIndex < 0 || anchorIndex >= drawing.anchors.length) {
+      if (
+        !drawing ||
+        drawing.locked ||
+        drawing.interactive === false ||
+        anchorIndex < 0 ||
+        anchorIndex >= drawing.anchors.length
+      ) {
         return;
       }
 
@@ -597,7 +605,11 @@ export function createDrawingEditor(options: DrawingEditorOptions): DrawingEdito
   }
 
   function getExistingUniqueIds(ids: string[]): string[] {
-    const existingIds = new Set(drawings.map((drawing) => drawing.id));
+    const existingIds = new Set(
+      drawings
+        .filter((drawing) => drawing.interactive !== false)
+        .map((drawing) => drawing.id)
+    );
     const seenIds = new Set<string>();
     const nextSelectedDrawingIds: string[] = [];
 

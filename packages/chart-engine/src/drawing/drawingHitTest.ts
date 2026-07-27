@@ -33,6 +33,7 @@ export function hitTestDrawingAll(
     .map((drawing, index) => ({ drawing, index }))
     .filter(({ drawing }) => options.includeHidden === true || drawing.visible !== false)
     .filter(({ drawing }) => options.includeLocked !== false || drawing.locked !== true)
+    .filter(({ drawing }) => drawing.interactive !== false)
     .map(({ drawing, index }) => ({
       drawing,
       hit: options.registry.require(drawing.type).hitTest(drawing, point),
@@ -55,6 +56,10 @@ export function hitTestDrawingAnchor(
   point: DrawingPoint,
   radius: number
 ): DrawingAnchorHit | undefined {
+  if (drawing.interactive === false) {
+    return undefined;
+  }
+
   if (radius < 0 || !Number.isFinite(radius)) {
     return undefined;
   }

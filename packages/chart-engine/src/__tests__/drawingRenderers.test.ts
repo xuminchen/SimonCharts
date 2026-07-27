@@ -238,6 +238,25 @@ describe("drawing renderers", () => {
     );
   });
 
+  it("renders non-interactive drawings without selected or hovered handles", () => {
+    const registry = createDefaultDrawingRendererRegistry();
+    const layer = createDrawingLayer(registry);
+    const context = createLayerContext(
+      [{
+        id: "passive",
+        type: "trendLine",
+        anchors: [{ x: 10, y: 20 }, { x: 80, y: 60 }],
+        interactive: false
+      }],
+      { selectedDrawingIds: ["passive"], hoveredDrawingId: "passive" }
+    );
+
+    layer.render(context);
+
+    expect(callsNamed(context.context as unknown as FakeCanvasContext, "stroke")).not.toHaveLength(0);
+    expect(callsNamed(context.context as unknown as FakeCanvasContext, "arc")).toHaveLength(0);
+  });
+
   it("uses drawing default stroke for unstyled figure-backed drawings", () => {
     const registry = createDefaultDrawingRendererRegistry();
     const layer = createDrawingLayer(registry);

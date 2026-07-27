@@ -38,6 +38,21 @@ describe("drawing interaction primitives", () => {
     });
   });
 
+  it("excludes non-interactive drawings from handles and selection", () => {
+    const passive = {
+      ...drawing("passive", 10, 20, 80, 60),
+      interactive: false
+    };
+
+    expect(getDrawingEditHandles(passive)).toEqual([]);
+    expect(getDrawingSelectionBounds([passive])).toBeUndefined();
+    expect(getDrawingIdsInBounds(
+      [passive],
+      { x: 0, y: 0, width: 100, height: 100 },
+      { includeHidden: true, includeLocked: true }
+    )).toEqual([]);
+  });
+
   it("creates selection bounds from visible unlocked drawings", () => {
     expect(
       getDrawingSelectionBounds([

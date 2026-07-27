@@ -8,7 +8,8 @@ import {
   createVolumeLayer,
   defaultChartTimeFormatter,
   priceToY,
-  renderStaticChart
+  renderStaticChart,
+  scaleValueToPrice
 } from "../index";
 import { createMainPanelPriceScale } from "../render/mainPriceScale";
 import type {
@@ -270,6 +271,204 @@ describe("static renderer", () => {
     expect(() =>
       createMainPanelPriceScale(series, { from: 1, to: 3 }, "log", visualOutputs, [])
     ).not.toThrow();
+  });
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "merges finite additional prices into the %s main scale",
+    (priceScaleMode) => {
+      const series = createSeries();
+      const scale = createMainPanelPriceScale(
+        series,
+        { from: 1, to: 3 },
+        priceScaleMode,
+        [],
+        [],
+        [5, 30]
+      );
+
+      expect(scale.min).toBeLessThan(scale.max);
+      expect(Number.isFinite(scale.min)).toBe(true);
+      expect(Number.isFinite(scale.max)).toBe(true);
+      expect(priceToY(5, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+      expect(priceToY(5, scale, 0, 80)).toBeLessThanOrEqual(80);
+      expect(priceToY(30, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+      expect(priceToY(30, scale, 0, 80)).toBeLessThanOrEqual(80);
+    }
+  );
+
+  it("uses an explicit percentage base when validating additional prices", () => {
+    const series: CandleSeries = {
+      ...createSeries(),
+      candles: createSeries().candles.map((candle) => ({
+        ...candle,
+        open: 1e-307,
+        high: 2e-307,
+        low: 1e-307,
+        close: 1e-307
+      }))
+    };
+    const basePrice = Number.MAX_VALUE * 0.44;
+    const drawingPrice = Number.MAX_VALUE * 0.91;
+    const scale = createMainPanelPriceScale(
+      series,
+      { from: 1, to: 3 },
+      "percentage",
+      [],
+      [],
+      [drawingPrice, drawingPrice],
+      basePrice
+    );
+
+    expect(scale.basePrice).toBe(basePrice);
+    expect(Number.isFinite(scale.max - scale.min)).toBe(true);
+    expect(priceToY(drawingPrice, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+    expect(priceToY(drawingPrice, scale, 0, 80)).toBeLessThanOrEqual(80);
+  });
+
+  it("ignores invalid additional prices and preserves the five-argument default", () => {
+    const series = createSeries();
+    const baseline = createMainPanelPriceScale(series, { from: 1, to: 3 }, "log", [], []);
+
+    expect(createMainPanelPriceScale(
+      series,
+      { from: 1, to: 3 },
+      "log",
+      [],
+      [],
+      [Number.NaN, Number.POSITIVE_INFINITY, 0, -1]
+    )).toEqual(baseline);
+  });
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "ignores finite additional prices that overflow the %s scale",
+    (priceScaleMode) => {
+      const series = createSeries();
+      const baseline = createMainPanelPriceScale(
+        series,
+        { from: 1, to: 3 },
+        priceScaleMode,
+        [],
+        []
+      );
+
+      expect(createMainPanelPriceScale(
+        series,
+        { from: 1, to: 3 },
+        priceScaleMode,
+        [],
+        [],
+        [Number.MAX_VALUE, -Number.MAX_VALUE]
+      )).toEqual(baseline);
+    }
+  );
+
+  it.each(["linear", "log", "percentage"] as const)(
+    "rejects an additional price range atomically when either anchor is invalid for the %s scale",
+    (priceScaleMode) => {
+      const series = createSeries();
+      const scale = createMainPanelPriceScale(
+        series,
+        { from: 1, to: 3 },
+        priceScaleMode,
+        [],
+        [],
+        [Number.NaN, 500, 5, 30]
+      );
+
+      expect(priceToY(5, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+      expect(priceToY(30, scale, 0, 80)).toBeLessThanOrEqual(80);
+      expect(priceToY(500, scale, 0, 80)).toBeLessThan(0);
+    }
+  );
+
+  it("falls back to an unpadded linear scale when padding would overflow", () => {
+    const series = createSeries();
+    const scale = createMainPanelPriceScale(
+      series,
+      { from: 1, to: 3 },
+      "linear",
+      [],
+      [],
+      [1, 1.68e308]
+    );
+
+    expect(Number.isFinite(scale.max - scale.min)).toBe(true);
+    expect(priceToY(1.68e308, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+    expect(priceToY(1.68e308, scale, 0, 80)).toBeLessThanOrEqual(80);
+  });
+
+  it("rejects an additional percentage range when its raw transform overflows", () => {
+    const series = createSeries();
+    const baseline = createMainPanelPriceScale(
+      series,
+      { from: 1, to: 3 },
+      "percentage",
+      [],
+      []
+    );
+
+    expect(createMainPanelPriceScale(
+      series,
+      { from: 1, to: 3 },
+      "percentage",
+      [],
+      [],
+      [1, 1.68e308]
+    )).toEqual(baseline);
+  });
+
+  it("uses an unpadded percentage scale when only padding overflows the explicit base", () => {
+    const series: CandleSeries = {
+      ...createSeries(),
+      candles: createSeries().candles.map((candle) => ({
+        ...candle,
+        open: 3e307,
+        high: 1e308,
+        low: 3e307,
+        close: 1e308
+      }))
+    };
+    const drawingPrice = 1.75e308;
+    const scale = createMainPanelPriceScale(
+      series,
+      { from: 1, to: 3 },
+      "percentage",
+      [],
+      [],
+      [drawingPrice, drawingPrice],
+      1e308
+    );
+
+    expect(Number.isFinite(scale.max - scale.min)).toBe(true);
+    expect(Number.isFinite(scaleValueToPrice(scale.min, scale))).toBe(true);
+    expect(Number.isFinite(scaleValueToPrice(scale.max, scale))).toBe(true);
+    expect(priceToY(drawingPrice, scale, 0, 80)).toBeGreaterThanOrEqual(0);
+    expect(priceToY(drawingPrice, scale, 0, 80)).toBeLessThanOrEqual(80);
+  });
+
+  it("falls back to a finite linear scale when percentage values are unrepresentable", () => {
+    const series: CandleSeries = {
+      ...createSeries(),
+      candles: createSeries().candles.map((candle) => ({
+        ...candle,
+        open: 1,
+        high: 2,
+        low: 1,
+        close: 1
+      }))
+    };
+    const scale = createMainPanelPriceScale(
+      series,
+      { from: 1, to: 3 },
+      "percentage",
+      [],
+      [],
+      [],
+      Number.MIN_VALUE
+    );
+
+    expect(scale.mode).toBe("linear");
+    expect(Number.isFinite(scale.max - scale.min)).toBe(true);
   });
 
   it.each(

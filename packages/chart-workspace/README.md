@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.30.tgz
+npm install ./simoncharts-charts-1.0.0-rc.31.tgz
 ```
 
 ## Embed the default chart
@@ -115,9 +115,15 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
       visible: true
     }]);
     chart.setDrawings([{
-      id: "support",
-      type: "horizontalLine",
-      anchors: [{ time: supportCandleTime, price: supportPrice }]
+      id: "planned-entry-range",
+      type: "datePriceRange",
+      anchors: [
+        { time: planStartCandleTime, price: planLowPrice },
+        { time: planEndCandleTime, price: planHighPrice }
+      ],
+      interactive: false,
+      affectsPriceScale: true,
+      locked: true
     }]);
     chart.setMarks(marks);
     chart.setDrawingTool("trendLine");
@@ -132,6 +138,10 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
 
 // On host teardown: unsubscribeEvents();
 ```
+
+`interactive` defaults to `true`. Setting it to `false` keeps the Drawing visible and available to `setDrawings()`, `getDrawings()`, Entity API, and layout export/import, but removes it from hover, hit testing, handles, selection, pointer capture, drag, and keyboard edits. It therefore cannot change the crosshair cursor or block chart pan, zoom, crosshair, execution-mark, or host-mark interaction. `locked` is separate: a locked Drawing remains interactive unless `interactive: false` is also set.
+
+`affectsPriceScale` defaults to `false`. For `datePriceRange` and `priceRange`, setting it to `true` extends the automatic main price scale only while the Drawing is visible, both price anchors are finite and valid for the active scale, and its time interval intersects the visible real candle interval. Hidden, off-window, invalid, and default Drawings do not affect the axis. Manual price-axis scaling remains host/user controlled.
 
 Because drawings are inside the portable layout, host storage must scope each saved layout by `dataContextId + symbol.id + adjustMode`; recompute that key after changing symbol or adjustment and ignore stale async loads. Intraday is always a line view, so importing a non-line layout or selecting a non-line series while intraday is active is rejected instead of partially applying.
 
@@ -300,4 +310,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.30 adds frame-batched public crosshair movement and leave events with complete real candle and visible-study values while preserving rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.31 adds independent Drawing interaction and automatic price-scale controls while preserving rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

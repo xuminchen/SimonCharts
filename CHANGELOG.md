@@ -1,5 +1,13 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.31 - 2026-07-27
+
+- Added public `ChartDrawing.interactive?: boolean` and `ChartDrawing.affectsPriceScale?: boolean` controls without materializing defaults in existing layouts.
+- Made `interactive: false` drawings render and remain fully programmable while excluding them from hover, hit testing, handles, selection, pointer capture, drag helpers, and keyboard mutation; `locked` remains an independent edit constraint.
+- Allowed visible, finite, time-intersecting `datePriceRange` and `priceRange` drawings with `affectsPriceScale: true` to extend linear, logarithmic, percentage, and fixed intraday automatic price scales without changing market, indicator, or execution data.
+- Preserved both fields through batch replacement, Entity API, layout export/import, browser persistence, defensive clones, and strict public JSON validation.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,143 tests`, combined Chrome `103/103`, Charts `14 files / 145 tests`, and Charts Chrome/Edge `52/52` per browser; SHA-256 is `5a32813bbd0c56d69d8ee84d30118723b9ad3336bcf77c1876899fb6fb73f218`, SHA-512 is `be80c274e39490dcbb14fe67d9d645d8b95ddc75b2b046c583d040c64c46425af600feb0a215e0b179f59774e9ba98fe259c0bf42f905bb1f334e8382e7c43bc`.
+
 ## @simoncharts/charts 1.0.0-rc.30 - 2026-07-27
 
 - Added dedicated public `crosshair-moved` and `crosshair-left` subscriptions without adding per-pointer work to unrelated lifecycle listeners.

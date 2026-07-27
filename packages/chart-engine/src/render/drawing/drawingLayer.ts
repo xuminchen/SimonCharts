@@ -21,7 +21,10 @@ export function createDrawingLayer(registry: DrawingRendererRegistry): ChartLaye
           drawing
         });
 
-        if (selectedIds.has(drawing.id) || context.state.hoveredDrawingId === drawing.id) {
+        if (
+          drawing.interactive !== false &&
+          (selectedIds.has(drawing.id) || context.state.hoveredDrawingId === drawing.id)
+        ) {
           renderDrawingHandles(context, drawing);
         }
       }

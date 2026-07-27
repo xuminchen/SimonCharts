@@ -55,8 +55,12 @@ describe("drawing handle drag", () => {
   it("creates resize previews from the original selection snapshot", () => {
     const operation = beginDrawingHandleDrag({
       handle: handle("a:resize:bottomRight", "resize", 30, 30, { position: "bottomRight" }),
-      drawings: [drawing("a", 0, 0, 10, 10), drawing("b", 20, 20, 30, 30)],
-      selectedDrawingIds: ["a", "b"],
+      drawings: [
+        drawing("a", 0, 0, 10, 10),
+        drawing("b", 20, 20, 30, 30),
+        { ...drawing("passive", 40, 40, 50, 50), interactive: false }
+      ],
+      selectedDrawingIds: ["a", "b", "passive"],
       startPoint: { x: 30, y: 30 }
     });
 
@@ -80,6 +84,10 @@ describe("drawing handle drag", () => {
     expect(secondPreview?.drawings[0].anchors).toEqual([
       { x: 0, y: 0 },
       { x: 30, y: 30 }
+    ]);
+    expect(secondPreview?.drawings[2].anchors).toEqual([
+      { x: 40, y: 40 },
+      { x: 50, y: 50 }
     ]);
   });
 
@@ -119,6 +127,15 @@ describe("drawing handle drag", () => {
       beginDrawingHandleDrag({
         handle: handle("a:resize:right", "resize", 10, 5, { position: "right" }),
         drawings: [{ ...drawing("a", 0, 0, 10, 10), locked: true }],
+        selectedDrawingIds: ["a"],
+        startPoint: { x: 10, y: 5 }
+      })
+    ).toBeUndefined();
+
+    expect(
+      beginDrawingHandleDrag({
+        handle: handle("a:resize:right", "resize", 10, 5, { position: "right" }),
+        drawings: [{ ...drawing("a", 0, 0, 10, 10), interactive: false }],
         selectedDrawingIds: ["a"],
         startPoint: { x: 10, y: 5 }
       })

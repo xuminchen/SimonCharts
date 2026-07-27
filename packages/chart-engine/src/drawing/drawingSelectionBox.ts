@@ -37,10 +37,16 @@ export interface DrawingSelectionBoxPreview {
 export function beginDrawingSelectionBox(
   options: DrawingSelectionBoxOptions
 ): DrawingSelectionBoxOperation {
+  const nonInteractiveIds = new Set(
+    options.drawings
+      .filter((drawing) => drawing.interactive === false)
+      .map((drawing) => drawing.id)
+  );
   return {
     drawings: options.drawings.map(cloneDrawing),
     startPoint: { ...options.startPoint },
-    currentSelectedDrawingIds: [...(options.currentSelectedDrawingIds ?? [])],
+    currentSelectedDrawingIds: (options.currentSelectedDrawingIds ?? [])
+      .filter((id) => !nonInteractiveIds.has(id)),
     additive: options.additive === true,
     selectionOptions: { ...(options.selectionOptions ?? {}) }
   };
