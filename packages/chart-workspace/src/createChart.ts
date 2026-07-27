@@ -2,11 +2,24 @@ import type {
   AdjustMode,
   ChartEvent,
   ChartEventListener,
+  ChartDrawing,
+  ChartDrawingTool,
+  ChartEntity,
+  ChartEntityId,
+  ChartEntityInput,
+  ChartEntityKind,
   ChartExecution,
   ChartFeature,
+  ChartIndicator,
+  ChartIndicatorEntityId,
+  ChartIndicatorInput,
   ChartInstance,
+  ChartLayoutV2,
   ChartLocale,
+  ChartMark,
   ChartOptions,
+  ChartPriceScaleMode,
+  ChartSeriesType,
   ChartState,
   ChartStateListener,
   ChartSymbol,
@@ -24,6 +37,24 @@ import { createPagedSeriesStore } from "./data/pagedSeriesStore";
 import { createSymbolSearchCoordinator } from "./data/symbolSearchCoordinator";
 import { createChartError, type ChartError } from "./errors";
 import { createBrowserPersistence, defaultLayoutState, defaultPreferences } from "./persistence/browserPersistence";
+import {
+  fromEngineDrawings,
+  parseEntity,
+  parseEntityId,
+  parseEntityInput,
+  parseEntityKind,
+  parseIndicatorInput,
+  parseDrawingTool,
+  parseDrawings,
+  parseIndicators,
+  parseLayout,
+  parseMarks,
+  parsePriceScaleMode,
+  parseSeriesType,
+  parseVisibleRange,
+  toEntityId,
+  toEngineDrawings
+} from "./programmableApi";
 import { createChartEngineRuntime } from "./runtime/chartEngineRuntime";
 import { createCheckpointedCalculationRuntime } from "./runtime/checkpointedCalculationRuntime";
 import { createWorkspaceShell } from "./ui/workspaceShell";
@@ -85,6 +116,31 @@ function validExecutions(executions: unknown): executions is readonly ChartExecu
   ));
 }
 
+function validMarks(marks: unknown): marks is readonly ChartMark[] {
+  try {
+    parseMarks(marks);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validSymbol(symbol: unknown): symbol is ChartSymbol {
+  return (
+    typeof symbol === "object" &&
+    symbol !== null &&
+    !Array.isArray(symbol) &&
+    typeof (symbol as ChartSymbol).id === "string" &&
+    (symbol as ChartSymbol).id.trim().length > 0 &&
+    typeof (symbol as ChartSymbol).code === "string" &&
+    (symbol as ChartSymbol).code.trim().length > 0 &&
+    typeof (symbol as ChartSymbol).name === "string" &&
+    (symbol as ChartSymbol).name.trim().length > 0 &&
+    ["SSE", "SZSE", "BSE"].includes((symbol as ChartSymbol).exchange) &&
+    ["stock", "index"].includes((symbol as ChartSymbol).kind)
+  );
+}
+
 function validOptions(options: ChartOptions): boolean {
   const symbol = options?.initialSymbol;
   return (
@@ -98,16 +154,13 @@ function validOptions(options: ChartOptions): boolean {
       (typeof options.dataCutoffTime === "number" &&
         Number.isFinite(options.dataCutoffTime) &&
         options.dataCutoffTime > 0)) &&
-    typeof symbol?.id === "string" && symbol.id.trim().length > 0 &&
-    typeof symbol?.code === "string" && symbol.code.trim().length > 0 &&
-    typeof symbol?.name === "string" && symbol.name.trim().length > 0 &&
-    ["SSE", "SZSE", "BSE"].includes(symbol?.exchange) &&
-    ["stock", "index"].includes(symbol?.kind) &&
+    validSymbol(symbol) &&
     (options.features === undefined ||
       (Array.isArray(options.features) && options.features.every((feature) => validFeatures.has(feature)))) &&
     (options.theme === undefined || (["dark", "light"] as const).includes(options.theme)) &&
     (options.locale === undefined || (["zh-CN", "en-US"] as const).includes(options.locale)) &&
     (options.executions === undefined || validExecutions(options.executions)) &&
+    (options.marks === undefined || validMarks(options.marks)) &&
     typeof options?.datafeed?.getCapabilities === "function" &&
     typeof options?.datafeed?.searchSymbols === "function" &&
     typeof options?.datafeed?.loadSeries === "function"
@@ -124,6 +177,7 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     priceScaleMode: defaultPreferences.priceScaleMode,
     indicators: [],
     drawings: [],
+    marks: [],
     selectedDrawingIds: [],
     bottomPanel: defaultLayoutState.bottomPanel,
     drawingPalette: defaultLayoutState.drawingPalette,
@@ -134,6 +188,53 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     calculationStatus: { type: "idle" },
     search: { query: "", loading: false, results: [] }
   };
+}
+
+function layoutSnapshot(viewModel: Readonly<WorkspaceViewModel>): ChartLayoutV2 {
+  return {
+    schemaVersion: 2,
+    seriesType: viewModel.seriesType,
+    priceScaleMode: viewModel.priceScaleMode,
+    indicators: structuredClone(viewModel.indicators),
+    drawings: fromEngineDrawings(viewModel.drawings),
+    gridVisible: viewModel.gridVisible
+  };
+}
+
+function layoutSelectionKey(state: Readonly<ChartState>): string {
+  return JSON.stringify([state.symbol.id, state.timeframe, state.adjustMode]);
+}
+
+function entitySnapshot(
+  viewModel: Readonly<WorkspaceViewModel>,
+  scope: readonly [chartId: string, persistenceScopeId: string, dataContextId: string]
+): ChartEntity[] {
+  const state = viewModel.state;
+  const indicators = viewModel.indicators.map((value) => {
+    const input = { kind: "indicator" as const, value: structuredClone(value) };
+    return { id: toEntityId(input, state, scope), ...input };
+  });
+  const drawings = fromEngineDrawings(viewModel.drawings).map((value) => {
+    const input = { kind: "drawing" as const, value };
+    return { id: toEntityId(input, state, scope), ...input };
+  });
+  const marks = viewModel.marks.map((value) => {
+    const input = { kind: "mark" as const, value: structuredClone(value) };
+    return { id: toEntityId(input, state, scope), ...input };
+  });
+  return [...indicators, ...drawings, ...marks];
+}
+
+function requireReadyLayout(
+  viewModel: Readonly<WorkspaceViewModel>,
+  readySelectionKey: string | undefined
+): void {
+  if (
+    readySelectionKey !== layoutSelectionKey(viewModel.state) ||
+    (viewModel.status.type !== "ready" && viewModel.status.type !== "readyWithWarning")
+  ) {
+    throw new DOMException("Chart layout is unavailable until initial data is loaded", "InvalidStateError");
+  }
 }
 
 export function createChart(
@@ -155,14 +256,72 @@ export function createChart(
   const stateListeners = new Set<ChartStateListener>();
   const eventListeners = new Set<ChartEventListener>();
   let lastNotifiedState = "";
-  const emitEvent = (event: ChartEvent): void => {
-    for (const listener of eventListeners) {
-      try {
-        listener(structuredClone(event));
-      } catch {
-        // Host listeners are isolated from chart events.
+  let lastNotifiedLayout = "";
+  let applyingLayout = false;
+  let latestViewModelRevision = 0;
+  let readySelectionKey: string | undefined;
+  let lastEntitySnapshot: Map<ChartEntityId, ChartEntity> | undefined;
+  const entityScope = [
+    options?.chartId ?? "",
+    options?.persistenceScopeId ?? "",
+    options?.dataContextId ?? ""
+  ] as const;
+  const eventQueue: ChartEvent[] = [];
+  let dispatchingEvents = false;
+  const emitEvents = (events: readonly ChartEvent[]): void => {
+    eventQueue.push(...events);
+    if (dispatchingEvents) return;
+    dispatchingEvents = true;
+    try {
+      for (let index = 0; index < eventQueue.length && !destroyed; index += 1) {
+        const event = eventQueue[index]!;
+        for (const listener of [...eventListeners]) {
+          if (destroyed) break;
+          try {
+            listener(structuredClone(event));
+          } catch {
+            // Host listeners are isolated from chart events.
+          }
+        }
+      }
+    } finally {
+      eventQueue.length = 0;
+      dispatchingEvents = false;
+    }
+  };
+  const emitEvent = (event: ChartEvent): void => emitEvents([event]);
+  const emitEntityChanges = (viewModel: Readonly<WorkspaceViewModel>): void => {
+    if (applyingLayout) return;
+    const nextEntities = entitySnapshot(viewModel, entityScope);
+    const next = new Map(nextEntities.map((entity) => [entity.id, entity]));
+    const previous = lastEntitySnapshot;
+    lastEntitySnapshot = next;
+    if (previous === undefined) return;
+    const events: ChartEvent[] = [];
+    for (const entity of previous.values()) {
+      if (!next.has(entity.id)) events.push({ type: "entity-removed", entity });
+    }
+    for (const entity of nextEntities) {
+      const before = previous.get(entity.id);
+      if (before === undefined) {
+        events.push({ type: "entity-created", entity });
+      } else if (JSON.stringify(before) !== JSON.stringify(entity)) {
+        events.push({ type: "entity-updated", entity });
       }
     }
+    emitEvents(events);
+  };
+  const emitLayoutChanged = (viewModel: Readonly<WorkspaceViewModel>): void => {
+    if (
+      applyingLayout ||
+      readySelectionKey !== layoutSelectionKey(viewModel.state) ||
+      (viewModel.status.type !== "ready" && viewModel.status.type !== "readyWithWarning")
+    ) return;
+    const layout = layoutSnapshot(viewModel);
+    const nextLayout = JSON.stringify(layout);
+    if (nextLayout === lastNotifiedLayout) return;
+    lastNotifiedLayout = nextLayout;
+    emitEvent({ type: "layout-changed", layout });
   };
 
   if (!validOptions(options)) {
@@ -181,15 +340,53 @@ export function createChart(
       loading: false
     };
     shell.render(blockedViewModel(state, error));
-    if (typeof options?.onError === "function") options.onError(error);
+    if (typeof options?.onError === "function") {
+      try {
+        options.onError(error);
+      } catch {
+        // Host error handlers are isolated from chart construction.
+      }
+    }
+    const layout = layoutSnapshot(blockedViewModel(state, error));
     return Object.freeze({
       getState: () => structuredClone(state),
       getVisibleRange: () => undefined,
+      getSeriesType: () => layout.seriesType,
+      getPriceScaleMode: () => layout.priceScaleMode,
+      getIndicators: () => [],
+      getDrawings: () => [],
+      getMarks: () => [],
+      createStudy: () => {
+        throw new DOMException("Chart study API is unavailable", "InvalidStateError");
+      },
+      getStudyById: () => undefined,
+      getAllStudies: () => [],
+      removeStudy: () => false,
+      createEntity: () => {
+        throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
+      },
+      getEntity: () => undefined,
+      getEntities: () => [],
+      updateEntity: () => {
+        throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
+      },
+      removeEntity: () => false,
+      exportLayout: () => structuredClone(layout),
       setSymbol: () => undefined,
       setTimeframe: () => undefined,
       setView: () => undefined,
       setIntradayDays: () => undefined,
       setAdjustMode: () => undefined,
+      setSeriesType: () => undefined,
+      setPriceScaleMode: () => undefined,
+      setIndicators: () => undefined,
+      setDrawings: () => undefined,
+      setMarks: () => undefined,
+      setDrawingTool: () => undefined,
+      setGridVisible: () => undefined,
+      undoDrawing: () => undefined,
+      redoDrawing: () => undefined,
+      importLayout: () => undefined,
       setExecutions: () => undefined,
       setExecutionsVisible: () => undefined,
       setVisibleRange: () => undefined,
@@ -246,6 +443,7 @@ export function createChart(
         emitEvent({ type: "visible-range", range });
       }
     },
+    onMarkClicked: (mark) => emitEvent({ type: "mark-clicked", mark }),
     onCalculationStatusChanged: (status) => controller?.handleCalculationStatus(status),
     onDataWindowChanged: (snapshot) => shell.renderDataWindow(snapshot),
     onExecutionTooltipChanged: (snapshot) => shell.renderExecutionTooltip(snapshot),
@@ -268,31 +466,211 @@ export function createChart(
     persistence,
     runtime,
     onError: options.onError,
-    onDataLoaded: (event) => emitEvent({ type: "data-loaded", ...event }),
-    onViewModelChanged: (viewModel) => {
+    onDataLoaded: (event) => {
+      if (event.phase === "initial") {
+        readySelectionKey = layoutSelectionKey(event.state);
+      }
+      emitEvent({ type: "data-loaded", ...event });
+      if (event.phase === "initial") {
+        emitLayoutChanged(controller!.getViewModel());
+      }
+    },
+    onViewModelChanged: (viewModel, revision) => {
+      latestViewModelRevision = revision;
+      if (
+        readySelectionKey !== undefined &&
+        readySelectionKey !== layoutSelectionKey(viewModel.state)
+      ) readySelectionKey = undefined;
       shell.render(viewModel);
+      emitEntityChanges(viewModel);
+      if (destroyed || latestViewModelRevision !== revision) return;
+      emitLayoutChanged(viewModel);
+      if (destroyed || latestViewModelRevision !== revision) return;
       const nextState = JSON.stringify(viewModel.state);
       if (nextState === lastNotifiedState) return;
       lastNotifiedState = nextState;
-      for (const listener of stateListeners) {
+      for (const listener of [...stateListeners]) {
         try {
           listener(structuredClone(viewModel.state));
         } catch {
           // Host listeners are isolated from workspace state transitions.
         }
+        if (destroyed || latestViewModelRevision !== revision) break;
       }
     }
   });
   const unbind = shell.bind(controller);
+  lastNotifiedLayout = JSON.stringify(layoutSnapshot(controller.getViewModel()));
+  controller.setMarks(parseMarks(options.marks ?? []));
+  lastEntitySnapshot = new Map(
+    entitySnapshot(controller.getViewModel(), entityScope).map((entity) => [entity.id, entity])
+  );
   runtime.setExecutions(options.executions ?? []);
   shell.render(controller.getViewModel());
   for (const error of pendingStorageErrors) controller.handleStorageError(error);
   controller.start();
 
+  const allocateStudyInstanceId = (): string => {
+    const existing = new Set(controller!.getViewModel().indicators.map((indicator) => indicator.instanceId));
+    let candidate: string;
+    do candidate = `study-${crypto.randomUUID()}`;
+    while (existing.has(candidate));
+    return candidate;
+  };
+
   return Object.freeze({
     getState: () => controller!.getState(),
     getVisibleRange: () => controller!.getVisibleRange(),
-    setSymbol: (symbol: ChartSymbol) => controller!.setSymbol(symbol),
+    getSeriesType: () => controller!.getViewModel().seriesType,
+    getPriceScaleMode: () => controller!.getViewModel().priceScaleMode,
+    getIndicators: () => structuredClone(controller!.getViewModel().indicators),
+    getDrawings: () => fromEngineDrawings(controller!.getViewModel().drawings),
+    getMarks: () => structuredClone(controller!.getViewModel().marks),
+    createStudy: (value: ChartIndicatorInput) => {
+      if (destroyed) {
+        throw new DOMException("Chart study API is unavailable", "InvalidStateError");
+      }
+      const input = parseIndicatorInput(value);
+      const viewModel = controller!.getViewModel();
+      const indicator = parseIndicators([{
+        ...input,
+        instanceId: input.instanceId ?? allocateStudyInstanceId()
+      }])[0]!;
+      const entity = { kind: "indicator" as const, value: indicator };
+      const id = toEntityId(entity, viewModel.state, entityScope) as ChartIndicatorEntityId;
+      if (entitySnapshot(viewModel, entityScope).some((candidate) => candidate.id === id)) {
+        throw new DOMException("Chart study already exists", "InvalidStateError");
+      }
+      controller!.setIndicators(parseIndicators([...viewModel.indicators, indicator]));
+      return id;
+    },
+    getStudyById: (value: ChartIndicatorEntityId) => {
+      const id = parseEntityId(value);
+      const entity = entitySnapshot(controller!.getViewModel(), entityScope)
+        .find((candidate) => candidate.id === id && candidate.kind === "indicator");
+      return entity?.kind === "indicator" ? structuredClone(entity.value) : undefined;
+    },
+    getAllStudies: () => structuredClone(controller!.getViewModel().indicators),
+    removeStudy: (value: ChartIndicatorEntityId) => {
+      if (destroyed) return false;
+      const id = parseEntityId(value);
+      const viewModel = controller!.getViewModel();
+      const current = entitySnapshot(viewModel, entityScope)
+        .find((candidate) => candidate.id === id && candidate.kind === "indicator");
+      if (current?.kind !== "indicator") return false;
+      controller!.setIndicators(parseIndicators(
+        viewModel.indicators.filter(
+          (candidate) => candidate.instanceId !== current.value.instanceId
+        )
+      ));
+      return true;
+    },
+    createEntity: (value: ChartEntityInput) => {
+      if (destroyed) {
+        throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
+      }
+      const entity = parseEntityInput(value);
+      const viewModel = controller!.getViewModel();
+      const id = toEntityId(entity, viewModel.state, entityScope);
+      if (entitySnapshot(viewModel, entityScope).some((candidate) => candidate.id === id)) {
+        throw new DOMException("Chart entity already exists", "InvalidStateError");
+      }
+      if (entity.kind === "indicator") {
+        controller!.setIndicators(parseIndicators([...viewModel.indicators, entity.value]));
+      } else if (entity.kind === "drawing") {
+        requireReadyLayout(viewModel, readySelectionKey);
+        controller!.setDrawings(toEngineDrawings(
+          parseDrawings([...fromEngineDrawings(viewModel.drawings), entity.value])
+        ));
+      } else {
+        controller!.setMarks(parseMarks([...viewModel.marks, entity.value]));
+      }
+      return id;
+    },
+    getEntity: (value: ChartEntityId) => {
+      const id = parseEntityId(value);
+      const entity = entitySnapshot(controller!.getViewModel(), entityScope)
+        .find((candidate) => candidate.id === id);
+      return entity === undefined ? undefined : structuredClone(entity);
+    },
+    getEntities: (kind?: ChartEntityKind) => {
+      const parsedKind = kind === undefined ? undefined : parseEntityKind(kind);
+      const entities = entitySnapshot(controller!.getViewModel(), entityScope);
+      return structuredClone(
+        parsedKind === undefined
+          ? entities
+          : entities.filter((entity) => entity.kind === parsedKind)
+      );
+    },
+    updateEntity: (value: ChartEntity) => {
+      if (destroyed) {
+        throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
+      }
+      const entity = parseEntity(value);
+      const viewModel = controller!.getViewModel();
+      const current = entitySnapshot(viewModel, entityScope)
+        .find((candidate) => candidate.id === entity.id);
+      if (current === undefined) {
+        throw new DOMException("Chart entity was not found", "NotFoundError");
+      }
+      if (
+        current.kind !== entity.kind ||
+        entity.id !== toEntityId(entity, viewModel.state, entityScope)
+      ) {
+        throw new TypeError("Chart entity id does not match its kind, value, or current chart selection");
+      }
+      if (entity.kind === "indicator") {
+        controller!.setIndicators(parseIndicators(viewModel.indicators.map((candidate) =>
+          candidate.instanceId === entity.value.instanceId ? entity.value : candidate
+        )));
+      } else if (entity.kind === "drawing") {
+        requireReadyLayout(viewModel, readySelectionKey);
+        controller!.setDrawings(toEngineDrawings(parseDrawings(
+          fromEngineDrawings(viewModel.drawings).map((candidate) =>
+            candidate.id === current.value.id ? entity.value : candidate
+          )
+        )));
+      } else {
+        controller!.setMarks(parseMarks(viewModel.marks.map((candidate) =>
+          candidate.id === current.value.id ? entity.value : candidate
+        )));
+      }
+    },
+    removeEntity: (value: ChartEntityId) => {
+      if (destroyed) return false;
+      const id = parseEntityId(value);
+      const viewModel = controller!.getViewModel();
+      const current = entitySnapshot(viewModel, entityScope)
+        .find((candidate) => candidate.id === id);
+      if (current === undefined) return false;
+      if (current.kind === "indicator") {
+        controller!.setIndicators(parseIndicators(
+          viewModel.indicators.filter(
+            (candidate) => candidate.instanceId !== current.value.instanceId
+          )
+        ));
+      } else if (current.kind === "drawing") {
+        requireReadyLayout(viewModel, readySelectionKey);
+        controller!.setDrawings(toEngineDrawings(parseDrawings(
+          fromEngineDrawings(viewModel.drawings)
+            .filter((candidate) => candidate.id !== current.value.id)
+        )));
+      } else {
+        controller!.setMarks(parseMarks(
+          viewModel.marks.filter((candidate) => candidate.id !== current.value.id)
+        ));
+      }
+      return true;
+    },
+    exportLayout: () => {
+      const viewModel = controller!.getViewModel();
+      requireReadyLayout(viewModel, readySelectionKey);
+      return layoutSnapshot(viewModel);
+    },
+    setSymbol: (symbol: ChartSymbol) => {
+      if (!validSymbol(symbol)) throw new TypeError("Chart symbol is invalid");
+      controller!.setSymbol(structuredClone(symbol));
+    },
     setTimeframe: (timeframe: Timeframe) => controller!.setTimeframe(timeframe),
     setView: (view: ChartView) => {
       if (view !== "intraday" && view !== "timeframe") {
@@ -307,6 +685,56 @@ export function createChart(
       controller!.setIntradayDays(days);
     },
     setAdjustMode: (adjustMode: AdjustMode) => controller!.setAdjustMode(adjustMode),
+    setSeriesType: (type: ChartSeriesType) => {
+      const parsed = parseSeriesType(type);
+      if (controller!.getState().view === "intraday" && parsed !== "line") {
+        throw new RangeError("Intraday view has a fixed line series type");
+      }
+      controller!.setSeriesType(parsed);
+    },
+    setPriceScaleMode: (mode: ChartPriceScaleMode) =>
+      controller!.setPriceScaleMode(parsePriceScaleMode(mode)),
+    setIndicators: (indicators: readonly ChartIndicator[]) =>
+      controller!.setIndicators(parseIndicators(indicators)),
+    setDrawings: (drawings: readonly ChartDrawing[]) => {
+      const parsed = parseDrawings(drawings);
+      requireReadyLayout(controller!.getViewModel(), readySelectionKey);
+      controller!.setDrawings(toEngineDrawings(parsed));
+    },
+    setMarks: (marks: readonly ChartMark[]) => controller!.setMarks(parseMarks(marks)),
+    setDrawingTool: (tool: ChartDrawingTool) => controller!.setDrawingTool(parseDrawingTool(tool)),
+    setGridVisible: (visible: boolean) => {
+      if (typeof visible !== "boolean") throw new TypeError("Grid visibility must be boolean");
+      controller!.setGridVisible(visible);
+    },
+    undoDrawing: () => controller!.undoDrawing(),
+    redoDrawing: () => controller!.redoDrawing(),
+    importLayout: (value: unknown) => {
+      const layout = parseLayout(value);
+      requireReadyLayout(controller!.getViewModel(), readySelectionKey);
+      if (controller!.getState().view === "intraday" && layout.seriesType !== "line") {
+        throw new RangeError("Intraday view accepts only line-series layouts");
+      }
+      applyingLayout = true;
+      try {
+        controller!.setSeriesType(layout.seriesType);
+        controller!.setPriceScaleMode(layout.priceScaleMode);
+        controller!.setIndicators(layout.indicators);
+        controller!.setDrawings(toEngineDrawings(layout.drawings));
+        controller!.setGridVisible(layout.gridVisible);
+      } finally {
+        applyingLayout = false;
+      }
+      emitEntityChanges(controller!.getViewModel());
+      const applied = layoutSnapshot(controller!.getViewModel());
+      const nextLayout = JSON.stringify(applied);
+      if (nextLayout !== lastNotifiedLayout) {
+        lastNotifiedLayout = nextLayout;
+        if (readySelectionKey === layoutSelectionKey(controller!.getState())) {
+          emitEvent({ type: "layout-changed", layout: applied });
+        }
+      }
+    },
     setExecutions: (executions: readonly ChartExecution[]) => {
       if (!validExecutions(executions)) throw new TypeError("Chart executions are invalid");
       runtime.setExecutions(executions);
@@ -316,14 +744,7 @@ export function createChart(
       controller!.setExecutionsVisible(visible);
     },
     setVisibleRange: (range: ChartVisibleRange) => {
-      if (
-        typeof range !== "object" ||
-        range === null ||
-        !Number.isFinite(range.from) ||
-        !Number.isFinite(range.to) ||
-        range.from > range.to
-      ) throw new RangeError("Visible range must contain finite ascending timestamps");
-      controller!.setVisibleRange(range);
+      controller!.setVisibleRange(parseVisibleRange(range));
     },
     resetToLatest: () => controller!.resetToLatest(),
     retry: () => controller!.retry(),
@@ -357,6 +778,7 @@ export function createChart(
       controller!.destroy();
       stateListeners.clear();
       eventListeners.clear();
+      lastEntitySnapshot = undefined;
       checkpointStore.clear();
       shell.destroy();
       shell.root.remove();

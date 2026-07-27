@@ -95,6 +95,43 @@ describe("browser persistence", () => {
     expect(onError.mock.calls[0][0]).not.toHaveProperty("context");
   });
 
+  it("fails closed on persisted duplicate entity ids", () => {
+    const storage = new MemoryStorage();
+    const onError = vi.fn<BrowserPersistenceErrorHandler>();
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, onError);
+    persistence.saveIndicators([
+      { instanceId: "ma-primary", id: "MA", params: { period: 5 }, visible: true },
+      { instanceId: "ma-primary", id: "MA", params: { period: 10 }, visible: true }
+    ]);
+    persistence.saveDrawings(stock, "forward", [drawings[0]!, drawings[0]!]);
+
+    expect(persistence.loadIndicators()).toEqual([]);
+    expect(persistence.loadDrawings(stock, "forward")).toEqual([]);
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ code: "STORAGE_READ_FAILED" })
+    );
+    expect(onError).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ code: "STORAGE_READ_FAILED" })
+    );
+  });
+
+  it("keeps legacy indicator storage untouched when reading V2 instances", () => {
+    const storage = new MemoryStorage();
+    const legacyKey = "simoncharts:workspace:v1:trs:user-1:indicators";
+    storage.setItem(legacyKey, JSON.stringify([
+      { id: "MA", params: { period: 5 }, visible: true }
+    ]));
+    const onError = vi.fn<BrowserPersistenceErrorHandler>();
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, onError);
+
+    expect(persistence.loadIndicators()).toEqual([]);
+    expect(storage.getItem(legacyKey)).not.toBeNull();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("reports safe write failures without changing runtime input", () => {
     const storage = new MemoryStorage();
     storage.setItem = () => { throw new DOMException("quota", "QuotaExceededError"); };

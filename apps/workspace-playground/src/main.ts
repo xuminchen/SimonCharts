@@ -149,6 +149,7 @@ if (params.get("nonElement") === "1") {
     onError: () => { counters.errors += 1; }
   } as ChartOptions;
   chart = createChart(container, options);
+  window.__chart = chart;
   if (invalid) {
     chart.setSymbol(stock);
     chart.setTimeframe("5m");
@@ -164,6 +165,7 @@ destroy.addEventListener("click", () => {
 
 declare global {
   interface Window {
+    __chart?: ChartInstance;
     __hostCounters: HostCounters;
   }
 }

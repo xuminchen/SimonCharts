@@ -10,6 +10,7 @@ import type {
   AdjustMode,
   Candle,
   ChartDataCapabilities,
+  ChartMark,
   ChartState,
   ChartSymbol,
   ChartView,
@@ -17,6 +18,7 @@ import type {
   IntradayDayCount,
   Timeframe
 } from "../contracts";
+import { parseIndicators } from "../programmableApi";
 import {
   adjustModesForTimeframe,
   normalizeDataCapabilities,
@@ -80,6 +82,7 @@ export interface WorkspaceViewModel {
   priceScaleMode: PriceScaleMode;
   indicators: readonly IndicatorConfig[];
   drawings: readonly DrawingObject[];
+  marks: readonly ChartMark[];
   selectedDrawingIds: readonly string[];
   bottomPanel: BottomPanelState;
   drawingPalette: DrawingPaletteState;
@@ -108,6 +111,8 @@ export interface WorkspaceUiActions {
   setFavoriteTimeframe(timeframe: FavoriteTimeframe, favorite: boolean): boolean;
   setPriceScaleMode(mode: PriceScaleMode): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
+  setDrawings(drawings: readonly DrawingObject[]): void;
+  setMarks(marks: readonly ChartMark[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
   executeDrawingCommand(command: DrawingEditorCommand): void;
   undoDrawing(): void;
@@ -166,7 +171,7 @@ export interface ChartControllerDependencies {
     readonly dataVersion: string;
     readonly phase: "initial" | "history";
   }) => void;
-  onViewModelChanged?: (viewModel: Readonly<WorkspaceViewModel>) => void;
+  onViewModelChanged?: (viewModel: Readonly<WorkspaceViewModel>, revision: number) => void;
 }
 
 function cloneSymbol(symbol: ChartSymbol): ChartSymbol {
@@ -233,6 +238,7 @@ export function createChartController(
     priceScaleMode: preferences.priceScaleMode,
     indicators: dependencies.persistence.loadIndicators(),
     drawings: loadDrawings(state.symbol, state.adjustMode),
+    marks: [],
     selectedDrawingIds: [],
     bottomPanel: layout.bottomPanel,
     drawingPalette: layout.drawingPalette,
@@ -278,6 +284,7 @@ export function createChartController(
   }> = [];
   let capabilityGeneration = 0;
   let capabilityController: AbortController | undefined;
+  let viewModelRevision = 0;
 
   const deactivate = (): void => {
     if (!active) return;
@@ -292,7 +299,7 @@ export function createChartController(
 
   const publish = (): void => {
     viewModel = { ...viewModel, state: { ...state, symbol: cloneSymbol(state.symbol) } };
-    dependencies.onViewModelChanged?.(structuredClone(viewModel));
+    dependencies.onViewModelChanged?.(structuredClone(viewModel), ++viewModelRevision);
   };
 
   const report = (error: ChartError, blocking: boolean): void => {
@@ -306,7 +313,11 @@ export function createChartController(
       ...viewModel,
       status
     };
-    dependencies.onError?.(error);
+    try {
+      dependencies.onError?.(error);
+    } catch {
+      // Host error handlers are isolated from chart state transitions.
+    }
     publish();
   };
 
@@ -907,6 +918,8 @@ export function createChartController(
     setSymbol(symbol) {
       if (!active || symbol.id === state.symbol.id) return;
       dependencies.runtime.setExecutions([]);
+      dependencies.runtime.setMarks([]);
+      viewModel = { ...viewModel, marks: [] };
       const preferredAdjust = normalizeAdjustMode(
         symbol,
         state.symbol.kind === "index" && symbol.kind === "stock" ? "forward" : state.adjustMode
@@ -1370,9 +1383,28 @@ export function createChartController(
     },
     setIndicators(configs) {
       if (!active) return;
-      viewModel = { ...viewModel, indicators: configs.map((config) => structuredClone(config)) };
+      viewModel = { ...viewModel, indicators: parseIndicators(configs) };
       dependencies.runtime.setIndicators(viewModel.indicators);
       dependencies.persistence.saveIndicators(viewModel.indicators);
+      publish();
+    },
+    setDrawings(drawings) {
+      if (!active) return;
+      viewModel = {
+        ...viewModel,
+        drawings: drawings.map((drawing) => structuredClone(drawing)),
+        selectedDrawingIds: []
+      };
+      dependencies.runtime.setDrawings(viewModel.drawings);
+      if (dependencies.drawingPersistenceEnabled) {
+        dependencies.persistence.saveDrawings(state.symbol, state.adjustMode, viewModel.drawings);
+      }
+      publish();
+    },
+    setMarks(marks) {
+      if (!active) return;
+      viewModel = { ...viewModel, marks: marks.map((mark) => ({ ...mark })) };
+      dependencies.runtime.setMarks(viewModel.marks);
       publish();
     },
     setDrawingTool(tool) { if (active) dependencies.runtime.setDrawingTool(tool); },
@@ -1416,6 +1448,7 @@ export function createChartController(
   dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
   dependencies.runtime.setIndicators(viewModel.indicators);
   dependencies.runtime.setDrawings(viewModel.drawings);
+  dependencies.runtime.setMarks(viewModel.marks);
   dependencies.runtime.setGridVisible(viewModel.gridVisible);
   dependencies.runtime.setExecutionsVisible(viewModel.executionsVisible);
 

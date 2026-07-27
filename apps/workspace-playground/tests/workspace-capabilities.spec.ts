@@ -55,5 +55,5 @@ test("edits drawing objects and shows the runtime data window in the bottom work
 
   await page.getByRole("tab", { name: "数据窗口", exact: true }).click();
   await expect(page.getByTestId("data-window-open")).not.toHaveText("--");
-  await expect(page.getByTestId("data-window-indicator-MA")).not.toHaveText("--");
+  await expect(page.locator('[data-testid^="data-window-indicator-MA-"]')).not.toHaveText("--");
 });

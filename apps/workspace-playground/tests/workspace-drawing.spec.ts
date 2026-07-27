@@ -146,7 +146,7 @@ test("creates, edits, serializes, and restores all 63 drawing tools", async ({ p
     await page.getByTestId("indicator-manager-open").click();
     await page.getByRole("button", { name: label, exact: true }).click();
     await page.getByRole("button", { name: `Apply ${id}`, exact: true }).click();
-    await expect(page.getByTestId(`indicator-legend-${id}`)).toHaveCount(1);
+    await expect(page.locator(`[data-testid^="indicator-legend-${id}-"]`)).toHaveCount(1);
   }
   const performanceCanvas = page.locator("canvas.sc-overlay-canvas");
   await page.evaluate(() => { window.__hostCounters.frameCallbackDurations = []; });

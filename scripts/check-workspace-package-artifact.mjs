@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.26";
+const expectedVersion = "1.0.0-rc.29";
 const failures = [];
 const result = spawnSync("npm", ["pack", "--dry-run", "--json", "-w", packageName], {
   cwd: process.cwd(),
@@ -18,6 +18,16 @@ if (result.status !== 0) {
 const artifacts = JSON.parse(result.stdout);
 const artifact = artifacts[0];
 const files = new Set(artifact?.files?.map((file) => file.path) ?? []);
+const allowedFiles = new Set([
+  "README.md",
+  "package.json",
+  "dist/index.js",
+  "dist/index.d.ts",
+  "dist/createChart.d.ts",
+  "dist/contracts.d.ts",
+  "dist/errors.d.ts",
+  "dist/styles.css"
+]);
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 
 expect(Array.isArray(artifacts) && artifacts.length === 1, "expected one workspace artifact");
@@ -26,31 +36,14 @@ expect(artifact?.version === expectedVersion, `package version must be ${expecte
 expect(Array.isArray(artifact?.files), "workspace artifact must include a files list");
 expect(artifact?.bundled?.length === 0, "workspace package must not bundle npm dependencies");
 
-for (const file of [
-  "README.md",
-  "package.json",
-  "dist/index.js",
-  "dist/index.d.ts",
-  "dist/createChart.d.ts",
-  "dist/contracts.d.ts",
-  "dist/styles.css"
-]) {
+for (const file of allowedFiles) {
   expect(files.has(file), `workspace artifact is missing ${file}`);
 }
+expect(files.size === allowedFiles.size, "workspace artifact contains undeclared files");
 expect(!files.has("dist/createChartWorkspace.d.ts"), "charts artifact must not expose createChartWorkspace declarations");
 
 for (const file of files) {
-  expect(
-    file === "README.md" || file === "package.json" || file.startsWith("dist/"),
-    `workspace artifact contains non-package path ${file}`
-  );
-  expect(!file.startsWith("src/"), `workspace artifact must not include source path ${file}`);
-  expect(!file.includes("__tests__"), `workspace artifact must not include tests ${file}`);
-  expect(!file.startsWith("apps/"), `workspace artifact must not include app path ${file}`);
-  expect(!file.startsWith("scripts/"), `workspace artifact must not include scripts ${file}`);
-  expect(!file.startsWith("docs/"), `workspace artifact must not include docs ${file}`);
-  expect(!file.endsWith(".tsbuildinfo"), `workspace artifact must not include build info ${file}`);
-  expect(!file.endsWith(".ts") || file.endsWith(".d.ts"), `workspace artifact must not include source TypeScript ${file}`);
+  expect(allowedFiles.has(file), `workspace artifact contains undeclared file ${file}`);
 }
 
 const bundle = await readFile(path.join(process.cwd(), "packages/chart-workspace/dist/index.js"), "utf8");

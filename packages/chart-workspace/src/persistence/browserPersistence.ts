@@ -1,5 +1,4 @@
 import {
-  coreIndicatorIds,
   deserializeDrawingObject,
   serializeDrawingObject,
   supportedPriceScaleModes,
@@ -10,6 +9,11 @@ import {
 } from "@simoncharts/chart-engine";
 import type { AdjustMode, ChartSymbol, Timeframe } from "../contracts";
 import { createChartError, type ChartError } from "../errors";
+import {
+  fromEngineDrawings,
+  parseIndicators,
+  toEngineDrawings
+} from "../programmableApi";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
 
 const schemaVersion = 1;
@@ -120,19 +124,12 @@ function isPreferences(value: unknown): value is StoredWorkspacePreferences {
 }
 
 function isIndicators(value: unknown): value is readonly IndicatorConfig[] {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (item) =>
-        isRecord(item) &&
-        coreIndicatorIds.includes(item.id as IndicatorConfig["id"]) &&
-        isRecord(item.params) &&
-        Object.values(item.params).every(
-          (parameter) => typeof parameter === "number" && Number.isFinite(parameter)
-        ) &&
-        typeof item.visible === "boolean"
-    )
-  );
+  try {
+    parseIndicators(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function clone<T>(value: T): T {
@@ -149,7 +146,7 @@ export function createBrowserPersistence(
   const prefix = `simoncharts:workspace:v${schemaVersion}:${encodeURIComponent(chartId)}:${encodeURIComponent(persistenceScopeId)}`;
   const layoutKey = `${prefix}:layout`;
   const preferencesKey = `${prefix}:preferences`;
-  const indicatorsKey = `${prefix}:indicators`;
+  const indicatorsKey = `${prefix}:indicators:v2`;
   const drawingPrefix = `${prefix}:drawings:${encodeURIComponent(dataContextId)}`;
   const drawingKey = (symbolId: string, adjustMode: AdjustMode) =>
     `${drawingPrefix}:${encodeURIComponent(symbolId)}:${adjustMode}`;
@@ -218,7 +215,9 @@ export function createBrowserPersistence(
       };
     },
     savePreferences: (value) => write(preferencesKey, value),
-    loadIndicators: () => read(indicatorsKey, [] as readonly IndicatorConfig[], isIndicators),
+    loadIndicators: () => parseIndicators(
+      read(indicatorsKey, [] as readonly IndicatorConfig[], isIndicators)
+    ),
     saveIndicators: (value) => write(indicatorsKey, value),
     loadDrawings(symbol, adjustMode) {
       const serialized = read(
@@ -227,7 +226,9 @@ export function createBrowserPersistence(
         Array.isArray
       );
       try {
-        return serialized.map((item) => deserializeDrawingObject(item));
+        return toEngineDrawings(fromEngineDrawings(
+          serialized.map((item) => deserializeDrawingObject(item))
+        ));
       } catch {
         try {
           storage.removeItem(drawingKey(symbol.id, adjustMode));

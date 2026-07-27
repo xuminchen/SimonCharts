@@ -1,9 +1,12 @@
-import type { CoreIndicatorId, CoreIndicatorParams } from "@simoncharts/chart-engine";
+import type { ChartIndicator } from "../contracts";
 
-export interface IndicatorConfig {
-  readonly id: CoreIndicatorId;
-  readonly params: Readonly<CoreIndicatorParams>;
-  readonly visible: boolean;
-  readonly panelId?: string;
-  readonly style?: Readonly<Record<string, unknown>>;
-}
+export type IndicatorConfig = ChartIndicator;
+
+export const indicatorOutputPrefix = (instanceId: string): string =>
+  `study:${JSON.stringify(instanceId)}:`;
+
+export const indicatorOutputId = (instanceId: string, outputId: string): string =>
+  `${indicatorOutputPrefix(instanceId)}${outputId}`;
+
+export const indicatorPanelId = (instanceId: string): string =>
+  `study-panel:${JSON.stringify(instanceId)}`;

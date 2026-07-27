@@ -5,7 +5,7 @@ import path from "node:path";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.26";
+const expectedVersion = "1.0.0-rc.29";
 let tempRoot;
 
 try {
@@ -40,7 +40,6 @@ try {
     "--module", "ESNext",
     "--moduleResolution", "Bundler",
     "--strict",
-    "--skipLibCheck",
     "--lib", "ES2022,DOM",
     "src/main.ts"
   ], hostRoot);
@@ -80,8 +79,13 @@ function consumerSource() {
   advancedChartFeatures,
   createChart,
   type ChartDatafeed,
+  type ChartDrawing,
+  type ChartEntityId,
   type ChartEvent,
   type ChartExecution,
+  type ChartIndicatorEntityId,
+  type ChartLayoutV2,
+  type ChartMark,
   type ChartVisibleRange,
   type ChartState
 } from "@simoncharts/charts";
@@ -126,6 +130,31 @@ const chart = createChart(container, {
   executions,
   features: [...advancedChartFeatures, "executions"]
 });
+const drawings: readonly ChartDrawing[] = [{
+  id: "consumer-support",
+  type: "horizontalLine",
+  anchors: [{ time: 1_784_192_400_000, price: 10 }],
+  metadata: { source: "external-consumer" }
+}];
+const marks: readonly ChartMark[] = [{
+  id: "consumer-event",
+  time: 1_784_192_400_000,
+  price: 10.5,
+  label: "E"
+}];
+const layout: ChartLayoutV2 = {
+  schemaVersion: 2,
+  seriesType: "candles",
+  priceScaleMode: "linear",
+  indicators: [{
+    instanceId: "ma-5",
+    id: "MA",
+    params: { period: 5 },
+    visible: true
+  }],
+  drawings,
+  gridVisible: true
+};
 const states: Readonly<ChartState>[] = [];
 const events: Readonly<ChartEvent>[] = [];
 const safeFailure = new ChartDatafeedError("UNAVAILABLE", "consumer data unavailable", true);
@@ -137,6 +166,15 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
     const dataVersion: string = event.dataVersion;
     const phase: "initial" | "history" = event.phase;
     const view = event.state.view;
+    if (phase === "initial") {
+      chart.importLayout(JSON.parse(JSON.stringify(layout)));
+      const exportedLayout: ChartLayoutV2 = chart.exportLayout();
+      const exportedDrawings: readonly ChartDrawing[] = chart.getDrawings();
+      const exportedMarks: readonly ChartMark[] = chart.getMarks();
+      void exportedLayout;
+      void exportedDrawings;
+      void exportedMarks;
+    }
     void dataVersion;
     void phase;
     void view;
@@ -148,7 +186,47 @@ chart.setView("timeframe");
 chart.setExecutions(executions);
 chart.setExecutionsVisible(false);
 chart.setExecutionsVisible(true);
+chart.setSeriesType("area");
+chart.setPriceScaleMode("percentage");
+chart.setIndicators(layout.indicators);
+const ma20StudyId: ChartIndicatorEntityId = chart.createStudy({
+  id: "MA",
+  params: { period: 20 },
+  visible: true
+});
+const ma20Study = chart.getStudyById(ma20StudyId);
+if (ma20Study?.id !== "MA" || chart.getAllStudies().length !== 2) {
+  throw new Error("study instance API did not preserve same-definition studies");
+}
+if (!chart.removeStudy(ma20StudyId)) throw new Error("study instance API did not remove its study");
+chart.setDrawings(drawings);
+chart.setMarks(marks);
+chart.setDrawingTool("trendLine");
+chart.setGridVisible(false);
+chart.undoDrawing();
+chart.redoDrawing();
 const visibleRange: Readonly<ChartVisibleRange> | undefined = chart.getVisibleRange();
+const markEntityId: ChartEntityId = chart.createEntity({
+  kind: "mark",
+  value: {
+    id: "consumer-api-event",
+    time: 1_784_192_400_000,
+    price: 10.5,
+    label: "API"
+  }
+});
+const markEntity = chart.getEntity(markEntityId);
+if (markEntity?.kind === "mark") {
+  chart.updateEntity({
+    ...markEntity,
+    value: { ...markEntity.value, label: "UPDATED" }
+  });
+}
+const markEntities = chart.getEntities("mark");
+if (!markEntities.some((entity) => entity.id === markEntityId)) {
+  throw new Error("entity API did not return its created mark");
+}
+if (!chart.removeEntity(markEntityId)) throw new Error("entity API did not remove its mark");
 void visibleRange;
 unsubscribeEvents();
 unsubscribe();

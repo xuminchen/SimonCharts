@@ -16,7 +16,11 @@ import type {
   CalculationCheckpointStore
 } from "../data/calculationCheckpointStore";
 import type { PagedSeriesStore, SeriesSelection } from "../data/pagedSeriesStore";
-import type { IndicatorConfig } from "./indicatorRuntime";
+import {
+  indicatorOutputId,
+  indicatorPanelId,
+  type IndicatorConfig
+} from "./indicatorRuntime";
 
 export type CalculationStatus =
   | { type: "idle" }
@@ -105,6 +109,41 @@ function appendResult(target: IndicatorResult | undefined, incoming: IndicatorRe
   return target;
 }
 
+const duplicateIndicatorColors = ["#f59e0b", "#2563eb", "#dc2626", "#16a34a", "#9333ea", "#0891b2"];
+
+function scopeIndicatorResult(
+  config: IndicatorConfig,
+  result: IndicatorResult,
+  duplicateIndex: number | undefined
+): IndicatorResult {
+  const scopeOutput = (output: IndicatorVisualOutput): IndicatorVisualOutput => ({
+    ...output,
+    id: indicatorOutputId(config.instanceId, output.id),
+    ...(output.panelId === undefined || output.panelId === "main"
+      ? {}
+      : { panelId: indicatorPanelId(config.instanceId) }),
+    ...(duplicateIndex !== undefined && result.outputs.length === 1 && output.type === "line"
+      ? { color: duplicateIndicatorColors[duplicateIndex % duplicateIndicatorColors.length] }
+      : {})
+  });
+  return {
+    outputs: result.outputs.map(scopeOutput),
+    ...(result.panels === undefined
+      ? {}
+      : {
+          panels: result.panels.map((panel) => ({
+            ...panel,
+            id: indicatorPanelId(config.instanceId),
+            outputs: panel.outputs.map(scopeOutput)
+          }))
+        })
+  };
+}
+
+function indicatorParamsHash(config: IndicatorConfig): string {
+  return canonicalJson({ id: config.id, params: config.params });
+}
+
 export function createCheckpointedCalculationRuntime(
   options: CheckpointedCalculationRuntimeOptions
 ): CheckpointedCalculationRuntime {
@@ -162,7 +201,7 @@ export function createCheckpointedCalculationRuntime(
       options.onStatusChanged?.({
         type: "calculating",
         kind: "indicator",
-        id: input.configs[0]?.id ?? "indicators",
+        id: input.configs[0]?.instanceId ?? "indicators",
         generation
       });
       try {
@@ -185,15 +224,15 @@ export function createCheckpointedCalculationRuntime(
               input.selection,
               dataVersion,
               "indicator",
-              config.id,
-              canonicalJson(config.params),
+              config.instanceId,
+              indicatorParamsHash(config),
               predecessor.requestCursor
             )
           )
         );
         if (restored.every((checkpoint) => checkpoint?.kind === "coreIndicator")) {
           restored.forEach((checkpoint, index) =>
-            checkpoints.set(input.configs[index].id, checkpoint as CoreIndicatorCheckpoint)
+            checkpoints.set(input.configs[index].instanceId, checkpoint as CoreIndicatorCheckpoint)
           );
           startIndex = targetIndex;
         }
@@ -207,19 +246,22 @@ export function createCheckpointedCalculationRuntime(
             config.id,
             chunk,
             config.params,
-            checkpoints.get(config.id),
+            checkpoints.get(config.instanceId),
             { finalize: pageIndex === cursors.length - 1 }
           );
-          checkpoints.set(config.id, calculated.checkpoint);
+          checkpoints.set(config.instanceId, calculated.checkpoint);
           const filtered = filterResult(calculated.result, input.targetTimes);
-          results.set(config.id, appendResult(results.get(config.id), filtered));
+          results.set(
+            config.instanceId,
+            appendResult(results.get(config.instanceId), filtered)
+          );
           options.checkpointStore.set(
             checkpointKey(
               input.selection,
               dataVersion,
               "indicator",
-              config.id,
-              canonicalJson(config.params),
+              config.instanceId,
+              indicatorParamsHash(config),
               descriptor.requestCursor
             ),
             calculated.checkpoint
@@ -227,7 +269,22 @@ export function createCheckpointedCalculationRuntime(
         }
       }
       assertCurrent(generation, input.signal);
-      return results;
+      return new Map(input.configs.flatMap((config) => {
+        const result = results.get(config.instanceId);
+        if (result === undefined) return [];
+        // ponytail: O(n²) is bounded by 32 studies; index by definition only if that cap grows.
+        const siblings = input.configs.filter((candidate) => candidate.id === config.id);
+        return [[
+          config.instanceId,
+          scopeIndicatorResult(
+            config,
+            result,
+            siblings.length > 1
+              ? siblings.findIndex((candidate) => candidate.instanceId === config.instanceId)
+              : undefined
+          )
+        ] as const];
+      }));
       } finally {
         options.onStatusChanged?.({ type: "idle" });
       }

@@ -2,7 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
-const expectedVersion = "1.0.0-rc.26";
+const expectedVersion = "1.0.0-rc.29";
 const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 const readJson = async (relativePath) => JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
@@ -24,7 +24,18 @@ expect(workspacePackage.main === "./dist/index.js", "workspace main must point t
 expect(workspacePackage.types === "./dist/index.d.ts", "workspace types must point to dist/index.d.ts");
 expect(workspacePackage.exports?.["."]?.types === "./dist/index.d.ts", "workspace root export must expose declarations");
 expect(workspacePackage.exports?.["./styles.css"] === "./dist/styles.css", "workspace must export its stylesheet");
-expect(Array.isArray(workspacePackage.files) && workspacePackage.files.includes("dist"), "workspace files must include dist");
+expect(
+  JSON.stringify(workspacePackage.files) === JSON.stringify([
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/createChart.d.ts",
+    "dist/contracts.d.ts",
+    "dist/errors.d.ts",
+    "dist/styles.css",
+    "README.md"
+  ]),
+  "workspace files must match the public package allowlist"
+);
 expect(playgroundPackage.dependencies?.["@simoncharts/charts"] === expectedVersion, "workspace playground version must match");
 expect(lockfile.packages?.["packages/chart-workspace"]?.version === expectedVersion, "lockfile workspace version must match");
 expect(lockfile.packages?.["apps/workspace-playground"]?.dependencies?.["@simoncharts/charts"] === expectedVersion, "lockfile workspace playground version must match");

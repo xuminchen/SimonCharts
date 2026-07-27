@@ -14,6 +14,11 @@ import { createCalculationCheckpointStore } from "../data/calculationCheckpointS
 import { createPagedSeriesStore, type SeriesSelection } from "../data/pagedSeriesStore";
 import type { ValidatedSeriesPage } from "../data/seriesPageValidation";
 import { createCheckpointedCalculationRuntime } from "../runtime/checkpointedCalculationRuntime";
+import {
+  indicatorOutputId,
+  indicatorOutputPrefix,
+  indicatorPanelId
+} from "../runtime/indicatorRuntime";
 
 const selection: SeriesSelection = {
   symbol: { id: "SSE:600000", code: "600000", name: "浦发银行", exchange: "SSE", kind: "stock" },
@@ -56,6 +61,10 @@ function filterResult(result: IndicatorResult, times: ReadonlySet<number>): Indi
   };
 }
 
+function withoutOutputIdentity(result: IndicatorResult | undefined) {
+  return result?.outputs.map(({ id: _id, panelId: _panelId, ...output }) => output);
+}
+
 describe("checkpointed calculation runtime", () => {
   it("bounds checkpoint entries and returns defensive values", () => {
     const store = createCalculationCheckpointStore({ maxEntries: 2, maxEstimatedBytes: 100_000 });
@@ -95,12 +104,20 @@ describe("checkpointed calculation runtime", () => {
     });
     const targetTimes = new Set(full.candles.slice(-60).map((item) => item.time));
 
-    const indicators = await runtime.calculateIndicators({ selection, configs: coreIndicatorDefinitions.map((definition) => ({ id: definition.id, params: Object.fromEntries(definition.params.map((parameter) => [parameter.id, parameter.defaultValue])), visible: true })), targetTimes });
+    const configs = coreIndicatorDefinitions.map((definition) => ({
+      instanceId: definition.id,
+      id: definition.id,
+      params: Object.fromEntries(definition.params.map((parameter) => [parameter.id, parameter.defaultValue])),
+      visible: true
+    }));
+    const indicators = await runtime.calculateIndicators({ selection, configs, targetTimes });
     for (const definition of coreIndicatorDefinitions) {
-      expect(indicators.get(definition.id)).toEqual(filterResult(calculateCoreIndicator(definition.id, full), targetTimes));
+      expect(withoutOutputIdentity(indicators.get(definition.id))).toEqual(withoutOutputIdentity(
+        filterResult(calculateCoreIndicator(definition.id, full), targetTimes)
+      ));
     }
     const firstReloadCount = reloadCount;
-    const repeated = await runtime.calculateIndicators({ selection, configs: coreIndicatorDefinitions.map((definition) => ({ id: definition.id, params: Object.fromEntries(definition.params.map((parameter) => [parameter.id, parameter.defaultValue])), visible: true })), targetTimes });
+    const repeated = await runtime.calculateIndicators({ selection, configs, targetTimes });
     expect(repeated).toEqual(indicators);
     expect(reloadCount - firstReloadCount).toBeLessThan(firstReloadCount);
 
@@ -112,6 +129,37 @@ describe("checkpointed calculation runtime", () => {
     }
     expect(checkpointStore.getDiagnostics().entryCount).toBeLessThanOrEqual(2048);
     expect(checkpointStore.getDiagnostics().estimatedBytes).toBeLessThanOrEqual(4 * 1024 * 1024);
+  });
+
+  it("keeps same-type indicator checkpoints and outputs isolated by instance", async () => {
+    const full = createSeries(80);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 0, full.candles.length));
+    const checkpointStore = createCalculationCheckpointStore();
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore,
+      reloadPage: async () => undefined
+    });
+
+    const results = await runtime.calculateIndicators({
+      selection,
+      configs: [
+        { instanceId: "desk", id: "MA", params: { period: 5 }, visible: true },
+        { instanceId: "desk:ma", id: "MA", params: { period: 20 }, visible: true },
+        { instanceId: "main", id: "RSI", params: { period: 14 }, visible: true }
+      ],
+      targetTimes: new Set(full.candles.map((item) => item.time))
+    });
+
+    expect([...results.keys()]).toEqual(["desk", "desk:ma", "main"]);
+    expect(results.get("desk")?.outputs[0]?.id).toBe(indicatorOutputId("desk", "MA"));
+    expect(results.get("desk:ma")?.outputs[0]?.id).toBe(indicatorOutputId("desk:ma", "MA"));
+    expect(indicatorOutputId("desk:ma", "MA").startsWith(indicatorOutputPrefix("desk"))).toBe(false);
+    expect(results.get("desk")?.outputs[0]).not.toEqual(results.get("desk:ma")?.outputs[0]);
+    expect(results.get("main")?.outputs[0]?.panelId).toBe(indicatorPanelId("main"));
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(3);
   });
 
   it("publishes no result for an already aborted calculation", async () => {
@@ -131,7 +179,7 @@ describe("checkpointed calculation runtime", () => {
     await expect(
       runtime.calculateIndicators({
         selection,
-        configs: [{ id: "MA", params: { period: 5 }, visible: true }],
+        configs: [{ instanceId: "ma-5", id: "MA", params: { period: 5 }, visible: true }],
         targetTimes: new Set(full.candles.map((item) => item.time)),
         signal: controller.signal
       })

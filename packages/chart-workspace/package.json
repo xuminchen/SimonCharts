@@ -1,6 +1,6 @@
 {
   "name": "@simoncharts/charts",
-  "version": "1.0.0-rc.26",
+  "version": "1.0.0-rc.29",
   "private": true,
   "description": "Embeddable Advanced Charts SDK for SimonCharts partners.",
   "license": "UNLICENSED",
@@ -32,7 +32,12 @@
     "./styles.css": "./dist/styles.css"
   },
   "files": [
-    "dist",
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/createChart.d.ts",
+    "dist/contracts.d.ts",
+    "dist/errors.d.ts",
+    "dist/styles.css",
     "README.md"
   ],
   "scripts": {

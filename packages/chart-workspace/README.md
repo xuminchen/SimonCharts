@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.26.tgz
+npm install ./simoncharts-charts-1.0.0-rc.29.tgz
 ```
 
 ## Embed the default chart
@@ -57,15 +57,107 @@ chart.setIntradayDays(5);
 const unsubscribeEvents = chart.subscribeEvents((event) => {
   if (event.type === "data-loaded") {
     recordAcceptedRevision(event.dataVersion, event.phase); // initial | history
-  } else {
+  } else if (event.type === "visible-range") {
     syncHostRange(event.range);
   }
 });
 
 chart.resetToLatest();
 const visibleRange = chart.getVisibleRange();
-unsubscribeEvents();
+// On host teardown: unsubscribeEvents();
 ```
+
+## Program the chart and persist its layout
+
+The public handle controls series type, price scale, indicators, drawings, drawing tools/history, grid visibility, and host-owned marks without clicking the built-in UI. `exportLayout()` and `importLayout()` use a JSON-safe, versioned `ChartLayoutV2`; import validates the complete payload before changing chart state. V2 gives every indicator a stable `instanceId`, so multiple copies of the same definition remain independent. Wait for the current selection's initial `data-loaded` event before importing, exporting, or replacing drawings. Symbol, timeframe, adjustment, visible range, marks, executions, market data, and host business state deliberately remain outside the layout and keep their existing dedicated APIs.
+
+```ts
+import type { ChartLayoutV2, ChartMark } from "@simoncharts/charts";
+
+const layoutStorageKey = `${dataContextId}:${initialSymbol.id}:${initialAdjustMode}`;
+const savedLayout: ChartLayoutV2 = JSON.parse(await loadHostLayout(layoutStorageKey));
+const marks: readonly ChartMark[] = [
+  { id: "earnings", time: earningsCandleTime, price: earningsPrice, label: "E", color: "#a855f7" }
+];
+
+const unsubscribeEvents = chart.subscribeEvents((event) => {
+  if (event.type === "data-loaded" && event.phase === "initial") {
+    chart.importLayout(savedLayout);
+    chart.setSeriesType("candles");
+    chart.setPriceScaleMode("percentage");
+    chart.setIndicators([{
+      instanceId: "review-ma-5",
+      id: "MA",
+      params: { period: 5 },
+      visible: true
+    }]);
+    chart.setDrawings([{
+      id: "support",
+      type: "horizontalLine",
+      anchors: [{ time: supportCandleTime, price: supportPrice }]
+    }]);
+    chart.setMarks(marks);
+    chart.setDrawingTool("trendLine");
+    chart.undoDrawing();
+    void chart.exportLayout();
+  } else if (event.type === "layout-changed") {
+    void saveHostLayout(layoutStorageKey, JSON.stringify(event.layout));
+  } else if (event.type === "mark-clicked") {
+    openHostEvent(event.mark.id);
+  }
+});
+
+// On host teardown: unsubscribeEvents();
+```
+
+Because drawings are inside the portable layout, host storage must scope each saved layout by `dataContextId + symbol.id + adjustMode`; recompute that key after changing symbol or adjustment and ignore stale async loads. Intraday is always a line view, so importing a non-line layout or selecting a non-line series while intraday is active is rejected instead of partially applying.
+
+Marks attach only to an exact real candle timestamp and are replaced, not merged, by `setMarks()`. Changing the symbol clears them. A mark renders as a host-colored point and emits `mark-clicked`; marks are data annotations and are not persisted in the layout. One layout accepts at most 1,000 drawings, 10,000 anchors per drawing, 50,000 anchors and 50,000 JSON metadata nodes in total; `setMarks()` accepts at most 50,000 marks.
+
+## Manage individual chart entities
+
+Use the Entity API when one object changes; keep the collection setters for intentional batch replacement and layout restore. Entity IDs are opaque—store and pass them back unchanged.
+
+```ts
+const ma5Id = chart.createStudy({
+  id: "MA",
+  params: { period: 5 },
+  visible: true
+});
+const ma20Id = chart.createStudy({
+  id: "MA",
+  params: { period: 20 },
+  visible: true
+});
+
+chart.getStudyById(ma20Id);
+chart.getAllStudies();
+chart.removeStudy(ma5Id);
+
+const entityId = chart.createEntity({
+  kind: "drawing",
+  value: {
+    id: "review-support",
+    type: "horizontalLine",
+    anchors: [{ time: supportCandleTime, price: supportPrice }]
+  }
+});
+
+const entity = chart.getEntity(entityId);
+if (entity?.kind === "drawing") {
+  chart.updateEntity({
+    ...entity,
+    value: { ...entity.value, locked: true }
+  });
+}
+
+const drawings = chart.getEntities("drawing");
+chart.removeEntity(entityId);
+```
+
+`createStudy()` returns an opaque indicator entity ID and generates a non-reused UUID instance ID when the caller does not provide one. The generic Entity API accepts indicators too, but their `instanceId` is required because the host owns that immutable identity and must not reuse it for a different study. Missing indicator inputs are normalized to the built-in defaults before validation and persistence. Same-definition studies calculate, cache, render, hide, edit, remove, persist, and restore independently; a layout accepts at most 32 studies. rc.29 stores these V2 instances in a separate browser namespace and leaves older indicator records untouched instead of guessing an identity or deleting legacy data.
+
+`entity-created`, `entity-updated`, and `entity-removed` events carry the final defensive entity snapshot. Drawing IDs are isolated by chart, persistence scope, data context, symbol, and adjustment; mark IDs additionally follow the current symbol; indicator IDs follow the chart's persisted indicator scope. A stale or foreign ID cannot mutate the current selection.
 
 ## Show host-owned execution marks
 
@@ -185,4 +277,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.26 adds host-owned execution marks with dynamic data/visibility controls, A-share red-buy/green-sell arrows, B/S/T labels, same-candle grouping and stacking, real minute placement, containing daily/weekly/monthly placement, and read-only hover/click/touch details. It also preserves the rc.25 nominal one-day price-limit expansion behavior; multi-day auto-scaling and the real-data-only contract are unchanged. Its immutable 34-file artifact passed Engine `69 files / 1,107 tests`, Charts `14 files / 131 tests`, and Charts Chrome/Edge `42/42` per browser; SHA-256 is `44fca92c30e9ef1dc200e07c56a1e90f612cead15cd4aa10fb47cb899b72f616`.
+Current rc.29 adds independent study instances and `ChartLayoutV2` while preserving rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

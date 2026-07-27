@@ -13,6 +13,8 @@ function validParams(id: string, params: Record<string, number>): boolean {
   return true;
 }
 
+const createInstanceId = (id: string): string => `${id}-${crypto.randomUUID()}`;
+
 export interface IndicatorManager {
   readonly element: HTMLDivElement;
   bind(actions: WorkspaceUiActions): () => void;
@@ -48,11 +50,12 @@ export function createIndicatorManager(labels: ChartLabels, compact = false): In
   let actions: WorkspaceUiActions | undefined;
   let current: readonly IndicatorConfig[] = [];
   let active: CoreIndicatorDefinition | undefined;
+  let activeInstanceId: string | undefined;
 
-  const showEditor = (definition: CoreIndicatorDefinition) => {
+  const showEditor = (definition: CoreIndicatorDefinition, existing?: IndicatorConfig) => {
     active = definition;
+    activeInstanceId = existing?.instanceId;
     editor.replaceChildren();
-    const existing = current.find((config) => config.id === definition.id);
     for (const parameter of definition.params) {
       const label = document.createElement("label");
       label.textContent = `${definition.id} ${parameter.id}`;
@@ -86,20 +89,35 @@ export function createIndicatorManager(labels: ChartLabels, compact = false): In
           if (definition) showEditor(definition);
           return;
         }
+        const editInstanceId = target.closest<HTMLElement>("[data-edit-indicator]")?.dataset.editIndicator;
+        if (editInstanceId) {
+          const existing = current.find((config) => config.instanceId === editInstanceId);
+          const definition = coreIndicatorDefinitions.find((candidate) => candidate.id === existing?.id);
+          if (existing && definition) showEditor(definition, existing);
+          return;
+        }
         if (active && target.textContent === `Apply ${active.id}`) {
+          if (activeInstanceId === undefined && current.length >= 32) return;
           const params = Object.fromEntries(
             [...editor.querySelectorAll<HTMLInputElement>("input")].map((input) => [input.name, Number(input.value)])
           );
           if (!validParams(active.id, params)) return;
-          const next: IndicatorConfig = { id: active.id, params, visible: true, panelId: active.panelId };
-          actions?.setIndicators([...current.filter((config) => config.id !== active!.id), next]);
+          const next: IndicatorConfig = {
+            instanceId: activeInstanceId ?? createInstanceId(active.id),
+            id: active.id,
+            params,
+            visible: true
+          };
+          actions?.setIndicators(activeInstanceId === undefined
+            ? [...current, next]
+            : current.map((config) => config.instanceId === activeInstanceId ? next : config));
           popup.hidden = true;
           open.setAttribute("aria-expanded", "false");
         }
         const hideId = target.closest<HTMLElement>("[data-hide-indicator]")?.dataset.hideIndicator;
-        if (hideId) actions?.setIndicators(current.map((config) => config.id === hideId ? { ...config, visible: !config.visible } : config));
+        if (hideId) actions?.setIndicators(current.map((config) => config.instanceId === hideId ? { ...config, visible: !config.visible } : config));
         const removeId = target.closest<HTMLElement>("[data-remove-indicator]")?.dataset.removeIndicator;
-        if (removeId) actions?.setIndicators(current.filter((config) => config.id !== removeId));
+        if (removeId) actions?.setIndicators(current.filter((config) => config.instanceId !== removeId));
       };
       const outside = (event: PointerEvent) => {
         if (element.contains(event.target as Node)) return;
@@ -127,19 +145,24 @@ export function createIndicatorManager(labels: ChartLabels, compact = false): In
       legends.replaceChildren();
       for (const config of current) {
         const legend = document.createElement("span");
-        legend.dataset.testid = `indicator-legend-${config.id}`;
+        legend.dataset.testid = `indicator-legend-${config.instanceId}`;
         legend.dataset.visible = String(config.visible);
         legend.textContent = `${config.id} ${Object.values(config.params).join(",")}${config.visible ? "" : " (隐藏)"}`;
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.dataset.editIndicator = config.instanceId;
+        edit.setAttribute("aria-label", `Edit ${config.id}`);
+        edit.textContent = "设置";
         const hide = document.createElement("button");
         hide.type = "button";
-        hide.dataset.hideIndicator = config.id;
+        hide.dataset.hideIndicator = config.instanceId;
         hide.setAttribute("aria-label", `${config.visible ? "Hide" : "Show"} ${config.id}`);
         hide.textContent = config.visible ? "隐藏" : "显示";
         const remove = document.createElement("button");
         remove.type = "button";
-        remove.dataset.removeIndicator = config.id;
+        remove.dataset.removeIndicator = config.instanceId;
         remove.textContent = "删除";
-        legend.append(hide, remove);
+        legend.append(edit, hide, remove);
         legends.append(legend);
       }
     }

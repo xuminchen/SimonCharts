@@ -40,10 +40,11 @@ test("routes complete market controls through the workspace controller", async (
   await page.getByRole("button", { name: "Moving Average", exact: true }).click();
   await page.getByLabel("MA period").fill("20");
   await page.getByRole("button", { name: "Apply MA" }).click();
-  await expect(page.getByTestId("indicator-legend-MA")).toContainText("20");
+  const maLegend = page.locator('[data-testid^="indicator-legend-MA-"]');
+  await expect(maLegend).toContainText("20");
   await page.getByTestId("indicator-manager-open").click();
   await page.getByLabel("Hide MA").click();
-  await expect(page.getByTestId("indicator-legend-MA")).toHaveAttribute("data-visible", "false");
+  await expect(maLegend).toHaveAttribute("data-visible", "false");
   await expect(page.getByLabel("Show MA")).toBeVisible();
   await expect(page.getByTestId("drawing-undo")).toBeDisabled();
 });
@@ -164,7 +165,7 @@ test("operates every timeframe, chart, indicator, adjustment, and scale", async 
     await page.locator(`[data-indicator-id="${id}"]`).click();
     await page.getByRole("button", { name: `Apply ${id}`, exact: true }).click();
     await indicatorOpen.click();
-    const legend = page.getByTestId(`indicator-legend-${id}`);
+    const legend = page.locator(`[data-testid^="indicator-legend-${id}-"]`);
     await expect(legend).toBeVisible();
     await legend.getByRole("button", { name: "删除", exact: true }).click();
     await expect(legend).toHaveCount(0);

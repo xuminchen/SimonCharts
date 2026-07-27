@@ -7,13 +7,24 @@ import {
 } from "../index";
 import type {
   ChartDatafeed,
+  ChartDrawing,
+  ChartDrawingTool,
+  ChartEntity,
+  ChartEntityId,
+  ChartEntityInput,
+  ChartEntityKind,
   ChartError,
   ChartEvent,
   ChartExecution,
   ChartFeature,
+  ChartIndicator,
+  ChartIndicatorEntityId,
+  ChartIndicatorInput,
   ChartInstance,
   ChartIntradayScale,
+  ChartLayoutV2,
   ChartLocale,
+  ChartMark,
   ChartOptions,
   ChartStateListener,
   ChartTheme,
@@ -22,6 +33,7 @@ import type {
   SeriesPage,
   SeriesRequest
 } from "../index";
+import { parseIndicatorInput, parseLayout, toEntityId } from "../programmableApi";
 
 describe("charts public contract", () => {
   it("keeps the approved datafeed signatures", () => {
@@ -42,6 +54,34 @@ describe("charts public contract", () => {
   it("keeps the approved chart handle and options", () => {
     expectTypeOf<ChartInstance>().toHaveProperty("getState");
     expectTypeOf<ChartInstance>().toHaveProperty("getVisibleRange");
+    expectTypeOf<ChartInstance["exportLayout"]>().toEqualTypeOf<() => ChartLayoutV2>();
+    expectTypeOf<ChartInstance["importLayout"]>().toEqualTypeOf<(layout: unknown) => void>();
+    expectTypeOf<ChartInstance["setIndicators"]>()
+      .toEqualTypeOf<(indicators: readonly ChartIndicator[]) => void>();
+    expectTypeOf<ChartInstance["setDrawings"]>()
+      .toEqualTypeOf<(drawings: readonly ChartDrawing[]) => void>();
+    expectTypeOf<ChartInstance["setMarks"]>()
+      .toEqualTypeOf<(marks: readonly ChartMark[]) => void>();
+    expectTypeOf<ChartInstance["createStudy"]>()
+      .toEqualTypeOf<(indicator: ChartIndicatorInput) => ChartIndicatorEntityId>();
+    expectTypeOf<ChartInstance["getStudyById"]>()
+      .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => ChartIndicator | undefined>();
+    expectTypeOf<ChartInstance["getAllStudies"]>()
+      .toEqualTypeOf<() => readonly ChartIndicator[]>();
+    expectTypeOf<ChartInstance["removeStudy"]>()
+      .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => boolean>();
+    expectTypeOf<ChartInstance["setDrawingTool"]>()
+      .toEqualTypeOf<(tool: ChartDrawingTool) => void>();
+    expectTypeOf<ChartInstance["createEntity"]>()
+      .toEqualTypeOf<(entity: ChartEntityInput) => ChartEntityId>();
+    expectTypeOf<ChartInstance["getEntity"]>()
+      .toEqualTypeOf<(entityId: ChartEntityId) => ChartEntity | undefined>();
+    expectTypeOf<ChartInstance["getEntities"]>()
+      .toEqualTypeOf<(kind?: ChartEntityKind) => readonly ChartEntity[]>();
+    expectTypeOf<ChartInstance["updateEntity"]>()
+      .toEqualTypeOf<(entity: ChartEntity) => void>();
+    expectTypeOf<ChartInstance["removeEntity"]>()
+      .toEqualTypeOf<(entityId: ChartEntityId) => boolean>();
     expectTypeOf<ChartInstance>().toHaveProperty("setSymbol");
     expectTypeOf<ChartInstance>().toHaveProperty("setTimeframe");
     expectTypeOf<ChartInstance>().toHaveProperty("setView");
@@ -67,6 +107,7 @@ describe("charts public contract", () => {
     expectTypeOf<ChartOptions>().toHaveProperty("theme");
     expectTypeOf<ChartOptions>().toHaveProperty("locale");
     expectTypeOf<ChartOptions>().toHaveProperty("executions");
+    expectTypeOf<ChartOptions>().toHaveProperty("marks");
     expectTypeOf<ChartExecution>().toEqualTypeOf<{
       readonly id: string;
       readonly time: number;
@@ -95,6 +136,16 @@ describe("charts public contract", () => {
       .toEqualTypeOf<string>();
     expectTypeOf<Extract<ChartEvent, { type: "data-loaded" }>["phase"]>()
       .toEqualTypeOf<"initial" | "history">();
+    expectTypeOf<Extract<ChartEvent, { type: "layout-changed" }>["layout"]>()
+      .toEqualTypeOf<Readonly<ChartLayoutV2>>();
+    expectTypeOf<Extract<ChartEvent, { type: "mark-clicked" }>["mark"]>()
+      .toEqualTypeOf<Readonly<ChartMark>>();
+    expectTypeOf<Extract<ChartEvent, { type: "entity-created" }>["entity"]>()
+      .toEqualTypeOf<Readonly<ChartEntity>>();
+    expectTypeOf<Extract<ChartEvent, { type: "entity-updated" }>["entity"]>()
+      .toEqualTypeOf<Readonly<ChartEntity>>();
+    expectTypeOf<Extract<ChartEvent, { type: "entity-removed" }>["entity"]>()
+      .toEqualTypeOf<Readonly<ChartEntity>>();
     expectTypeOf<ChartError>().toHaveProperty("recoverable");
     expectTypeOf<ChartFeature>().toEqualTypeOf<
       | "symbol-search"
@@ -130,6 +181,150 @@ describe("charts public contract", () => {
     ]);
     expect(Object.isFrozen(defaultChartFeatures)).toBe(true);
     expect(Object.isFrozen(advancedChartFeatures)).toBe(true);
+  });
+
+  it("parses a JSON-safe layout as one validated defensive copy", () => {
+    const source = {
+      schemaVersion: 2,
+      seriesType: "candles",
+      priceScaleMode: "percentage",
+      indicators: [{
+        instanceId: "macd-primary",
+        id: "MACD",
+        params: { fast: 12, slow: 26, signal: 9 },
+        visible: true
+      }],
+      drawings: [{
+        id: "range",
+        type: "datePriceRange",
+        anchors: [{ time: 1, price: 10 }, { time: 2, price: 12 }],
+        metadata: { rangeLabel: "计划区间", levels: [1, 2] }
+      }],
+      gridVisible: false
+    } as const;
+
+    const layout = parseLayout(source);
+    expect(layout).toEqual(source);
+    expect(() => parseLayout({
+      ...source,
+      indicators: [{
+        instanceId: "macd-primary",
+        id: "MACD",
+        params: { fast: 30, slow: 20, signal: 9 },
+        visible: true
+      }]
+    })).toThrow("fast must be less than slow");
+    expect(() => parseLayout({ ...source, extra: true })).toThrow("unsupported fields");
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(() => parseLayout({
+      ...source,
+      drawings: [{ ...source.drawings[0], metadata: cyclic }]
+    })).toThrow("must be JSON-safe");
+    expect(() => parseLayout({
+      ...source,
+      indicators: [{
+        instanceId: "ma-5",
+        id: "MA",
+        params: new Map([["period", 5]]),
+        visible: true
+      }]
+    })).toThrow("must be a plain object");
+    expect(() => parseLayout({
+      ...source,
+      drawings: [{
+        id: "oversized-brush",
+        type: "brush",
+        anchors: Array.from({ length: 10_001 }, (_, index) => ({ time: index + 1, price: 1 }))
+      }]
+    })).toThrow("anchor count is invalid");
+    expect(() => parseLayout({
+      ...source,
+      drawings: [{
+        ...source.drawings[0],
+        metadata: { holes: Array(50_001) }
+      }]
+    })).toThrow("dense JSON-safe array");
+    const accessorLayout = { ...source };
+    Object.defineProperty(accessorLayout, "gridVisible", {
+      enumerable: true,
+      get: () => false
+    });
+    expect(() => parseLayout(accessorLayout)).toThrow("only data properties");
+    const prototypeKey = parseLayout({
+      ...source,
+      drawings: [{
+        ...source.drawings[0],
+        metadata: JSON.parse('{"__proto__":{"safe":true}}')
+      }]
+    }).drawings[0]?.metadata;
+    expect(Object.hasOwn(prototypeKey ?? {}, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(prototypeKey)).toBe(Object.prototype);
+  });
+
+  it("keeps same-type study instances independent", () => {
+    const source = {
+      schemaVersion: 2,
+      seriesType: "candles",
+      priceScaleMode: "linear",
+      indicators: [
+        { instanceId: "ma-5", id: "MA", params: { period: 5 }, visible: true },
+        { instanceId: "ma-20", id: "MA", params: { period: 20 }, visible: true }
+      ],
+      drawings: [],
+      gridVisible: true
+    } as const;
+
+    expect(parseLayout(source).indicators).toEqual(source.indicators);
+    expect(() => parseLayout({
+      ...source,
+      indicators: source.indicators.map((indicator) => ({
+        ...indicator,
+        instanceId: "ma-duplicate"
+      }))
+    })).toThrow("instance ma-duplicate is duplicated");
+    expect(parseIndicatorInput({
+      id: "MACD",
+      params: { fast: 12 },
+      visible: true
+    })).toEqual({
+      id: "MACD",
+      params: { fast: 12, slow: 26, signal: 9 },
+      visible: true
+    });
+    expect(() => parseIndicatorInput({
+      id: "MACD",
+      params: { fast: 30 },
+      visible: true
+    })).toThrow("fast must be less than slow");
+  });
+
+  it("scopes opaque entity ids to their owning chart data context", () => {
+    const state = {
+      symbol: { id: "stock:SSE:600000", code: "600000", name: "浦发银行", exchange: "SSE", kind: "stock" },
+      timeframe: "1d",
+      view: "timeframe",
+      intradayDays: 1,
+      adjustMode: "forward",
+      loading: false
+    } as const;
+    const drawing = {
+      kind: "drawing",
+      value: {
+        id: "support",
+        type: "horizontalLine",
+        anchors: [{ time: 1, price: 10 }]
+      }
+    } as const;
+    const first = toEntityId(drawing, state, ["chart-a", "user-a", "snapshot-a"]);
+    const otherOwner = toEntityId(drawing, state, ["chart-b", "user-b", "snapshot-b"]);
+    const otherAdjustment = toEntityId(
+      drawing,
+      { ...state, adjustMode: "backward" },
+      ["chart-a", "user-a", "snapshot-a"]
+    );
+
+    expect(new Set([first, otherOwner, otherAdjustment]).size).toBe(3);
   });
 
   it("copies and freezes safe error context", () => {

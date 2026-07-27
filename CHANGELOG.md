@@ -1,5 +1,27 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.29 - 2026-07-26
+
+- Added stable study instances and `createStudy()`, `getStudyById()`, `getAllStudies()`, and `removeStudy()` APIs so multiple copies of one indicator definition can coexist.
+- Upgraded portable layouts to `ChartLayoutV2`; every indicator now has a required `instanceId`, while legacy indicator records remain untouched in their prior namespace.
+- Isolated calculation checkpoints, output IDs, panels, UI actions, and data-window rows by study instance, with regression coverage for simultaneous MA5 and MA20.
+- Normalized omitted inputs before validation, generated non-reused UUID instance IDs, and moved V2 indicators to a separate browser namespace that leaves legacy records untouched.
+- Closed adversarial parser and lifecycle gaps for 32-study writes, reserved panel/output names, sparse arrays, accessor-backed payloads, and reentrant state/layout notifications.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,115 tests`, combined Chrome `100/100`, Charts `14 files / 139 tests`, Charts Chrome/Edge `49/49` per browser, TypeScript, public API, artifact, and external JavaScript/TypeScript consumer gates; SHA-256 is `b5efabbfa50242ccadd73911e3eccd8626583c9553a1806d005c6d484bf27097`, SHA-512 is `c8c1c57e6deb48c05cf7c18a361ebb98a5a826a228ebd4d74ab1cac8e3db8f75443daa0dff9e9ef675847731368a19fd28de62b64e9fdddf70d029b24f4cf35e`.
+
+## @simoncharts/charts 1.0.0-rc.28 - 2026-07-26
+
+- Added an opaque, scope-safe Entity API for incrementally creating, reading, listing, updating, and removing indicators, drawings, and host marks without replacing whole collections.
+- Added exact `entity-created`, `entity-updated`, and `entity-removed` events for API, built-in UI, undo/redo, selection changes, and atomic layout imports, including deterministic reentrant dispatch.
+- Rejected duplicate or invalid persisted indicator/drawing entities at the storage boundary instead of allowing ambiguous runtime state.
+
+## @simoncharts/charts 1.0.0-rc.27 - 2026-07-25
+
+- Added a public programmable `ChartInstance` contract for series type, price scale, indicators, drawings, drawing tools/history, grid visibility, and host-owned generic marks.
+- Added JSON-safe `ChartLayoutV1` export/import with full-payload validation, defensive copies, a ready-state boundary, and one `layout-changed` event per accepted change.
+- Added `mark-clicked` events and external packed-consumer plus Chrome/Edge layout round-trip coverage; market data, executions, marks, symbol selection, and visible range remain outside persisted layouts.
+- Accepted the exact 8-file immutable artifact after Engine `69 files / 1,109 tests` and Chrome `95/95`, Charts `14 files / 133 tests`, Charts Chrome/Edge `44/44` per browser, TypeScript, public API, artifact, and external JavaScript/TypeScript consumer gates; SHA-256 is `2b7f186f6abd2b20d8ae7011f6bfe86e6a8d8c16ff9039584a1e15bde6b7404f`, SHA-512 is `6d317d6885f491f01be0e42f102c7b2b0a2aad82d3400121757a9720cc8d9ad80741934ddeac04e0689da3849945f77431f58f0ecac028963bdbd08aa06ba58d`.
+
 ## @simoncharts/charts 1.0.0-rc.26 - 2026-07-22
 
 - Added opt-in, read-only host-owned execution marks with A-share red-buy/green-sell arrows, B/S/T labels, real-timeframe placement, same-candle grouping and stacking, and complete hover/click/touch details without constructing trades or inferring T classifications.

@@ -39,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, dirtyLayerCount: 0, lastInvalidationReasons: [], slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, dirtyLayerCount: 0, lastInvalidationReasons: [], slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -71,6 +71,46 @@ describe("chart workspace controller", () => {
     controller.setSymbol(index);
 
     expect(deps.runtime.setExecutions).toHaveBeenCalledWith([]);
+    expect(deps.runtime.setMarks).toHaveBeenCalledWith([]);
+    expect(controller.getViewModel().marks).toEqual([]);
+  });
+
+  it("replaces programmable drawings and marks through the single controller state", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    const drawings: DrawingObject[] = [
+      { id: "d1", type: "trendLine", anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }] }
+    ];
+    const marks = [{ id: "m1", time: 2, price: 11, label: "Event" }];
+
+    controller.setDrawings(drawings);
+    controller.setMarks(marks);
+    drawings[0]!.anchors[0]!.price = 999;
+
+    expect(controller.getViewModel()).toMatchObject({
+      drawings: [{ id: "d1", anchors: [{ price: 10 }, { price: 11 }] }],
+      marks
+    });
+    expect(deps.runtime.setDrawings).toHaveBeenLastCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: "d1" })])
+    );
+    expect(deps.runtime.setMarks).toHaveBeenLastCalledWith(marks);
+    expect(deps.persistence.saveDrawings).toHaveBeenCalledWith(stock, "forward", expect.any(Array));
+  });
+
+  it("rejects invalid indicator batches at the controller write boundary", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    const indicators = Array.from({ length: 33 }, (_, index) => ({
+      instanceId: `ma-${index}`,
+      id: "MA" as const,
+      params: { period: index + 1 },
+      visible: true
+    }));
+
+    expect(() => controller.setIndicators(indicators)).toThrow("at most 32");
+    expect(controller.getViewModel().indicators).toEqual([]);
+    expect(deps.persistence.saveIndicators).not.toHaveBeenCalled();
   });
 
   it("does not load or save drawings when every drawing surface is disabled", async () => {
@@ -376,7 +416,13 @@ describe("chart workspace controller", () => {
     expect(controller.getViewModel().status.type).toBe("readyWithWarning");
     controller.handleSearchEvent({ type: "searchFailed", query: "x", code: "SYMBOL_SEARCH_FAILED", error: new Error("bad") });
     expect(controller.getViewModel().status.type).toBe("readyWithWarning");
-    controller.handleStorageError({ code: "STORAGE_WRITE_FAILED", scope: "storage", recoverable: true, message: "storage" });
+    deps.onError.mockImplementationOnce(() => { throw new Error("host callback"); });
+    expect(() => controller.handleStorageError({
+      code: "STORAGE_WRITE_FAILED",
+      scope: "storage",
+      recoverable: true,
+      message: "storage"
+    })).not.toThrow();
     expect(controller.getViewModel().status.type).toBe("readyWithWarning");
     const before = controller.getViewModel();
     controller.handleDataEvent({ type: "initialRequestFailed", error: new DOMException("aborted", "AbortError") });

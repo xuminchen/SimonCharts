@@ -59,11 +59,15 @@ import {
   type VisualTooltipRow,
   type ViewportState
 } from "@simoncharts/chart-engine";
-import type { Candle, ChartExecution, ChartVisibleRange } from "../contracts";
+import type { Candle, ChartExecution, ChartMark, ChartVisibleRange } from "../contracts";
 import type { MaterializedSeries } from "../data/materializedSeries";
 import { shanghaiTradingDayKey } from "../data/pagedSeriesStore";
 import type { CalculationStatus, CheckpointedCalculationRuntime } from "./checkpointedCalculationRuntime";
-import type { IndicatorConfig } from "./indicatorRuntime";
+import {
+  indicatorOutputPrefix,
+  indicatorPanelId,
+  type IndicatorConfig
+} from "./indicatorRuntime";
 import {
   calculateFixedIntradayPercentExtent,
   calculateIntradayAverage,
@@ -120,6 +124,7 @@ export interface ChartEngineRuntime {
   resetToLatest(): void;
   setSeriesType(type: SeriesType): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
+  setMarks(marks: readonly ChartMark[]): void;
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
   setPriceScaleMode(mode: PriceScaleMode): void;
@@ -152,6 +157,7 @@ export interface ChartEngineRuntimeOptions {
   onCalculationStatusChanged?: (status: CalculationStatus) => void;
   onDataWindowChanged?: (snapshot: DataWindowSnapshot | undefined) => void;
   onExecutionTooltipChanged?: (snapshot: ExecutionTooltipSnapshot | undefined) => void;
+  onMarkClicked?: (mark: Readonly<ChartMark>) => void;
   onDrawingsChanged?: (drawings: readonly DrawingObject[], selectedDrawingIds: readonly string[]) => void;
   onDrawingHistoryChanged?: (state: { canUndo: boolean; canRedo: boolean }) => void;
   onRenderError?: (error: unknown) => void;
@@ -200,6 +206,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let viewport = createInitialViewport(0, 1);
   let layout = createChartLayout(1, 1);
   let visualOutputs: IndicatorVisualOutput[] = [];
+  let markOutput: IndicatorMarkerOutput | undefined;
+  let marks: readonly ChartMark[] = [];
   let executionOutput: IndicatorMarkerOutput | undefined;
   let executions: readonly ChartExecution[] = [];
   let executionsVisible = true;
@@ -254,9 +262,11 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let drawingEditor: DrawingEditor;
 
   const intradayLocked = (): boolean => materialized?.intradayDays !== undefined;
-  const activeVisualOutputs = (): IndicatorVisualOutput[] => executionOutput === undefined
-    ? visualOutputs
-    : [...visualOutputs, executionOutput];
+  const activeVisualOutputs = (): IndicatorVisualOutput[] => [
+    ...visualOutputs,
+    ...(markOutput === undefined ? [] : [markOutput]),
+    ...(executionOutput === undefined ? [] : [executionOutput])
+  ];
 
   const syncVisualOutputs = (): void => {
     chartEngine.setVisualOutputs(activeVisualOutputs());
@@ -266,6 +276,21 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     executionOutput = materialized === undefined || !executionsVisible
       ? undefined
       : createExecutionMarkerOutput(executions, materialized.series.candles, materialized.series.timeframe);
+    syncVisualOutputs();
+  };
+
+  const rebuildMarkOutput = (): void => {
+    const candleTimes = new Set(materialized?.series.candles.map((candle) => candle.time) ?? []);
+    const visibleMarks = marks.filter((mark) => candleTimes.has(mark.time));
+    markOutput = visibleMarks.length === 0
+      ? undefined
+      : {
+          id: "__host-marks",
+          label: "Marks",
+          type: "marker",
+          panelId: "main",
+          marks: visibleMarks.map((mark) => ({ ...mark }))
+        };
     syncVisualOutputs();
   };
 
@@ -522,12 +547,18 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const indicatorRows = indicatorConfigs
       .filter((config) => config.visible)
       .map((config) => {
-        const output = visualOutputs.find((candidate) => candidate.id === config.id);
+        const output = visualOutputs.find(
+          (candidate) => candidate.id.startsWith(indicatorOutputPrefix(config.instanceId))
+        );
         let value: number | null | undefined;
         if (output?.type === "line") value = output.values.find((point) => point.time === candle.time)?.value;
         else if (output?.type === "histogram") value = output.values.find((point) => point.time === candle.time)?.value;
         else if (output?.type === "band") value = output.upper.find((point) => point.time === candle.time)?.value;
-        return { id: config.id, label: config.id, value: typeof value === "number" ? String(value) : "--" };
+        return {
+          id: config.instanceId,
+          label: `${config.id} ${Object.values(config.params).join(",")}`,
+          value: typeof value === "number" ? String(value) : "--"
+        };
       });
     options.onDataWindowChanged?.({
       crosshair: snapshotCrosshair,
@@ -606,15 +637,22 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         bottomAxisHeight: layout.bottomAxisHeight,
         panels: [
           { id: "main", kind: "main", label: "Main", heightRatio: 3 },
-          ...subPanelIds.map((id) => ({ id, kind: "sub" as const, label: id, heightRatio: 1 }))
+          ...subPanelIds.map((id) => ({
+            id,
+            kind: "sub" as const,
+            label: indicatorConfigs.find(
+              (config) => indicatorPanelId(config.instanceId) === id
+            )?.id ?? id,
+            heightRatio: 1
+          }))
         ]
       }).map((panel) => panel.id === "main"
         ? { ...panel, plotArea: { ...layout.plotArea }, priceAxisArea: { ...layout.priceAxisArea } }
         : panel);
   }
 
-  function executionMarkAt(point: { x: number; y: number }) {
-    if (executionOutput === undefined) return undefined;
+  function markerAt(output: IndicatorMarkerOutput | undefined, point: { x: number; y: number }) {
+    if (output === undefined) return undefined;
     const state = chartEngine.getState();
     const theme = readWorkspaceChartTheme(options.themeRoot, options.getComputedStyle?.(options.themeRoot));
     const panels = createPanels();
@@ -622,7 +660,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     if (!panel) return undefined;
     const renderer = visualRegistry.require("marker");
     const hit = renderer.hitTest({
-      output: executionOutput,
+      output,
       panel,
       state: {
         series: state.series,
@@ -636,15 +674,15 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         ...(timeCoordinates === undefined ? {} : { timeCoordinates })
       },
       valueScale: priceScale,
-      valueRange: renderer.getAutoscale(executionOutput)
+      valueRange: renderer.getAutoscale(output)
     }, point.x, point.y);
     return hit?.distance !== undefined && hit.distance <= 14
-      ? executionOutput.marks.find((mark) => mark.id === hit.itemId)
+      ? output.marks.find((mark) => mark.id === hit.itemId)
       : undefined;
   }
 
   function updateExecutionTooltip(point: { x: number; y: number }, pinned = false): boolean {
-    const mark = executionMarkAt(point);
+    const mark = markerAt(executionOutput, point);
     if (!mark) {
       if (!executionTooltipPinned) clearExecutionTooltip();
       return false;
@@ -929,6 +967,17 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const p = point(event);
     options.overlayCanvas.focus?.({ preventScroll: true });
     if (updateExecutionTooltip(p, true)) return;
+    const mark = markerAt(markOutput, p);
+    if (mark) {
+      options.onMarkClicked?.({
+        id: mark.id,
+        time: mark.time,
+        price: mark.price!,
+        ...(mark.label === undefined ? {} : { label: mark.label }),
+        ...(mark.color === undefined ? {} : { color: mark.color })
+      });
+      return;
+    }
     clearExecutionTooltip();
     if (intradayLocked() && (p.x >= layout.priceAxisArea.x || p.y >= layout.timeAxisArea.y)) {
       return;
@@ -1086,11 +1135,18 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
 
   async function calculateIndicators(configs: readonly IndicatorConfig[], generation: number): Promise<void> {
     if (!materialized) return;
-    options.onCalculationStatusChanged?.({ type: "calculating", kind: "indicator", id: configs[0]?.id ?? "indicators", generation });
+    options.onCalculationStatusChanged?.({
+      type: "calculating",
+      kind: "indicator",
+      id: configs[0]?.instanceId ?? "indicators",
+      generation
+    });
     try {
       const results = await options.calculationRuntime.calculateIndicators({ selection: materialized.selection, configs, targetTimes: new Set(materialized.series.candles.map((candle) => candle.time)), generation });
       if (destroyed || generation !== indicatorGeneration) return;
-      visualOutputs = [...results.values()].flatMap((result) => result.outputs);
+      visualOutputs = configs.flatMap((config) =>
+        config.visible ? results.get(config.instanceId)?.outputs ?? [] : []
+      );
       syncVisualOutputs();
       updatePriceScale();
       lastDataWindowIndex = undefined;
@@ -1137,6 +1193,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       maxMaterializedCandleCount = Math.max(maxMaterializedCandleCount, input.series.candles.length);
       chartEngine.setSeries(input.series);
       clearExecutionTooltip();
+      rebuildMarkOutput();
       rebuildExecutionOutput();
       const nextAnchorIndex = anchorTime === undefined
         ? -1
@@ -1245,6 +1302,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       });
     },
     setIndicators(configs) { if (destroyed) return; indicatorConfigs = configs.map((config) => structuredClone(config)); indicatorGeneration += 1; void calculateIndicators(indicatorConfigs, indicatorGeneration); },
+    setMarks(nextMarks) { if (destroyed) return; marks = nextMarks.map((mark) => ({ ...mark })); rebuildMarkOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals"], reason: "marksChanged" }); },
     setExecutions(nextExecutions) { if (destroyed) return; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals", "tooltip"], reason: "executionsChanged" }); },
     setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); scheduler.invalidate({ layers: ["axis", "visuals", "tooltip"], reason: "executionVisibilityChanged" }); },
     setPriceScaleMode(mode) { if (destroyed) return; manualPriceScale = undefined; viewport = { ...viewport, priceScaleMode: mode }; chartEngine.dispatch({ type: "setPriceScaleMode", mode }); rebuildInteraction(); scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"], reason: "priceScaleChanged" }); },

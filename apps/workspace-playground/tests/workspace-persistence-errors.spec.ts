@@ -49,7 +49,7 @@ test("restores UI preferences without persisting market data or search results",
   await page.reload();
   await expect(page.getByTestId("series-type-select")).toHaveAttribute("data-value", "area");
   await expect(page.getByTestId("price-scale-select")).toHaveValue("percentage");
-  await expect(page.getByTestId("indicator-legend-MA")).toHaveAttribute("data-visible", "true");
+  await expect(page.locator('[data-testid^="indicator-legend-MA-"]')).toHaveAttribute("data-visible", "true");
   await expect(page.getByRole("tab", { name: "数据窗口", exact: true })).toHaveAttribute("aria-selected", "true");
 });
 

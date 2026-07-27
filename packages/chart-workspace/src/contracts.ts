@@ -90,6 +90,182 @@ export type ChartFeature =
 export type ChartTheme = "dark" | "light";
 export type ChartLocale = "zh-CN" | "en-US";
 export type ChartView = "intraday" | "timeframe";
+export type ChartSeriesType =
+  | "bars"
+  | "candles"
+  | "hollowCandles"
+  | "volumeCandles"
+  | "line"
+  | "lineWithMarkers"
+  | "stepLine"
+  | "area"
+  | "hlcArea"
+  | "baseline"
+  | "columns"
+  | "highLow"
+  | "heikinAshi"
+  | "renko"
+  | "lineBreak"
+  | "kagi"
+  | "pointAndFigure";
+export type ChartPriceScaleMode = "linear" | "log" | "percentage";
+export type ChartIndicatorId =
+  | "MA"
+  | "EMA"
+  | "SMA"
+  | "VOL"
+  | "MACD"
+  | "BOLL"
+  | "KDJ"
+  | "RSI"
+  | "BIAS"
+  | "CCI"
+  | "DMI"
+  | "OBV"
+  | "VR"
+  | "WR"
+  | "MTM"
+  | "SAR";
+
+export interface ChartIndicator {
+  readonly instanceId: string;
+  readonly id: ChartIndicatorId;
+  readonly params: Readonly<Record<string, number>>;
+  readonly visible: boolean;
+}
+
+export interface ChartIndicatorInput {
+  readonly instanceId?: string;
+  readonly id: ChartIndicatorId;
+  readonly params: Readonly<Record<string, number>>;
+  readonly visible: boolean;
+}
+
+export type ChartDrawingType =
+  | "trendLine"
+  | "ray"
+  | "extendedLine"
+  | "horizontalLine"
+  | "verticalLine"
+  | "crossLine"
+  | "segment"
+  | "straightLine"
+  | "rayLine"
+  | "horizontalRayLine"
+  | "horizontalSegment"
+  | "horizontalStraightLine"
+  | "verticalRayLine"
+  | "verticalSegment"
+  | "verticalStraightLine"
+  | "priceLine"
+  | "parallelChannel"
+  | "regressionChannel"
+  | "priceChannelLine"
+  | "fibonacciRetracement"
+  | "fibonacciExtension"
+  | "fibTrendBasedExtension"
+  | "fibTimeZone"
+  | "fibFan"
+  | "fibArc"
+  | "fibChannel"
+  | "fibWedge"
+  | "text"
+  | "callout"
+  | "simpleAnnotation"
+  | "simpleTag"
+  | "rectangle"
+  | "rotatedRectangle"
+  | "circle"
+  | "ellipse"
+  | "polygon"
+  | "triangle"
+  | "arc"
+  | "curve"
+  | "path"
+  | "brush"
+  | "arrow"
+  | "longPosition"
+  | "shortPosition"
+  | "profitLossRange"
+  | "datePriceRange"
+  | "dateRange"
+  | "priceRange"
+  | "measure"
+  | "trendAngle"
+  | "gannFan"
+  | "gannBox"
+  | "gannSquare"
+  | "pitchfork"
+  | "schiffPitchfork"
+  | "modifiedSchiffPitchfork"
+  | "insidePitchfork"
+  | "elliottImpulseWave"
+  | "elliottCorrectionWave"
+  | "xabcdPattern"
+  | "cypherPattern"
+  | "headAndShouldersPattern"
+  | "forecastPath";
+
+export type ChartDrawingTool = ChartDrawingType | "select";
+
+export interface ChartDrawingAnchor {
+  readonly time: number;
+  readonly price: number;
+}
+
+export interface ChartDrawingStyle {
+  readonly color?: string;
+  readonly lineWidth?: number;
+  readonly lineDash?: readonly number[];
+  readonly fill?: string;
+  readonly textColor?: string;
+  readonly fontSize?: number;
+}
+
+export interface ChartDrawing {
+  readonly id: string;
+  readonly type: ChartDrawingType;
+  readonly anchors: readonly ChartDrawingAnchor[];
+  readonly style?: ChartDrawingStyle;
+  readonly text?: string;
+  readonly visible?: boolean;
+  readonly locked?: boolean;
+  readonly zIndex?: number;
+  readonly metadata?: Readonly<Record<string, ChartJsonValue>>;
+}
+
+export type ChartJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly ChartJsonValue[]
+  | { readonly [key: string]: ChartJsonValue };
+
+export interface ChartMark {
+  readonly id: string;
+  readonly time: number;
+  readonly price: number;
+  readonly label?: string;
+  readonly color?: string;
+}
+
+export type ChartEntityKind = "indicator" | "drawing" | "mark";
+export type ChartIndicatorEntityId = `indicator:${string}`;
+export type ChartEntityId =
+  | ChartIndicatorEntityId
+  | `drawing:${string}`
+  | `mark:${string}`;
+
+export type ChartEntityInput =
+  | { readonly kind: "indicator"; readonly value: ChartIndicator }
+  | { readonly kind: "drawing"; readonly value: ChartDrawing }
+  | { readonly kind: "mark"; readonly value: ChartMark };
+
+export type ChartEntity =
+  | { readonly id: ChartEntityId; readonly kind: "indicator"; readonly value: ChartIndicator }
+  | { readonly id: ChartEntityId; readonly kind: "drawing"; readonly value: ChartDrawing }
+  | { readonly id: ChartEntityId; readonly kind: "mark"; readonly value: ChartMark };
 
 export const defaultChartFeatures: readonly ChartFeature[] = Object.freeze([
   "timeframes",
@@ -123,6 +299,7 @@ export interface ChartOptions {
   theme?: ChartTheme;
   locale?: ChartLocale;
   executions?: readonly ChartExecution[];
+  marks?: readonly ChartMark[];
   onError?: (error: ChartError) => void;
 }
 
@@ -143,6 +320,17 @@ export interface ChartVisibleRange {
   readonly to: number;
 }
 
+export interface ChartLayoutV2 {
+  readonly schemaVersion: 2;
+  readonly seriesType: ChartSeriesType;
+  readonly priceScaleMode: ChartPriceScaleMode;
+  readonly indicators: readonly ChartIndicator[];
+  readonly drawings: readonly ChartDrawing[];
+  readonly gridVisible: boolean;
+}
+
+export type ChartLayout = ChartLayoutV2;
+
 export type ChartEvent =
   | {
       readonly type: "data-loaded";
@@ -150,18 +338,48 @@ export type ChartEvent =
       readonly dataVersion: string;
       readonly phase: "initial" | "history";
     }
-  | { readonly type: "visible-range"; readonly range: Readonly<ChartVisibleRange> };
+  | { readonly type: "visible-range"; readonly range: Readonly<ChartVisibleRange> }
+  | { readonly type: "layout-changed"; readonly layout: Readonly<ChartLayoutV2> }
+  | { readonly type: "mark-clicked"; readonly mark: Readonly<ChartMark> }
+  | { readonly type: "entity-created"; readonly entity: Readonly<ChartEntity> }
+  | { readonly type: "entity-updated"; readonly entity: Readonly<ChartEntity> }
+  | { readonly type: "entity-removed"; readonly entity: Readonly<ChartEntity> };
 
 export type ChartEventListener = (event: Readonly<ChartEvent>) => void;
 
 export interface ChartInstance {
   getState(): Readonly<ChartState>;
   getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
+  getSeriesType(): ChartSeriesType;
+  getPriceScaleMode(): ChartPriceScaleMode;
+  getIndicators(): readonly ChartIndicator[];
+  getDrawings(): readonly ChartDrawing[];
+  getMarks(): readonly ChartMark[];
+  createStudy(indicator: ChartIndicatorInput): ChartIndicatorEntityId;
+  getStudyById(entityId: ChartIndicatorEntityId): ChartIndicator | undefined;
+  getAllStudies(): readonly ChartIndicator[];
+  removeStudy(entityId: ChartIndicatorEntityId): boolean;
+  createEntity(entity: ChartEntityInput): ChartEntityId;
+  getEntity(entityId: ChartEntityId): ChartEntity | undefined;
+  getEntities(kind?: ChartEntityKind): readonly ChartEntity[];
+  updateEntity(entity: ChartEntity): void;
+  removeEntity(entityId: ChartEntityId): boolean;
+  exportLayout(): ChartLayoutV2;
   setSymbol(symbol: ChartSymbol): void;
   setTimeframe(timeframe: Timeframe): void;
   setView(view: ChartView): void;
   setIntradayDays(days: IntradayDayCount): void;
   setAdjustMode(adjustMode: AdjustMode): void;
+  setSeriesType(type: ChartSeriesType): void;
+  setPriceScaleMode(mode: ChartPriceScaleMode): void;
+  setIndicators(indicators: readonly ChartIndicator[]): void;
+  setDrawings(drawings: readonly ChartDrawing[]): void;
+  setMarks(marks: readonly ChartMark[]): void;
+  setDrawingTool(tool: ChartDrawingTool): void;
+  setGridVisible(visible: boolean): void;
+  undoDrawing(): void;
+  redoDrawing(): void;
+  importLayout(layout: unknown): void;
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
   setVisibleRange(range: ChartVisibleRange): void;
