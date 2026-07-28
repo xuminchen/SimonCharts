@@ -12,10 +12,17 @@ import {
   type StatefulSeriesTransformType
 } from "@simoncharts/chart-engine";
 import type {
+  CalculationCheckpoint,
   CalculationCheckpointKey,
   CalculationCheckpointStore
 } from "../data/calculationCheckpointStore";
 import type { PagedSeriesStore, SeriesSelection } from "../data/pagedSeriesStore";
+import type { ChartCustomStudyId, ChartIndicatorId } from "../contracts";
+import {
+  calculateCustomStudyChunk,
+  studyDefinitionKey,
+  type StudyDefinitionCatalog
+} from "../programmableApi";
 import {
   indicatorOutputId,
   indicatorPanelId,
@@ -47,6 +54,7 @@ export interface CheckpointedCalculationRuntime {
 export interface CheckpointedCalculationRuntimeOptions {
   readonly store: PagedSeriesStore;
   readonly checkpointStore: CalculationCheckpointStore;
+  readonly studyDefinitions?: StudyDefinitionCatalog;
   readonly reloadPage: (requestCursor?: string) => Promise<void>;
   readonly isGenerationCurrent?: (generation: number) => boolean;
   readonly onStatusChanged?: (status: CalculationStatus) => void;
@@ -122,7 +130,10 @@ function scopeIndicatorResult(
     ...(output.panelId === undefined || output.panelId === "main"
       ? {}
       : { panelId: indicatorPanelId(config.instanceId) }),
-    ...(duplicateIndex !== undefined && result.outputs.length === 1 && output.type === "line"
+    ...(config.definitionVersion === undefined &&
+      duplicateIndex !== undefined &&
+      result.outputs.length === 1 &&
+      output.type === "line"
       ? { color: duplicateIndicatorColors[duplicateIndex % duplicateIndicatorColors.length] }
       : {})
   });
@@ -141,7 +152,13 @@ function scopeIndicatorResult(
 }
 
 function indicatorParamsHash(config: IndicatorConfig): string {
-  return canonicalJson({ id: config.id, params: config.params });
+  return canonicalJson({
+    id: config.id,
+    ...("definitionVersion" in config
+      ? { definitionVersion: config.definitionVersion }
+      : {}),
+    params: config.params
+  });
 }
 
 export function createCheckpointedCalculationRuntime(
@@ -207,7 +224,7 @@ export function createCheckpointedCalculationRuntime(
       try {
       const cursors = chronologicalCursors();
       const results = new Map<string, IndicatorResult>();
-      const checkpoints = new Map<string, CoreIndicatorCheckpoint>();
+      const checkpoints = new Map<string, CalculationCheckpoint>();
       const dataVersion = options.store.getSnapshot().dataVersion ?? "";
       const metadata = options.store.listDescriptors().slice().reverse();
       const targetMin = Math.min(...input.targetTimes);
@@ -230,9 +247,16 @@ export function createCheckpointedCalculationRuntime(
             )
           )
         );
-        if (restored.every((checkpoint) => checkpoint?.kind === "coreIndicator")) {
+        if (restored.every((checkpoint, index) => {
+          const config = input.configs[index]!;
+          return config.definitionVersion === undefined
+            ? checkpoint?.kind === "coreIndicator"
+            : checkpoint?.kind === "customStudy" &&
+                checkpoint.id === config.id &&
+                checkpoint.definitionVersion === config.definitionVersion;
+        })) {
           restored.forEach((checkpoint, index) =>
-            checkpoints.set(input.configs[index].instanceId, checkpoint as CoreIndicatorCheckpoint)
+            checkpoints.set(input.configs[index].instanceId, checkpoint!)
           );
           startIndex = targetIndex;
         }
@@ -242,13 +266,30 @@ export function createCheckpointedCalculationRuntime(
         assertCurrent(generation, input.signal);
         const chunk = chunkFor(input.selection, dataVersion, descriptor.candles!);
         for (const config of input.configs) {
-          const calculated = calculateCoreIndicatorChunk(
-            config.id,
-            chunk,
-            config.params,
-            checkpoints.get(config.instanceId),
-            { finalize: pageIndex === cursors.length - 1 }
-          );
+          const currentCheckpoint = checkpoints.get(config.instanceId);
+          const calculated = config.definitionVersion === undefined
+            ? calculateCoreIndicatorChunk(
+                config.id as ChartIndicatorId,
+                chunk,
+                config.params,
+                checkpoints.get(config.instanceId) as CoreIndicatorCheckpoint | undefined,
+                { finalize: pageIndex === cursors.length - 1 }
+              )
+            : calculateCustomStudyChunk({
+                definition: options.studyDefinitions?.get(
+                  studyDefinitionKey(config.id as ChartCustomStudyId, config.definitionVersion)
+                ) ?? (() => {
+                  throw new TypeError(`Chart indicator ${config.id} is unsupported`);
+                })(),
+                selection: input.selection,
+                dataVersion,
+                params: config.params,
+                chunk,
+                checkpoint: currentCheckpoint?.kind === "customStudy"
+                  ? currentCheckpoint
+                  : undefined
+              });
+          assertCurrent(generation, input.signal);
           checkpoints.set(config.instanceId, calculated.checkpoint);
           const filtered = filterResult(calculated.result, input.targetTimes);
           results.set(
@@ -273,7 +314,10 @@ export function createCheckpointedCalculationRuntime(
         const result = results.get(config.instanceId);
         if (result === undefined) return [];
         // ponytail: O(n²) is bounded by 32 studies; index by definition only if that cap grows.
-        const siblings = input.configs.filter((candidate) => candidate.id === config.id);
+        const siblings = input.configs.filter((candidate) =>
+          candidate.id === config.id &&
+          candidate.definitionVersion === config.definitionVersion
+        );
         return [[
           config.instanceId,
           scopeIndicatorResult(

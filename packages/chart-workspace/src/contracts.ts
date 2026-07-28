@@ -129,18 +129,114 @@ export type ChartIndicatorId =
   | "MTM"
   | "SAR";
 
+export type ChartCustomStudyId = `custom:${string}`;
+export type ChartStudyDefinitionId = ChartIndicatorId | ChartCustomStudyId;
+
+export interface ChartCustomStudyInputDefinition {
+  readonly id: string;
+  readonly title: string;
+  readonly defaultValue: number;
+  readonly minValue?: number;
+  readonly maxValue?: number;
+  readonly integer?: boolean;
+}
+
+export type ChartCustomStudyOutputDefinition =
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "line";
+      readonly color?: string;
+      readonly lineWidth?: number;
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "histogram";
+      readonly color?: string;
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "band";
+      readonly fill?: string;
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "marker";
+      readonly color?: string;
+    };
+
+export interface ChartCustomStudyCalculationInput {
+  readonly symbol: Readonly<ChartSymbol>;
+  readonly timeframe: Timeframe;
+  readonly adjustMode: AdjustMode;
+  readonly dataVersion: string;
+  readonly inputs: Readonly<Record<string, number>>;
+  readonly candles: readonly Readonly<Candle>[];
+  readonly processedCount: number;
+  readonly previousState?: ChartJsonValue;
+}
+
+export type ChartCustomStudyOutputValues =
+  | readonly (number | null)[]
+  | {
+      readonly upper: readonly (number | null)[];
+      readonly lower: readonly (number | null)[];
+    };
+
+export interface ChartCustomStudyCalculationResult {
+  readonly outputs: Readonly<Record<string, ChartCustomStudyOutputValues>>;
+  readonly state?: ChartJsonValue;
+}
+
+export interface ChartCustomStudyDefinition {
+  readonly id: ChartCustomStudyId;
+  readonly version: string;
+  readonly title: string;
+  readonly pane: "main" | "separate";
+  readonly inputs: readonly ChartCustomStudyInputDefinition[];
+  readonly outputs: readonly ChartCustomStudyOutputDefinition[];
+  readonly calculate: (
+    input: Readonly<ChartCustomStudyCalculationInput>
+  ) => ChartCustomStudyCalculationResult;
+}
+
 export interface ChartIndicator {
   readonly instanceId: string;
-  readonly id: ChartIndicatorId;
+  readonly id: ChartStudyDefinitionId;
+  readonly definitionVersion?: string;
   readonly params: Readonly<Record<string, number>>;
   readonly visible: boolean;
 }
 
+export interface ChartBuiltInStudy extends ChartIndicator {
+  readonly id: ChartIndicatorId;
+  readonly definitionVersion?: never;
+}
+
+export interface ChartCustomStudy extends ChartIndicator {
+  readonly id: ChartCustomStudyId;
+  readonly definitionVersion: string;
+}
+
 export interface ChartIndicatorInput {
   readonly instanceId?: string;
-  readonly id: ChartIndicatorId;
+  readonly id: ChartStudyDefinitionId;
+  readonly definitionVersion?: string;
   readonly params: Readonly<Record<string, number>>;
   readonly visible: boolean;
+}
+
+export interface ChartBuiltInStudyInput extends ChartIndicatorInput {
+  readonly id: ChartIndicatorId;
+  readonly definitionVersion?: never;
+}
+
+export interface ChartCustomStudyInput extends ChartIndicatorInput {
+  readonly id: ChartCustomStudyId;
+  readonly definitionVersion: string;
 }
 
 export type ChartDrawingType =
@@ -304,6 +400,7 @@ export interface ChartOptions {
   locale?: ChartLocale;
   executions?: readonly ChartExecution[];
   marks?: readonly ChartMark[];
+  studyDefinitions?: readonly ChartCustomStudyDefinition[];
   onError?: (error: ChartError) => void;
 }
 
@@ -341,7 +438,7 @@ export type ChartCrosshairStudyOutput =
 
 export interface ChartCrosshairStudyValues {
   readonly entityId: ChartIndicatorEntityId;
-  readonly indicatorId: ChartIndicatorId;
+  readonly indicatorId: ChartStudyDefinitionId;
   readonly title: string;
   readonly outputs: readonly ChartCrosshairStudyOutput[];
 }

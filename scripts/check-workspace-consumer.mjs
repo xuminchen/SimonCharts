@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.33";
+const expectedVersion = "1.0.0-rc.34";
 let tempRoot;
 
 try {
@@ -135,6 +135,7 @@ function consumerSource() {
   advancedChartFeatures,
   createChart,
   type ChartDatafeed,
+  type ChartCustomStudyDefinition,
   type ChartDrawing,
   type ChartEntityId,
   type ChartEvent,
@@ -168,6 +169,19 @@ const datafeed: ChartDatafeed = {
 };
 const container = document.querySelector<HTMLElement>("#app");
 if (!container) throw new Error("consumer mount missing");
+const studyDefinitions = [{
+  id: "custom:consumer.range",
+  version: "1",
+  title: "Consumer Range",
+  pane: "separate",
+  inputs: [{ id: "factor", title: "Factor", defaultValue: 1, minValue: 0.1 }],
+  outputs: [{ id: "range", title: "Range", type: "histogram", color: "#7c3aed" }],
+  calculate: ({ candles, inputs }) => ({
+    outputs: {
+      range: candles.map((candle) => (candle.high - candle.low) * inputs.factor)
+    }
+  })
+}] satisfies readonly ChartCustomStudyDefinition[];
 const executions: readonly ChartExecution[] = [{
   id: "consumer-buy",
   time: 1_784_192_400_000,
@@ -187,6 +201,7 @@ const chart = createChart(container, {
   dataCutoffTime: 1_784_192_400_000,
   datafeed,
   executions,
+  studyDefinitions,
   features: [...advancedChartFeatures, "executions"]
 });
 const drawings: readonly ChartDrawing[] = [{
@@ -285,13 +300,49 @@ chart.setExecutionsVisible(true);
 chart.setSeriesType("area");
 chart.setPriceScaleMode("percentage");
 chart.setIndicators(layout.indicators);
+const customStudyId: ChartIndicatorEntityId = chart.createStudy({
+  instanceId: "consumer-range",
+  id: "custom:consumer.range",
+  definitionVersion: "1",
+  params: {},
+  visible: true
+});
+const customStudyApi = chart.getStudyApi(customStudyId);
+if (!customStudyApi) throw new Error("custom study handle was not created");
+if (
+  chart.getStudyById(customStudyId)?.definitionVersion !== "1" ||
+  customStudyApi.getInputs().factor !== 1
+) {
+  throw new Error("custom study definition was not resolved from the packed package");
+}
+customStudyApi.setInputs({ factor: 2 });
+if (!await chart.dataReady()) throw new Error("custom study recalculation did not become usable");
+const customLayout = chart.exportLayout();
+if (!customLayout.indicators.some((study) =>
+  study.id === "custom:consumer.range" &&
+  study.definitionVersion === "1" &&
+  study.params.factor === 2
+)) {
+  throw new Error("custom study version or inputs were not exported");
+}
+if (!chart.removeEntity(customStudyId)) throw new Error("custom study entity was not removed");
+chart.importLayout(customLayout);
+if (!await chart.dataReady() || chart.getStudyById(customStudyId)?.params.factor !== 2) {
+  throw new Error("custom study layout did not restore through the packed package");
+}
+if (Object.values(localStorage).join("\\n").includes("custom:consumer.range")) {
+  throw new Error("host-owned custom study leaked into browser indicator persistence");
+}
 const ma20StudyId: ChartIndicatorEntityId = chart.createStudy({
   id: "MA",
   params: { period: 20 },
   visible: true
 });
 const ma20Study = chart.getStudyById(ma20StudyId);
-if (ma20Study?.id !== "MA" || chart.getAllStudies().length !== 2) {
+if (
+  ma20Study?.id !== "MA" ||
+  chart.getAllStudies().filter((study) => study.id === "MA").length !== 2
+) {
   throw new Error("study instance API did not preserve same-definition studies");
 }
 const ma20StudyApi: ChartStudyApi | undefined = chart.getStudyApi(ma20StudyId);

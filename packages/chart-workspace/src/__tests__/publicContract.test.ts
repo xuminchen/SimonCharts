@@ -10,6 +10,8 @@ import type {
   ChartCrosshairEvent,
   ChartCrosshairSnapshot,
   ChartCrosshairStudyOutput,
+  ChartCustomStudyDefinition,
+  ChartCustomStudyId,
   ChartDrawing,
   ChartDrawingTool,
   ChartEntity,
@@ -31,6 +33,7 @@ import type {
   ChartOptions,
   ChartStateListener,
   ChartStudyApi,
+  ChartStudyDefinitionId,
   ChartTheme,
   ChartView,
   IntradayDayCount,
@@ -41,11 +44,40 @@ import {
   fromEngineDrawings,
   parseDrawings,
   mergeIndicatorInputs,
+  parseStudyDefinitions,
   parseIndicatorInput,
+  parseIndicators,
   parseLayout,
   toEngineDrawings,
   toEntityId
 } from "../programmableApi";
+
+const customStudyDefinition = {
+  id: "custom:acme.spread",
+  version: "1",
+  title: "ACME Spread",
+  pane: "separate",
+  inputs: [{
+    id: "multiplier",
+    title: "Multiplier",
+    defaultValue: 2,
+    minValue: 1,
+    maxValue: 10,
+    integer: true
+  }],
+  outputs: [{
+    id: "spread",
+    title: "Spread",
+    type: "histogram",
+    color: "#2563eb"
+  }],
+  calculate: ({ candles, inputs }) => ({
+    outputs: {
+      spread: candles.map((candle) => (candle.high - candle.low) * inputs.multiplier)
+    },
+    state: { complete: true }
+  })
+} satisfies ChartCustomStudyDefinition;
 
 describe("charts public contract", () => {
   it("keeps the approved datafeed signatures", () => {
@@ -61,6 +93,29 @@ describe("charts public contract", () => {
       request: SeriesRequest,
       signal: AbortSignal
     ) => Promise<SeriesPage>>();
+  });
+
+  it("keeps the legacy study interfaces extendable", () => {
+    interface PartnerStudy extends ChartIndicator {
+      readonly partnerTag: string;
+    }
+    interface PartnerStudyInput extends ChartIndicatorInput {
+      readonly partnerTag?: string;
+    }
+    const study: PartnerStudy = {
+      instanceId: "partner-ma",
+      id: "MA",
+      params: { period: 5 },
+      visible: true,
+      partnerTag: "partner"
+    };
+    const input: PartnerStudyInput = {
+      id: "MA",
+      params: { period: 5 },
+      visible: true
+    };
+    expect(study.partnerTag).toBe("partner");
+    expect(input.id).toBe("MA");
   });
 
   it("keeps the approved chart handle and options", () => {
@@ -139,6 +194,12 @@ describe("charts public contract", () => {
     expectTypeOf<ChartOptions>().toHaveProperty("locale");
     expectTypeOf<ChartOptions>().toHaveProperty("executions");
     expectTypeOf<ChartOptions>().toHaveProperty("marks");
+    expectTypeOf<ChartOptions>().toHaveProperty("studyDefinitions");
+    expectTypeOf<ChartCustomStudyId>().toMatchTypeOf<`custom:${string}`>();
+    expectTypeOf<ChartStudyDefinitionId>().toMatchTypeOf<
+      import("../index").ChartIndicatorId | ChartCustomStudyId
+    >();
+    expectTypeOf<ChartCustomStudyDefinition["calculate"]>().toBeFunction();
     expectTypeOf<ChartExecution>().toEqualTypeOf<{
       readonly id: string;
       readonly time: number;
@@ -303,7 +364,7 @@ describe("charts public contract", () => {
         ...source.drawings[0],
         metadata: { holes: Array(50_001) }
       }]
-    })).toThrow("dense JSON-safe array");
+    })).toThrow("must contain");
     const accessorLayout = { ...source };
     Object.defineProperty(accessorLayout, "gridVisible", {
       enumerable: true,
@@ -389,6 +450,188 @@ describe("charts public contract", () => {
       params: { fast: 30 },
       visible: true
     })).toThrow("fast must be less than slow");
+  });
+
+  it("validates versioned chart-scoped custom study definitions and instances", () => {
+    const definitions = parseStudyDefinitions([customStudyDefinition]);
+    const parsed = parseIndicatorInput({
+      id: "custom:acme.spread",
+      definitionVersion: "1",
+      params: {},
+      visible: true
+    }, definitions);
+
+    expect(parsed).toEqual({
+      id: "custom:acme.spread",
+      definitionVersion: "1",
+      params: { multiplier: 2 },
+      visible: true
+    });
+    expect(parseIndicators([{
+      ...parsed,
+      instanceId: "spread-primary"
+    }], definitions)).toEqual([{
+      ...parsed,
+      instanceId: "spread-primary"
+    }]);
+    expect(() => parseIndicatorInput({
+      id: "custom:acme.spread",
+      params: {},
+      visible: true
+    }, definitions)).toThrow("definitionVersion");
+    expect(() => parseIndicatorInput({
+      id: "custom:acme.spread",
+      definitionVersion: "2",
+      params: {},
+      visible: true
+    }, definitions)).toThrow("unsupported");
+    expect(() => parseIndicatorInput({
+      id: "custom:acme.spread",
+      definitionVersion: "1",
+      params: { multiplier: 1.5 },
+      visible: true
+    }, definitions)).toThrow("invalid");
+
+    const independentFastSlow = {
+      ...customStudyDefinition,
+      id: "custom:acme.fast-slow",
+      inputs: [
+        { id: "fast", title: "Fast", defaultValue: 10 },
+        { id: "slow", title: "Slow", defaultValue: 5 }
+      ]
+    } satisfies ChartCustomStudyDefinition;
+    expect(parseIndicatorInput({
+      id: independentFastSlow.id,
+      definitionVersion: "1",
+      params: {},
+      visible: true
+    }, parseStudyDefinitions([independentFastSlow]))).toMatchObject({
+      params: { fast: 10, slow: 5 }
+    });
+  });
+
+  it("keeps custom study versions in Layout V2 and rejects missing definitions", () => {
+    const definitions = parseStudyDefinitions([customStudyDefinition]);
+    const layout = {
+      schemaVersion: 2,
+      seriesType: "candles",
+      priceScaleMode: "linear",
+      indicators: [{
+        instanceId: "spread-primary",
+        id: "custom:acme.spread",
+        definitionVersion: "1",
+        params: { multiplier: 3 },
+        visible: true
+      }],
+      drawings: [],
+      gridVisible: true
+    } as const;
+
+    expect(parseLayout(layout, definitions)).toEqual(layout);
+    expect(() => parseLayout(layout)).toThrow("unsupported");
+    expect(() => parseLayout({
+      ...layout,
+      indicators: [
+        { instanceId: "ma", id: "MA", params: { period: 5 }, visible: true },
+        { ...layout.indicators[0], definitionVersion: "2" }
+      ]
+    }, definitions)).toThrow("unsupported");
+  });
+
+  it("rejects malformed custom study schemas without executing accessors", () => {
+    expect(() => parseStudyDefinitions([
+      customStudyDefinition,
+      customStudyDefinition
+    ])).toThrow("duplicated");
+    expect(() => parseStudyDefinitions([{
+      ...customStudyDefinition,
+      id: "MA"
+    }])).toThrow("custom:");
+    expect(() => parseStudyDefinitions([{
+      ...customStudyDefinition,
+      inputs: [{
+        id: "period",
+        title: "Period",
+        defaultValue: 5,
+        minValue: 10
+      }]
+    }])).toThrow("defaultValue");
+    expect(() => parseStudyDefinitions([{
+      ...customStudyDefinition,
+      outputs: [
+        customStudyDefinition.outputs[0],
+        customStudyDefinition.outputs[0]
+      ]
+    }])).toThrow("duplicated");
+
+    let getterCalls = 0;
+    const accessor = { ...customStudyDefinition };
+    Object.defineProperty(accessor, "title", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return "unsafe";
+      }
+    });
+    expect(() => parseStudyDefinitions([accessor])).toThrow("only data properties");
+    expect(getterCalls).toBe(0);
+
+    const accessorInputs: unknown[] = [];
+    Object.defineProperty(accessorInputs, "0", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return customStudyDefinition.inputs[0];
+      }
+    });
+    expect(() => parseStudyDefinitions([{
+      ...customStudyDefinition,
+      inputs: accessorInputs
+    }])).toThrow("dense data array");
+    expect(getterCalls).toBe(0);
+  });
+
+  it("keeps definition versions isolated from later host mutation", () => {
+    const mutable = structuredClone({
+      ...customStudyDefinition,
+      calculate: undefined
+    }) as unknown as {
+      id: ChartCustomStudyId;
+      version: string;
+      title: string;
+      pane: "main" | "separate";
+      inputs: Array<{
+        id: string;
+        title: string;
+        defaultValue: number;
+        minValue?: number;
+        maxValue?: number;
+        integer?: boolean;
+      }>;
+      outputs: ChartCustomStudyDefinition["outputs"];
+      calculate?: ChartCustomStudyDefinition["calculate"];
+    };
+    mutable.calculate = customStudyDefinition.calculate;
+    const definitions = parseStudyDefinitions([
+      mutable as ChartCustomStudyDefinition,
+      { ...customStudyDefinition, version: "2" }
+    ]);
+    mutable.title = "Changed";
+    mutable.inputs[0]!.defaultValue = 9;
+
+    expect(definitions.get("custom:acme.spread\u00001")).toMatchObject({
+      title: "ACME Spread",
+      inputs: [{ defaultValue: 2 }]
+    });
+    expect(parseIndicatorInput({
+      id: "custom:acme.spread",
+      definitionVersion: "2",
+      params: {},
+      visible: true
+    }, definitions)).toMatchObject({
+      definitionVersion: "2",
+      params: { multiplier: 2 }
+    });
   });
 
   it("merges partial study inputs through the approved indicator validator", () => {

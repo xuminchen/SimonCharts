@@ -93,7 +93,8 @@ function createSeriesTypeIcon(type: SeriesType): SVGSVGElement {
 export function createTopToolbar(
   manifest: EngineCapabilityManifest,
   features: ReadonlySet<ChartFeature>,
-  locale: ChartLocale
+  locale: ChartLocale,
+  studyTitleFor?: (config: Readonly<WorkspaceViewModel["indicators"][number]>) => string
 ): TopToolbar {
   const model = createToolbarModel(manifest);
   const labels = labelsFor(locale);
@@ -239,7 +240,9 @@ export function createTopToolbar(
     }
   }
 
-  const indicatorManager = features.has("indicators") ? createIndicatorManager(labels, advanced) : undefined;
+  const indicatorManager = features.has("indicators")
+    ? createIndicatorManager(labels, advanced, studyTitleFor)
+    : undefined;
   const executionsToggle = features.has("executions") ? document.createElement("button") : undefined;
   if (executionsToggle) {
     executionsToggle.dataset.testid = "executions-toggle";

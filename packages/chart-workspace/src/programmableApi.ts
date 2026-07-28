@@ -1,8 +1,13 @@
 import {
   builtInDrawingToolDefinitions,
   coreIndicatorDefinitions,
-  type DrawingObject
+  type CandleSeries,
+  type DrawingObject,
+  type IndicatorResult,
+  type IndicatorVisualOutput
 } from "@simoncharts/chart-engine";
+import type { CustomStudyCheckpoint } from "./data/calculationCheckpointStore";
+import type { SeriesSelection } from "./data/pagedSeriesStore";
 import type {
   ChartDrawing,
   ChartDrawingStyle,
@@ -12,7 +17,10 @@ import type {
   ChartEntityInput,
   ChartEntityKind,
   ChartIndicator,
+  ChartIndicatorId,
   ChartIndicatorInput,
+  ChartCustomStudyDefinition,
+  ChartCustomStudyId,
   ChartJsonValue,
   ChartLayoutV2,
   ChartMark,
@@ -47,6 +55,16 @@ const maxJsonCharacters = 1_000_000;
 const maxTextLength = 10_000;
 const maxTotalTextLength = 1_000_000;
 const maxIdentifierLength = 256;
+const maxStudyDefinitions = 32;
+const maxStudyInputs = 16;
+const maxStudyOutputs = 16;
+
+export type StudyDefinitionCatalog = ReadonlyMap<string, Readonly<ChartCustomStudyDefinition>>;
+const emptyStudyDefinitions: StudyDefinitionCatalog = new Map();
+
+export function studyDefinitionKey(id: ChartCustomStudyId, version: string): string {
+  return `${id}\u0000${version}`;
+}
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -104,6 +122,345 @@ function optionalText(value: unknown, label: string): string | undefined {
   return value;
 }
 
+function optionalIdentifier(value: unknown, label: string): string | undefined {
+  return value === undefined ? undefined : identifier(value, label);
+}
+
+function optionalFinite(value: unknown, label: string): number | undefined {
+  return value === undefined ? undefined : finite(value, label);
+}
+
+function denseDataArray(
+  value: unknown,
+  label: string,
+  maxLength: number,
+  minLength = 0
+): unknown[] {
+  if (!Array.isArray(value) || value.length < minLength || value.length > maxLength) {
+    throw new TypeError(`${label} must contain ${minLength}-${maxLength} items`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Object.keys(descriptors);
+  if (
+    keys.length !== value.length + 1 ||
+    keys.some((key, index) => key !== (index === value.length ? "length" : String(index))) ||
+    Object.values(descriptors).some((descriptor) => !("value" in descriptor))
+  ) {
+    throw new TypeError(`${label} must be a dense data array`);
+  }
+  return Array.from(
+    { length: value.length },
+    (_, index) => descriptors[String(index)]!.value
+  );
+}
+
+export function parseStudyDefinitions(value: unknown): StudyDefinitionCatalog {
+  if (value === undefined) return new Map();
+  const candidates = denseDataArray(
+    value,
+    "Chart study definitions",
+    maxStudyDefinitions
+  );
+  const definitions = new Map<string, Readonly<ChartCustomStudyDefinition>>();
+  candidates.forEach((candidate, index) => {
+    const item = record(candidate, `Chart study definition ${index}`);
+    onlyKeys(
+      item,
+      ["id", "version", "title", "pane", "inputs", "outputs", "calculate"],
+      `Chart study definition ${index}`
+    );
+    const id = identifier(item.id, `Chart study definition ${index} id`);
+    if (!/^custom:[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+      throw new TypeError(`Chart study definition ${index} id must use the custom: namespace`);
+    }
+    const version = identifier(item.version, `Chart study definition ${id} version`);
+    const title = identifier(item.title, `Chart study definition ${id} title`);
+    if (item.pane !== "main" && item.pane !== "separate") {
+      throw new TypeError(`Chart study definition ${id} pane is unsupported`);
+    }
+    const inputCandidates = denseDataArray(
+      item.inputs,
+      `Chart study definition ${id} inputs`,
+      maxStudyInputs
+    );
+    const inputIds = new Set<string>();
+    const inputs = inputCandidates.map((candidateInput, inputIndex) => {
+      const input = record(candidateInput, `Chart study definition ${id} input ${inputIndex}`);
+      onlyKeys(
+        input,
+        ["id", "title", "defaultValue", "minValue", "maxValue", "integer"],
+        `Chart study definition ${id} input ${inputIndex}`
+      );
+      const inputId = identifier(input.id, `Chart study definition ${id} input ${inputIndex} id`);
+      if (inputIds.has(inputId)) {
+        throw new TypeError(`Chart study definition ${id} input ${inputId} is duplicated`);
+      }
+      inputIds.add(inputId);
+      const defaultValue = finite(
+        input.defaultValue,
+        `Chart study definition ${id} input ${inputId} defaultValue`
+      );
+      const minValue = optionalFinite(
+        input.minValue,
+        `Chart study definition ${id} input ${inputId} minValue`
+      );
+      const maxValue = optionalFinite(
+        input.maxValue,
+        `Chart study definition ${id} input ${inputId} maxValue`
+      );
+      if (input.integer !== undefined && typeof input.integer !== "boolean") {
+        throw new TypeError(`Chart study definition ${id} input ${inputId} integer must be boolean`);
+      }
+      if (
+        (minValue !== undefined && maxValue !== undefined && minValue > maxValue) ||
+        (minValue !== undefined && defaultValue < minValue) ||
+        (maxValue !== undefined && defaultValue > maxValue) ||
+        (input.integer === true && !Number.isInteger(defaultValue))
+      ) {
+        throw new TypeError(`Chart study definition ${id} input ${inputId} defaultValue is invalid`);
+      }
+      return Object.freeze({
+        id: inputId,
+        title: identifier(input.title, `Chart study definition ${id} input ${inputId} title`),
+        defaultValue,
+        ...(minValue === undefined ? {} : { minValue }),
+        ...(maxValue === undefined ? {} : { maxValue }),
+        ...(input.integer === undefined ? {} : { integer: input.integer })
+      });
+    });
+    const outputCandidates = denseDataArray(
+      item.outputs,
+      `Chart study definition ${id} outputs`,
+      maxStudyOutputs,
+      1
+    );
+    const outputIds = new Set<string>();
+    const outputs = outputCandidates.map((candidateOutput, outputIndex) => {
+      const output = record(candidateOutput, `Chart study definition ${id} output ${outputIndex}`);
+      const type = output.type;
+      const commonKeys = ["id", "title", "type"];
+      const allowed = type === "line"
+        ? [...commonKeys, "color", "lineWidth"]
+        : type === "histogram"
+          ? [...commonKeys, "color"]
+          : type === "band"
+            ? [...commonKeys, "fill"]
+            : type === "marker"
+              ? [...commonKeys, "color"]
+              : commonKeys;
+      onlyKeys(output, allowed, `Chart study definition ${id} output ${outputIndex}`);
+      if (!["line", "histogram", "band", "marker"].includes(String(type))) {
+        throw new TypeError(`Chart study definition ${id} output ${outputIndex} type is unsupported`);
+      }
+      const outputId = identifier(output.id, `Chart study definition ${id} output ${outputIndex} id`);
+      if (outputIds.has(outputId)) {
+        throw new TypeError(`Chart study definition ${id} output ${outputId} is duplicated`);
+      }
+      outputIds.add(outputId);
+      const base = {
+        id: outputId,
+        title: identifier(output.title, `Chart study definition ${id} output ${outputId} title`)
+      };
+      if (type === "line") {
+        const lineWidth = optionalFinite(
+          output.lineWidth,
+          `Chart study definition ${id} output ${outputId} lineWidth`
+        );
+        const color = optionalIdentifier(
+          output.color,
+          `Chart study definition ${id} output ${outputId} color`
+        );
+        if (lineWidth !== undefined && lineWidth <= 0) {
+          throw new TypeError(`Chart study definition ${id} output ${outputId} lineWidth is invalid`);
+        }
+        return Object.freeze({
+          ...base,
+          type,
+          ...(color === undefined ? {} : { color }),
+          ...(lineWidth === undefined ? {} : { lineWidth })
+        });
+      }
+      if (type === "histogram") {
+        const color = optionalIdentifier(
+          output.color,
+          `Chart study definition ${id} output ${outputId} color`
+        );
+        return Object.freeze({ ...base, type, ...(color === undefined ? {} : { color }) });
+      }
+      if (type === "band") {
+        const fill = optionalIdentifier(
+          output.fill,
+          `Chart study definition ${id} output ${outputId} fill`
+        );
+        return Object.freeze({ ...base, type, ...(fill === undefined ? {} : { fill }) });
+      }
+      const color = optionalIdentifier(
+        output.color,
+        `Chart study definition ${id} output ${outputId} color`
+      );
+      return Object.freeze({
+        ...base,
+        type: "marker" as const,
+        ...(color === undefined ? {} : { color })
+      });
+    });
+    if (typeof item.calculate !== "function") {
+      throw new TypeError(`Chart study definition ${id} calculate must be a function`);
+    }
+    const key = studyDefinitionKey(id as ChartCustomStudyId, version);
+    if (definitions.has(key)) {
+      throw new TypeError(`Chart study definition ${id}@${version} is duplicated`);
+    }
+    definitions.set(key, Object.freeze({
+      id: id as ChartCustomStudyId,
+      version,
+      title,
+      pane: item.pane,
+      inputs: Object.freeze(inputs),
+      outputs: Object.freeze(outputs),
+      calculate: item.calculate as ChartCustomStudyDefinition["calculate"]
+    }));
+  });
+  return definitions;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+function alignedNumericValues(value: unknown, label: string, length: number): Array<number | null> {
+  return denseDataArray(value, label, length, length).map((candidate, index) => {
+    if (candidate === null) return null;
+    return finite(candidate, `${label} ${index}`);
+  });
+}
+
+export function calculateCustomStudyChunk(input: {
+  readonly definition: Readonly<ChartCustomStudyDefinition>;
+  readonly selection: Readonly<SeriesSelection>;
+  readonly dataVersion: string;
+  readonly params: Readonly<Record<string, number>>;
+  readonly chunk: CandleSeries;
+  readonly checkpoint?: Readonly<CustomStudyCheckpoint>;
+}): { readonly result: IndicatorResult; readonly checkpoint: CustomStudyCheckpoint } {
+  const candles = Object.freeze(input.chunk.candles.map((candle) => Object.freeze({ ...candle })));
+  const params = deepFreeze(structuredClone(input.params));
+  const previousState = input.checkpoint?.state === undefined
+    ? undefined
+    : deepFreeze(structuredClone(input.checkpoint.state));
+  const calculationInput = Object.freeze({
+    symbol: Object.freeze({ ...input.selection.symbol }),
+    timeframe: input.selection.timeframe,
+    adjustMode: input.selection.adjustMode,
+    dataVersion: input.dataVersion,
+    inputs: params,
+    candles,
+    processedCount: input.checkpoint?.processedCount ?? 0,
+    ...(previousState === undefined ? {} : { previousState })
+  });
+  const calculated = record(
+    input.definition.calculate(calculationInput),
+    `Chart study ${input.definition.id} calculation result`
+  );
+  onlyKeys(
+    calculated,
+    ["outputs", "state"],
+    `Chart study ${input.definition.id} calculation result`
+  );
+  const outputValues = record(
+    calculated.outputs,
+    `Chart study ${input.definition.id} calculation outputs`
+  );
+  const expectedIds = input.definition.outputs.map((output) => output.id);
+  if (
+    Object.keys(outputValues).length !== expectedIds.length ||
+    Object.keys(outputValues).some((id) => !expectedIds.includes(id))
+  ) {
+    throw new TypeError(`Chart study ${input.definition.id} calculation output keys are invalid`);
+  }
+  const panelId = input.definition.pane === "main" ? "main" : input.definition.id;
+  const outputs: IndicatorVisualOutput[] = input.definition.outputs.map((definition) => {
+    const label = `Chart study ${input.definition.id} output ${definition.id}`;
+    if (definition.type === "band") {
+      const band = record(outputValues[definition.id], label);
+      onlyKeys(band, ["upper", "lower"], label);
+      const upper = alignedNumericValues(band.upper, `${label} upper`, candles.length);
+      const lower = alignedNumericValues(band.lower, `${label} lower`, candles.length);
+      return {
+        type: "band",
+        id: definition.id,
+        label: definition.title,
+        panelId,
+        upper: upper.map((value, index) => ({ time: candles[index]!.time, value })),
+        lower: lower.map((value, index) => ({ time: candles[index]!.time, value })),
+        ...(definition.fill === undefined ? {} : { fill: definition.fill })
+      };
+    }
+    const values = alignedNumericValues(
+      outputValues[definition.id],
+      label,
+      candles.length
+    );
+    if (definition.type === "line") {
+      return {
+        type: "line",
+        id: definition.id,
+        label: definition.title,
+        panelId,
+        values: values.map((value, index) => ({ time: candles[index]!.time, value })),
+        ...(definition.color === undefined ? {} : { color: definition.color }),
+        ...(definition.lineWidth === undefined ? {} : { lineWidth: definition.lineWidth })
+      };
+    }
+    if (definition.type === "histogram") {
+      return {
+        type: "histogram",
+        id: definition.id,
+        label: definition.title,
+        panelId,
+        values: values.flatMap((value, index) => value === null
+          ? []
+          : [{
+              time: candles[index]!.time,
+              value,
+              ...(definition.color === undefined ? {} : { color: definition.color })
+            }])
+      };
+    }
+    return {
+      type: "marker",
+      id: definition.id,
+      label: definition.title,
+      panelId,
+      marks: values.flatMap((price, index) => price === null
+        ? []
+        : [{
+            id: `${definition.id}:${candles[index]!.time}`,
+            time: candles[index]!.time,
+            price,
+            ...(definition.color === undefined ? {} : { color: definition.color })
+          }])
+    };
+  });
+  const state = calculated.state === undefined
+    ? undefined
+    : deepFreeze(jsonValue(calculated.state, `Chart study ${input.definition.id} state`));
+  return {
+    result: { outputs },
+    checkpoint: {
+      kind: "customStudy",
+      id: input.definition.id,
+      definitionVersion: input.definition.version,
+      processedCount: calculationInput.processedCount + candles.length,
+      ...(state === undefined ? {} : { state })
+    }
+  };
+}
+
 function jsonValue(
   value: unknown,
   label: string,
@@ -126,16 +483,10 @@ function jsonValue(
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (Array.isArray(value)) {
     if (seen.has(value)) throw new TypeError(`${label} must be JSON-safe`);
-    const keys = Object.keys(value);
-    if (
-      keys.length !== value.length ||
-      keys.some((key, index) => key !== String(index))
-    ) {
-      throw new TypeError(`${label} must be a dense JSON-safe array`);
-    }
+    const items = denseDataArray(value, label, maxJsonNodes);
     seen.add(value);
     try {
-      return value.map((item, index) =>
+      return items.map((item, index) =>
         jsonValue(item, `${label} ${index}`, budget, seen, depth + 1)
       );
     } finally {
@@ -146,11 +497,17 @@ function jsonValue(
     throw new TypeError(`${label} must be JSON-safe`);
   }
   if (seen.has(value)) throw new TypeError(`${label} must be JSON-safe`);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (Object.values(descriptors).some((descriptor) => !("value" in descriptor))) {
+    throw new TypeError(`${label} must contain only data properties`);
+  }
   seen.add(value);
   try {
     const result: Record<string, ChartJsonValue> = {};
-    for (const key of Object.keys(value).sort()) {
-      const item = (value as Record<string, unknown>)[key];
+    for (const key of Object.keys(descriptors).filter(
+      (candidate) => descriptors[candidate]!.enumerable
+    ).sort()) {
+      const item = descriptors[key]!.value;
       budget.remainingCharacters -= key.length;
       if (budget.remainingCharacters < 0) {
         throw new TypeError(`${label} must be bounded JSON-safe data`);
@@ -228,30 +585,69 @@ export function toEntityId(
   return `mark:${JSON.stringify([...scope, state.symbol.id, entity.value.id])}`;
 }
 
-function parseIndicatorInputValue(candidate: unknown, index: number): ChartIndicatorInput {
+function parseIndicatorInputValue(
+  candidate: unknown,
+  index: number,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartIndicatorInput {
     const item = record(candidate, `Chart indicator ${index}`);
-    onlyKeys(item, ["instanceId", "id", "params", "visible"], `Chart indicator ${index}`);
+    onlyKeys(
+      item,
+      ["instanceId", "id", "definitionVersion", "params", "visible"],
+      `Chart indicator ${index}`
+    );
     const instanceId = item.instanceId === undefined
       ? undefined
       : identifier(item.instanceId, `Chart indicator ${index} instanceId`);
-    const definition = indicatorDefinitions.get(item.id as ChartIndicator["id"]);
-    if (definition === undefined) throw new TypeError(`Chart indicator ${index} is unsupported`);
-    const id = definition.id;
+    const id = identifier(item.id, `Chart indicator ${index} id`);
+    const builtInDefinition = indicatorDefinitions.get(id as ChartIndicatorId);
+    const definitionVersion = item.definitionVersion === undefined
+      ? undefined
+      : identifier(item.definitionVersion, `Chart indicator ${id} definitionVersion`);
+    if (builtInDefinition !== undefined && definitionVersion !== undefined) {
+      throw new TypeError(`Chart indicator ${id} definitionVersion is unsupported`);
+    }
+    if (builtInDefinition === undefined && definitionVersion === undefined) {
+      throw new TypeError(`Chart indicator ${id} definitionVersion is required`);
+    }
+    const customDefinition = builtInDefinition === undefined
+      ? studyDefinitions.get(studyDefinitionKey(id as ChartCustomStudyId, definitionVersion!))
+      : undefined;
+    if (builtInDefinition === undefined && customDefinition === undefined) {
+      throw new TypeError(`Chart indicator ${index} is unsupported`);
+    }
     const params = record(item.params, `Chart indicator ${id} params`);
-    const allowed = definition.params.map((parameter) => parameter.id);
+    const parameterDefinitions = builtInDefinition?.params ?? customDefinition!.inputs;
+    const allowed = parameterDefinitions.map((parameter) => parameter.id);
     if (Object.keys(params).some((key) => !allowed.includes(key))) {
       throw new TypeError(`Chart indicator ${id} contains unsupported params`);
     }
-    const parsedParams = Object.fromEntries(definition.params.map((parameterDefinition) => {
+    const parsedParams = Object.fromEntries(parameterDefinitions.map((parameterDefinition) => {
       const key = parameterDefinition.id;
       const raw = key in params ? params[key] : parameterDefinition.defaultValue;
       const parameter = finite(raw, `Chart indicator ${id} param ${key}`);
-      if (parameter <= 0 || (integerIndicatorParams.has(key) && !Number.isInteger(parameter))) {
+      const invalidBuiltIn = builtInDefinition !== undefined && (
+        parameter <= 0 ||
+        (integerIndicatorParams.has(key) && !Number.isInteger(parameter))
+      );
+      const invalidCustom = customDefinition !== undefined && (
+        ("minValue" in parameterDefinition &&
+          parameterDefinition.minValue !== undefined &&
+          parameter < parameterDefinition.minValue) ||
+        ("maxValue" in parameterDefinition &&
+          parameterDefinition.maxValue !== undefined &&
+          parameter > parameterDefinition.maxValue) ||
+        ("integer" in parameterDefinition &&
+          parameterDefinition.integer === true &&
+          !Number.isInteger(parameter))
+      );
+      if (invalidBuiltIn || invalidCustom) {
         throw new TypeError(`Chart indicator ${id} param ${key} is invalid`);
       }
       return [key, parameter] as const;
     }));
     if (
+      id === "MACD" &&
       typeof parsedParams.fast === "number" &&
       typeof parsedParams.slow === "number" &&
       parsedParams.fast >= parsedParams.slow
@@ -267,39 +663,47 @@ function parseIndicatorInputValue(candidate: unknown, index: number): ChartIndic
     }
     return {
       ...(instanceId === undefined ? {} : { instanceId }),
-      id,
+      id: id as ChartIndicator["id"],
+      ...(definitionVersion === undefined ? {} : { definitionVersion }),
       params: parsedParams,
       visible: item.visible
-    };
+    } as ChartIndicatorInput;
 }
 
-export function parseIndicatorInput(value: unknown): ChartIndicatorInput {
-  return parseIndicatorInputValue(value, 0);
+export function parseIndicatorInput(
+  value: unknown,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartIndicatorInput {
+  return parseIndicatorInputValue(value, 0, studyDefinitions);
 }
 
 export function mergeIndicatorInputs(
   current: Readonly<ChartIndicator>,
-  value: unknown
+  value: unknown,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
 ): ChartIndicator {
   const patch = record(value, "Chart study inputs");
   const parsed = parseIndicatorInputValue({
     ...current,
     params: { ...current.params, ...patch }
-  }, 0);
+  }, 0, studyDefinitions);
   return {
     ...parsed,
     instanceId: current.instanceId
-  };
+  } as ChartIndicator;
 }
 
-export function parseIndicators(value: unknown): ChartIndicator[] {
+export function parseIndicators(
+  value: unknown,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartIndicator[] {
   if (!Array.isArray(value)) throw new TypeError("Chart indicators must be an array");
   if (value.length > maxIndicators) {
     throw new TypeError(`Chart indicators must contain at most ${maxIndicators} items`);
   }
   const seen = new Set<string>();
   return value.map((candidate, index) => {
-    const indicator = parseIndicatorInputValue(candidate, index);
+    const indicator = parseIndicatorInputValue(candidate, index, studyDefinitions);
     if (indicator.instanceId === undefined) {
       throw new TypeError(`Chart indicator ${index} instanceId is required`);
     }
@@ -307,7 +711,7 @@ export function parseIndicators(value: unknown): ChartIndicator[] {
       throw new TypeError(`Chart indicator instance ${indicator.instanceId} is duplicated`);
     }
     seen.add(indicator.instanceId);
-    return { ...indicator, instanceId: indicator.instanceId };
+    return { ...indicator, instanceId: indicator.instanceId } as ChartIndicator;
   });
 }
 
@@ -492,12 +896,15 @@ export function parseMarks(value: unknown): ChartMark[] {
   });
 }
 
-export function parseEntityInput(value: unknown): ChartEntityInput {
+export function parseEntityInput(
+  value: unknown,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartEntityInput {
   const entity = record(value, "Chart entity");
   onlyKeys(entity, ["kind", "value"], "Chart entity");
   const kind = parseEntityKind(entity.kind);
   if (kind === "indicator") {
-    return { kind, value: parseIndicators([entity.value])[0]! };
+    return { kind, value: parseIndicators([entity.value], studyDefinitions)[0]! };
   }
   if (kind === "drawing") {
     return { kind, value: parseDrawings([entity.value])[0]! };
@@ -505,11 +912,17 @@ export function parseEntityInput(value: unknown): ChartEntityInput {
   return { kind, value: parseMarks([entity.value])[0]! };
 }
 
-export function parseEntity(value: unknown): ChartEntity {
+export function parseEntity(
+  value: unknown,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartEntity {
   const entity = record(value, "Chart entity");
   onlyKeys(entity, ["id", "kind", "value"], "Chart entity");
   const id = parseEntityId(entity.id);
-  const parsed = parseEntityInput({ kind: entity.kind, value: entity.value });
+  const parsed = parseEntityInput(
+    { kind: entity.kind, value: entity.value },
+    studyDefinitions
+  );
   if (!id.startsWith(`${parsed.kind}:`)) {
     throw new TypeError("Chart entity id does not match its kind");
   }
@@ -525,7 +938,10 @@ export function parseVisibleRange(value: unknown): ChartVisibleRange {
   return { from, to };
 }
 
-export function parseLayout(value: unknown): ChartLayoutV2 {
+export function parseLayout(
+  value: unknown,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartLayoutV2 {
   const layout = record(value, "Chart layout");
   onlyKeys(
     layout,
@@ -538,7 +954,7 @@ export function parseLayout(value: unknown): ChartLayoutV2 {
     schemaVersion: 2,
     seriesType: parseSeriesType(layout.seriesType),
     priceScaleMode: parsePriceScaleMode(layout.priceScaleMode),
-    indicators: parseIndicators(layout.indicators),
+    indicators: parseIndicators(layout.indicators, studyDefinitions),
     drawings: parseDrawings(layout.drawings),
     gridVisible: layout.gridVisible
   };

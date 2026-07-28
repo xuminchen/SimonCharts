@@ -21,7 +21,11 @@ export interface IndicatorManager {
   render(viewModel: WorkspaceViewModel): void;
 }
 
-export function createIndicatorManager(labels: ChartLabels, compact = false): IndicatorManager {
+export function createIndicatorManager(
+  labels: ChartLabels,
+  compact = false,
+  titleFor: (config: Readonly<IndicatorConfig>) => string = (config) => config.id
+): IndicatorManager {
   const element = document.createElement("div");
   element.className = "sc-indicator-manager";
   const open = document.createElement("button");
@@ -147,12 +151,16 @@ export function createIndicatorManager(labels: ChartLabels, compact = false): In
         const legend = document.createElement("span");
         legend.dataset.testid = `indicator-legend-${config.instanceId}`;
         legend.dataset.visible = String(config.visible);
-        legend.textContent = `${config.id} ${Object.values(config.params).join(",")}${config.visible ? "" : " (隐藏)"}`;
-        const edit = document.createElement("button");
-        edit.type = "button";
-        edit.dataset.editIndicator = config.instanceId;
-        edit.setAttribute("aria-label", `Edit ${config.id}`);
-        edit.textContent = "设置";
+        const title = titleFor(config);
+        legend.textContent = `${title}${Object.values(config.params).length === 0 ? "" : ` ${Object.values(config.params).join(",")}`}${config.visible ? "" : " (隐藏)"}`;
+        const editable = coreIndicatorDefinitions.some((definition) => definition.id === config.id);
+        const edit = editable ? document.createElement("button") : undefined;
+        if (edit) {
+          edit.type = "button";
+          edit.dataset.editIndicator = config.instanceId;
+          edit.setAttribute("aria-label", `Edit ${config.id}`);
+          edit.textContent = "设置";
+        }
         const hide = document.createElement("button");
         hide.type = "button";
         hide.dataset.hideIndicator = config.instanceId;
@@ -162,7 +170,7 @@ export function createIndicatorManager(labels: ChartLabels, compact = false): In
         remove.type = "button";
         remove.dataset.removeIndicator = config.instanceId;
         remove.textContent = "删除";
-        legend.append(edit, hide, remove);
+        legend.append(...(edit === undefined ? [] : [edit]), hide, remove);
         legends.append(legend);
       }
     }

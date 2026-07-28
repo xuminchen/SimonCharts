@@ -177,6 +177,7 @@ export interface ChartEngineRuntimeOptions {
   overlayCanvas: HTMLCanvasElement;
   themeRoot: HTMLElement;
   calculationRuntime: CheckpointedCalculationRuntime;
+  studyTitleFor?: (config: Readonly<IndicatorConfig>) => string;
   observer?: RuntimeResizeObserver;
   requestFrame?: (callback: () => void) => number;
   cancelFrame?: (id: number) => void;
@@ -728,7 +729,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
             ...config,
             params: { ...config.params }
           },
-          title: `${config.id} ${Object.values(config.params).join(",")}`.trim(),
+          title: `${options.studyTitleFor?.(config) ?? config.id} ${Object.values(config.params).join(",")}`.trim(),
           outputs
         };
       });
@@ -883,7 +884,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         else if (output?.type === "band") value = output.upper.find((point) => point.time === candle.time)?.value;
         return {
           id: config.instanceId,
-          label: `${config.id} ${Object.values(config.params).join(",")}`,
+          label: `${options.studyTitleFor?.(config) ?? config.id} ${Object.values(config.params).join(",")}`,
           value: typeof value === "number" ? String(value) : "--"
         };
       });
@@ -982,14 +983,19 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         bottomAxisHeight: layout.bottomAxisHeight,
         panels: [
           { id: "main", kind: "main", label: "Main", heightRatio: 3 },
-          ...subPanelIds.map((id) => ({
-            id,
-            kind: "sub" as const,
-            label: indicatorConfigs.find(
-              (config) => indicatorPanelId(config.instanceId) === id
-            )?.id ?? id,
-            heightRatio: 1
-          }))
+          ...subPanelIds.map((id) => {
+            const config = indicatorConfigs.find(
+              (candidate) => indicatorPanelId(candidate.instanceId) === id
+            );
+            return {
+              id,
+              kind: "sub" as const,
+              label: config === undefined
+                ? id
+                : options.studyTitleFor?.(config) ?? config.id,
+              heightRatio: 1
+            };
+          })
         ]
       }).map((panel) => panel.id === "main"
         ? { ...panel, plotArea: { ...layout.plotArea }, priceAxisArea: { ...layout.priceAxisArea } }
@@ -1500,6 +1506,29 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     });
   }
 
+  function publishSettledCalculationStatus(): void {
+    if (destroyed) return;
+    if (activeIndicatorGeneration !== undefined) {
+      options.onCalculationStatusChanged?.({
+        type: "calculating",
+        kind: "indicator",
+        id: indicatorConfigs[0]?.instanceId ?? "indicators",
+        generation: activeIndicatorGeneration
+      });
+      return;
+    }
+    if (activeSeriesGeneration !== undefined) {
+      options.onCalculationStatusChanged?.({
+        type: "calculating",
+        kind: "series",
+        id: chartEngine.getState().seriesType,
+        generation: activeSeriesGeneration
+      });
+      return;
+    }
+    options.onCalculationStatusChanged?.({ type: "idle" });
+  }
+
   async function calculateIndicators(configs: readonly IndicatorConfig[], generation: number): Promise<void> {
     if (!materialized) return;
     indicatorCalculationController?.abort();
@@ -1544,7 +1573,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     } finally {
       if (indicatorCalculationController === controller) indicatorCalculationController = undefined;
       if (activeIndicatorGeneration === generation) activeIndicatorGeneration = undefined;
-      if (!destroyed && generation === indicatorGeneration) options.onCalculationStatusChanged?.({ type: "idle" });
+      publishSettledCalculationStatus();
       scheduleCalculationRecovery();
     }
   }
@@ -1592,9 +1621,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     } finally {
       if (seriesCalculationController === controller) seriesCalculationController = undefined;
       if (activeSeriesGeneration === generation) activeSeriesGeneration = undefined;
-      if (!destroyed && generation === seriesGeneration) {
-        options.onCalculationStatusChanged?.({ type: "idle" });
-      }
+      publishSettledCalculationStatus();
       scheduleCalculationRecovery();
     }
   }

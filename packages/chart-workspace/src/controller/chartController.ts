@@ -166,6 +166,7 @@ export interface ChartControllerDependencies {
   searchCoordinator: SymbolSearchCoordinator;
   persistence: BrowserPersistence;
   runtime: ChartEngineRuntime;
+  parseIndicators?: (value: unknown) => IndicatorConfig[];
   onError?: (error: ChartError) => void;
   onDataLoaded?: (event: {
     readonly state: Readonly<ChartState>;
@@ -215,6 +216,7 @@ function sameSelection(left: Readonly<SeriesSelection> | undefined, right: Reado
 export function createChartController(
   dependencies: ChartControllerDependencies
 ): ChartController {
+  const parseIndicatorConfigs = dependencies.parseIndicators ?? parseIndicators;
   const loadDrawings = (symbol: ChartSymbol, adjustMode: AdjustMode): readonly DrawingObject[] =>
     dependencies.drawingPersistenceEnabled
       ? dependencies.persistence.loadDrawings(symbol, adjustMode)
@@ -1446,7 +1448,7 @@ export function createChartController(
     },
     setIndicators(configs) {
       if (!active) return;
-      viewModel = { ...viewModel, indicators: parseIndicators(configs) };
+      viewModel = { ...viewModel, indicators: parseIndicatorConfigs(configs) };
       dependencies.runtime.setIndicators(viewModel.indicators);
       dependencies.persistence.saveIndicators(viewModel.indicators);
       publish();

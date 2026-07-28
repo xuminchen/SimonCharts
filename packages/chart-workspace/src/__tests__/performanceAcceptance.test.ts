@@ -96,6 +96,68 @@ function materialized(start = 1, count = 100): MaterializedSeries {
 }
 
 describe("workspace engine runtime", () => {
+  it.each(["indicator", "series"] as const)(
+    "publishes idle only after concurrent indicator and series calculations settle (%s first)",
+    async (first) => {
+      const source = materialized();
+      let resolveIndicators!: (value: Map<string, IndicatorResult>) => void;
+      let resolveSeries!: (value: SeriesRenderModel) => void;
+      const calculateIndicators = vi.fn(() => new Promise<Map<string, IndicatorResult>>(
+        (resolve) => { resolveIndicators = resolve; }
+      ));
+      const calculateSeries = vi.fn(() => new Promise<SeriesRenderModel>(
+        (resolve) => { resolveSeries = resolve; }
+      ));
+      const states: Array<{ type: string }> = [];
+      const runtime = createChartEngineRuntime({
+        staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+        observer: { observe() {}, disconnect() {} },
+        calculationRuntime: { calculateIndicators, calculateSeries },
+        requestFrame: () => 1,
+        cancelFrame: () => undefined,
+        getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+        onCalculationStatusChanged: (status) => states.push(status)
+      });
+      runtime.setMaterializedSeries(source);
+      runtime.setIndicators([{
+        instanceId: "ma",
+        id: "MA",
+        params: { period: 5 },
+        visible: true
+      }]);
+      runtime.setSeriesType("heikinAshi");
+      await vi.waitFor(() => {
+        expect(calculateIndicators).toHaveBeenCalledOnce();
+        expect(calculateSeries).toHaveBeenCalledOnce();
+      });
+
+      if (first === "indicator") resolveIndicators(new Map());
+      else resolveSeries({
+        type: "heikinAshi",
+        source: source.series,
+        sourceIndexOffset: 0,
+        points: []
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(states.at(-1)?.type).toBe("calculating");
+
+      if (first === "indicator") {
+        resolveSeries({
+          type: "heikinAshi",
+          source: source.series,
+          sourceIndexOffset: 0,
+          points: []
+        });
+      } else {
+        resolveIndicators(new Map());
+      }
+      await vi.waitFor(() => expect(states.at(-1)?.type).toBe("idle"));
+      runtime.destroy();
+    }
+  );
+
   it("clones, toggles, hovers, and closes execution marker tooltips", () => {
     const staticCanvas = new FakeCanvas();
     const overlayCanvas = new FakeCanvas();

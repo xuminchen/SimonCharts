@@ -2,6 +2,7 @@ import type {
   CoreIndicatorCheckpoint,
   SeriesTransformCheckpoint
 } from "@simoncharts/chart-engine";
+import type { ChartJsonValue } from "../contracts";
 
 export const defaultMaxCalculationCheckpointEntries = 2048;
 export const defaultMaxCalculationCheckpointBytes = 4 * 1024 * 1024;
@@ -15,7 +16,18 @@ export interface CalculationCheckpointKey {
   readonly descriptorCursor?: string;
 }
 
-export type CalculationCheckpoint = CoreIndicatorCheckpoint | SeriesTransformCheckpoint;
+export interface CustomStudyCheckpoint {
+  readonly kind: "customStudy";
+  readonly id: string;
+  readonly definitionVersion: string;
+  readonly processedCount: number;
+  readonly state?: ChartJsonValue;
+}
+
+export type CalculationCheckpoint =
+  | CoreIndicatorCheckpoint
+  | SeriesTransformCheckpoint
+  | CustomStudyCheckpoint;
 
 export interface CalculationCheckpointStore {
   get(key: CalculationCheckpointKey): CalculationCheckpoint | undefined;

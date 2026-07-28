@@ -218,7 +218,10 @@ export function createBrowserPersistence(
     loadIndicators: () => parseIndicators(
       read(indicatorsKey, [] as readonly IndicatorConfig[], isIndicators)
     ),
-    saveIndicators: (value) => write(indicatorsKey, value),
+    saveIndicators: (value) => write(
+      indicatorsKey,
+      value.filter((indicator) => !indicator.id.startsWith("custom:"))
+    ),
     loadDrawings(symbol, adjustMode) {
       const serialized = read(
         drawingKey(symbol.id, adjustMode),

@@ -3,6 +3,7 @@ import type {
   ChartCrosshairEvent,
   ChartCrosshairListener,
   ChartCrosshairSnapshot,
+  ChartCustomStudyId,
   ChartEvent,
   ChartEventListener,
   ChartDrawing,
@@ -56,9 +57,12 @@ import {
   parseMarks,
   parsePriceScaleMode,
   parseSeriesType,
+  parseStudyDefinitions,
   parseVisibleRange,
+  studyDefinitionKey,
   toEntityId,
-  toEngineDrawings
+  toEngineDrawings,
+  type StudyDefinitionCatalog
 } from "./programmableApi";
 import {
   createChartEngineRuntime,
@@ -280,11 +284,38 @@ export function createChart(
     throw new TypeError("Chart container must be an HTMLElement");
   }
 
+  let parsedStudyDefinitions: StudyDefinitionCatalog | undefined;
+  try {
+    parsedStudyDefinitions = parseStudyDefinitions(options?.studyDefinitions);
+  } catch {
+    parsedStudyDefinitions = undefined;
+  }
+  const studyDefinitions = parsedStudyDefinitions ?? new Map();
+  const parseChartIndicators = (value: unknown) => parseIndicators(value, studyDefinitions);
+  const parseChartIndicatorInput = (value: unknown) =>
+    parseIndicatorInput(value, studyDefinitions);
+  const mergeChartIndicatorInputs = (
+    current: Readonly<ChartIndicator>,
+    value: unknown
+  ) => mergeIndicatorInputs(current, value, studyDefinitions);
+  const parseChartEntityInput = (value: unknown) =>
+    parseEntityInput(value, studyDefinitions);
+  const parseChartEntity = (value: unknown) => parseEntity(value, studyDefinitions);
+  const parseChartLayout = (value: unknown) => parseLayout(value, studyDefinitions);
+  const studyTitleFor = (config: Readonly<ChartIndicator>): string =>
+    config.definitionVersion === undefined
+      ? config.id
+      : studyDefinitions.get(studyDefinitionKey(
+          config.id as ChartCustomStudyId,
+          config.definitionVersion
+        ))?.title ??
+        config.id;
   const features = resolvedFeatures(options?.features);
   const shell = createWorkspaceShell({
     features,
     theme: resolvedTheme(options?.theme),
-    locale: resolvedLocale(options?.locale)
+    locale: resolvedLocale(options?.locale),
+    studyTitleFor
   });
   container.append(shell.root);
   let destroyed = false;
@@ -434,7 +465,7 @@ export function createChart(
     emitEvent({ type: "layout-changed", layout });
   };
 
-  if (!validOptions(options)) {
+  if (!validOptions(options) || parsedStudyDefinitions === undefined) {
     const error = createChartError(
       "INVALID_CONFIGURATION",
       "configuration",
@@ -517,6 +548,25 @@ export function createChart(
   }
 
   let controller: ChartController | undefined;
+  const schedulePresentationReadiness = (key: string): void => {
+    cancelReadinessFrame();
+    const markReady = (): void => {
+      readinessFrameId = undefined;
+      if (destroyed || materializedPresentationKey !== key) return;
+      const viewModel = controller!.getViewModel();
+      if (
+        presentationKey(viewModel.state) !== key ||
+        viewModel.state.loading ||
+        viewModel.status.type === "blocked" ||
+        viewModel.calculationStatus.type !== "idle"
+      ) return;
+      readyPresentationKey = key;
+      unavailablePresentationKey = undefined;
+      settleDataReady((candidate) => candidate === key, true);
+    };
+    if (readinessWindow === null) markReady();
+    else readinessFrameId = readinessWindow.requestAnimationFrame(markReady);
+  };
   const pendingStorageErrors: ChartError[] = [];
   const persistence = createBrowserPersistence(
     options.chartId,
@@ -540,6 +590,7 @@ export function createChart(
   const calculationRuntime = createCheckpointedCalculationRuntime({
     store,
     checkpointStore,
+    studyDefinitions,
     reloadPage: (cursor) => dataCoordinator.reloadPage(cursor)
   });
   const runtime = createChartEngineRuntime({
@@ -547,6 +598,7 @@ export function createChart(
     overlayCanvas: shell.overlayCanvas,
     themeRoot: shell.chartRegion,
     calculationRuntime,
+    studyTitleFor,
     devicePixelRatio: window.devicePixelRatio,
     onViewportChanged: (viewport) => controller?.handleViewportChanged(viewport),
     onMaterializedBoundary: (direction, anchor) => controller?.handleMaterializedBoundary(direction, anchor),
@@ -590,6 +642,7 @@ export function createChart(
     searchCoordinator,
     persistence,
     runtime,
+    parseIndicators: parseChartIndicators,
     onError: options.onError,
     onDataLoaded: (event) => {
       if (event.phase === "initial") {
@@ -605,22 +658,7 @@ export function createChart(
       const key = presentationKey(state);
       if (unavailablePresentationKey === key) unavailablePresentationKey = undefined;
       materializedPresentationKey = key;
-      cancelReadinessFrame();
-      const markReady = (): void => {
-        readinessFrameId = undefined;
-        if (destroyed || materializedPresentationKey !== key) return;
-        const viewModel = controller!.getViewModel();
-        if (
-          presentationKey(viewModel.state) !== key ||
-          viewModel.state.loading ||
-          viewModel.status.type === "blocked"
-        ) return;
-        readyPresentationKey = key;
-        unavailablePresentationKey = undefined;
-        settleDataReady((candidate) => candidate === key, true);
-      };
-      if (readinessWindow === null) markReady();
-      else readinessFrameId = readinessWindow.requestAnimationFrame(markReady);
+      schedulePresentationReadiness(key);
     },
     onPresentationPending: (state) => {
       const key = presentationKey(state);
@@ -670,6 +708,21 @@ export function createChart(
           readyPresentationKey = undefined;
         }
         settleDataReady((candidate) => candidate === currentPresentationKey, false);
+      }
+      if (
+        viewModel.calculationStatus.type === "calculating" &&
+        readyPresentationKey === currentPresentationKey
+      ) {
+        readyPresentationKey = undefined;
+        cancelReadinessFrame();
+      } else if (
+        viewModel.calculationStatus.type === "idle" &&
+        materializedPresentationKey === currentPresentationKey &&
+        readyPresentationKey !== currentPresentationKey &&
+        !viewModel.state.loading &&
+        viewModel.status.type !== "blocked"
+      ) {
+        schedulePresentationReadiness(currentPresentationKey);
       }
       if (
         readySelectionKey !== undefined &&
@@ -734,7 +787,7 @@ export function createChart(
     const current = requireStudy(value);
     const next = update(current);
     const viewModel = controller!.getViewModel();
-    controller!.setIndicators(parseIndicators(viewModel.indicators.map((candidate) =>
+    controller!.setIndicators(parseChartIndicators(viewModel.indicators.map((candidate) =>
       candidate.instanceId === current.instanceId ? next : candidate
     )));
   };
@@ -743,7 +796,7 @@ export function createChart(
     const current = findStudy(value);
     if (current === undefined) return false;
     const viewModel = controller!.getViewModel();
-    controller!.setIndicators(parseIndicators(
+    controller!.setIndicators(parseChartIndicators(
       viewModel.indicators.filter(
         (candidate) => candidate.instanceId !== current.instanceId
       )
@@ -756,7 +809,7 @@ export function createChart(
       entityId: value,
       getInputs: () => structuredClone(requireStudy(value).params),
       setInputs: (inputs: Readonly<Record<string, number>>) => {
-        updateStudy(value, (current) => mergeIndicatorInputs(current, inputs));
+        updateStudy(value, (current) => mergeChartIndicatorInputs(current, inputs));
       },
       isVisible: () => requireStudy(value).visible,
       setVisible: (visible: boolean) => {
@@ -794,9 +847,9 @@ export function createChart(
       if (destroyed) {
         throw new DOMException("Chart study API is unavailable", "InvalidStateError");
       }
-      const input = parseIndicatorInput(value);
+      const input = parseChartIndicatorInput(value);
       const viewModel = controller!.getViewModel();
-      const indicator = parseIndicators([{
+      const indicator = parseChartIndicators([{
         ...input,
         instanceId: input.instanceId ?? allocateStudyInstanceId()
       }])[0]!;
@@ -805,7 +858,7 @@ export function createChart(
       if (entitySnapshot(viewModel, entityScope).some((candidate) => candidate.id === id)) {
         throw new DOMException("Chart study already exists", "InvalidStateError");
       }
-      controller!.setIndicators(parseIndicators([...viewModel.indicators, indicator]));
+      controller!.setIndicators(parseChartIndicators([...viewModel.indicators, indicator]));
       return id;
     },
     getStudyById: (value: ChartIndicatorEntityId) => {
@@ -819,14 +872,14 @@ export function createChart(
       if (destroyed) {
         throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
       }
-      const entity = parseEntityInput(value);
+      const entity = parseChartEntityInput(value);
       const viewModel = controller!.getViewModel();
       const id = toEntityId(entity, viewModel.state, entityScope);
       if (entitySnapshot(viewModel, entityScope).some((candidate) => candidate.id === id)) {
         throw new DOMException("Chart entity already exists", "InvalidStateError");
       }
       if (entity.kind === "indicator") {
-        controller!.setIndicators(parseIndicators([...viewModel.indicators, entity.value]));
+        controller!.setIndicators(parseChartIndicators([...viewModel.indicators, entity.value]));
       } else if (entity.kind === "drawing") {
         requireReadyLayout(viewModel, readySelectionKey);
         controller!.setDrawings(toEngineDrawings(
@@ -856,7 +909,7 @@ export function createChart(
       if (destroyed) {
         throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
       }
-      const entity = parseEntity(value);
+      const entity = parseChartEntity(value);
       const viewModel = controller!.getViewModel();
       const current = entitySnapshot(viewModel, entityScope)
         .find((candidate) => candidate.id === entity.id);
@@ -870,7 +923,15 @@ export function createChart(
         throw new TypeError("Chart entity id does not match its kind, value, or current chart selection");
       }
       if (entity.kind === "indicator") {
-        controller!.setIndicators(parseIndicators(viewModel.indicators.map((candidate) =>
+        if (
+          current.kind !== "indicator" ||
+          current.value.instanceId !== entity.value.instanceId ||
+          current.value.id !== entity.value.id ||
+          current.value.definitionVersion !== entity.value.definitionVersion
+        ) {
+          throw new TypeError("Chart study identity and definitionVersion are immutable");
+        }
+        controller!.setIndicators(parseChartIndicators(viewModel.indicators.map((candidate) =>
           candidate.instanceId === entity.value.instanceId ? entity.value : candidate
         )));
       } else if (entity.kind === "drawing") {
@@ -894,7 +955,7 @@ export function createChart(
         .find((candidate) => candidate.id === id);
       if (current === undefined) return false;
       if (current.kind === "indicator") {
-        controller!.setIndicators(parseIndicators(
+        controller!.setIndicators(parseChartIndicators(
           viewModel.indicators.filter(
             (candidate) => candidate.instanceId !== current.value.instanceId
           )
@@ -945,7 +1006,7 @@ export function createChart(
     setPriceScaleMode: (mode: ChartPriceScaleMode) =>
       controller!.setPriceScaleMode(parsePriceScaleMode(mode)),
     setIndicators: (indicators: readonly ChartIndicator[]) =>
-      controller!.setIndicators(parseIndicators(indicators)),
+      controller!.setIndicators(parseChartIndicators(indicators)),
     setDrawings: (drawings: readonly ChartDrawing[]) => {
       const parsed = parseDrawings(drawings);
       requireReadyLayout(controller!.getViewModel(), readySelectionKey);
@@ -960,7 +1021,7 @@ export function createChart(
     undoDrawing: () => controller!.undoDrawing(),
     redoDrawing: () => controller!.redoDrawing(),
     importLayout: (value: unknown) => {
-      const layout = parseLayout(value);
+      const layout = parseChartLayout(value);
       requireReadyLayout(controller!.getViewModel(), readySelectionKey);
       if (controller!.getState().view === "intraday" && layout.seriesType !== "line") {
         throw new RangeError("Intraday view accepts only line-series layouts");

@@ -1,5 +1,15 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.34 - 2026-07-28
+
+- Added chart-scoped, versioned `ChartCustomStudyDefinition` contracts with bounded numeric input schemas and fixed line, histogram, band, and marker outputs.
+- Reused the existing chronological checkpoint runtime, native visual renderers, automatic panes, crosshair values, live Study handle, Entity API, and `ChartLayoutV2`; custom instances preserve exact `definitionVersion`, inputs, visibility, and stable identity.
+- Made custom calculation input and output boundaries defensive and fail-closed: dense finite-or-null arrays, exact output keys and lengths, bounded JSON-safe state, no accessor execution, atomic version validation, and no cancelled-generation checkpoint writes.
+- Kept `dataReady()` pending until concurrent indicator and stateful-series calculations both settle and the presentation paints; calculation failure and `retry()` continue through the existing lifecycle.
+- Kept definitions, callback functions, market data, and custom instances out of automatic browser indicator persistence. Hosts own definition code and explicit layout storage; the built-in UI shows titles and supports visibility/removal without adding a code editor or second Study system.
+- Preserved the extendable `ChartIndicator` and `ChartIndicatorInput` interfaces, existing built-in defaults, and rc.33 behavior; no new runtime dependency or global mutable registry was added.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,176 tests`, combined Chrome `121/121`, Charts `14 files / 178 tests`, Charts Chrome/Edge `70/70` per browser, and exact packed Chrome/Edge consumer execution; SHA-256 is `1f6fe992c8f147eae17612e4123061b05b6b2bb2b932383d5202ebc805875665`, SHA-512 is `7b9c4dae591076c62a6b247af3849ff2f3e83de8e53dc6bf2bc4549c1eab6b0a6f96014b80f1db08933828a6bd829adc1dd6546cba42a86aeda4fed8e000a1af`.
+
 ## @simoncharts/charts 1.0.0-rc.33 - 2026-07-28
 
 - Added optional paired `ChartExecution.firstTime` and `ChartExecution.lastTime` fields for host-confirmed aggregated execution ranges without changing the existing marker anchor `time`.

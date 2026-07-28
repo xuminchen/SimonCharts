@@ -13,6 +13,8 @@ import {
 import { createCalculationCheckpointStore } from "../data/calculationCheckpointStore";
 import { createPagedSeriesStore, type SeriesSelection } from "../data/pagedSeriesStore";
 import type { ValidatedSeriesPage } from "../data/seriesPageValidation";
+import type { ChartCustomStudyDefinition } from "../contracts";
+import { parseStudyDefinitions } from "../programmableApi";
 import { createCheckpointedCalculationRuntime } from "../runtime/checkpointedCalculationRuntime";
 import {
   indicatorOutputId,
@@ -162,6 +164,256 @@ describe("checkpointed calculation runtime", () => {
     expect(checkpointStore.getDiagnostics().entryCount).toBe(3);
   });
 
+  it("calculates a versioned custom study through existing panels and checkpoints", async () => {
+    const full = createSeries(80);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 40, 80, "older"));
+    store.mergePage("older", validatedPage(full, 0, 40));
+    const processedCounts: number[] = [];
+    const previousStates: unknown[] = [];
+    const definition = {
+      id: "custom:acme.range",
+      version: "1",
+      title: "ACME Range",
+      pane: "separate",
+      inputs: [{ id: "multiplier", title: "Multiplier", defaultValue: 2 }],
+      outputs: [
+        { id: "line", title: "Line", type: "line", color: "#2563eb" },
+        { id: "hist", title: "Histogram", type: "histogram", color: "#16a34a" },
+        { id: "band", title: "Band", type: "band", fill: "rgba(37,99,235,.1)" },
+        { id: "marks", title: "Marks", type: "marker", color: "#dc2626" }
+      ],
+      calculate(input) {
+        processedCounts.push(input.processedCount);
+        previousStates.push(input.previousState);
+        expect(Object.isFrozen(input)).toBe(true);
+        expect(Object.isFrozen(input.candles)).toBe(true);
+        expect(Object.isFrozen(input.candles[0])).toBe(true);
+        expect(Object.isFrozen(input.inputs)).toBe(true);
+        const values = input.candles.map((candle) =>
+          (candle.high - candle.low) * input.inputs.multiplier
+        );
+        return {
+          outputs: {
+            line: values,
+            hist: values,
+            band: {
+              upper: input.candles.map((candle) => candle.high),
+              lower: input.candles.map((candle) => candle.low)
+            },
+            marks: input.candles.map((candle) => candle.close >= candle.open ? candle.high : null)
+          },
+          state: { processed: input.processedCount + input.candles.length }
+        };
+      }
+    } satisfies ChartCustomStudyDefinition;
+    const definitions = parseStudyDefinitions([definition]);
+    const checkpointStore = createCalculationCheckpointStore();
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore,
+      studyDefinitions: definitions,
+      reloadPage: async () => undefined
+    });
+
+    const results = await runtime.calculateIndicators({
+      selection,
+      configs: [{
+        instanceId: "range-primary",
+        id: definition.id,
+        definitionVersion: definition.version,
+        params: { multiplier: 3 },
+        visible: true
+      }, {
+        instanceId: "range-secondary",
+        id: definition.id,
+        definitionVersion: definition.version,
+        params: { multiplier: 3 },
+        visible: true
+      }],
+      targetTimes: new Set(full.candles.map((item) => item.time))
+    });
+    const result = results.get("range-primary");
+
+    expect(processedCounts).toEqual([0, 0, 40, 40]);
+    expect(previousStates).toEqual([
+      undefined,
+      undefined,
+      { processed: 40 },
+      { processed: 40 }
+    ]);
+    expect(result?.outputs.map((output) => [output.type, output.id, output.panelId])).toEqual([
+      ["line", indicatorOutputId("range-primary", "line"), indicatorPanelId("range-primary")],
+      ["histogram", indicatorOutputId("range-primary", "hist"), indicatorPanelId("range-primary")],
+      ["band", indicatorOutputId("range-primary", "band"), indicatorPanelId("range-primary")],
+      ["marker", indicatorOutputId("range-primary", "marks"), indicatorPanelId("range-primary")]
+    ]);
+    expect(result?.outputs[0]).toMatchObject({
+      label: "Line",
+      color: "#2563eb",
+      values: expect.arrayContaining([{ time: 1, value: expect.any(Number) }])
+    });
+    expect(results.get("range-secondary")?.outputs[0]).toMatchObject({
+      color: "#2563eb"
+    });
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(4);
+  });
+
+  it("rejects an invalid custom result before publishing output or checkpoint", async () => {
+    const full = createSeries(20);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 0, 20));
+    const definition = {
+      id: "custom:acme.invalid",
+      version: "1",
+      title: "Invalid",
+      pane: "main",
+      inputs: [],
+      outputs: [{ id: "line", title: "Line", type: "line" }],
+      calculate: ({ candles }) => ({
+        outputs: { line: candles.slice(1).map((candle) => candle.close) }
+      })
+    } satisfies ChartCustomStudyDefinition;
+    const checkpointStore = createCalculationCheckpointStore();
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore,
+      studyDefinitions: parseStudyDefinitions([definition]),
+      reloadPage: async () => undefined
+    });
+
+    await expect(runtime.calculateIndicators({
+      selection,
+      configs: [{
+        instanceId: "invalid-primary",
+        id: definition.id,
+        definitionVersion: definition.version,
+        params: {},
+        visible: true
+      }],
+      targetTimes: new Set(full.candles.map((item) => item.time))
+    })).rejects.toThrow("must contain");
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(0);
+  });
+
+  it.each([
+    {
+      name: "an extra output",
+      calculate: ({ candles }: { candles: readonly { close: number }[] }) => ({
+        outputs: {
+          line: candles.map((candle) => candle.close),
+          extra: candles.map((candle) => candle.close)
+        }
+      }),
+      message: "keys"
+    },
+    {
+      name: "a sparse output",
+      calculate: ({ candles }: { candles: readonly unknown[] }) => ({
+        outputs: { line: Array(candles.length) }
+      }),
+      message: "dense"
+    },
+    {
+      name: "a non-finite output",
+      calculate: ({ candles }: { candles: readonly unknown[] }) => ({
+        outputs: { line: candles.map(() => Number.NaN) }
+      }),
+      message: "finite"
+    },
+    {
+      name: "non-JSON checkpoint state",
+      calculate: ({ candles }: { candles: readonly { close: number }[] }) => ({
+        outputs: { line: candles.map((candle) => candle.close) },
+        state: new Date()
+      }),
+      message: "JSON-safe"
+    }
+  ])("rejects $name before committing a custom checkpoint", async ({ calculate, message }) => {
+    const full = createSeries(5);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 0, 5));
+    const definition = {
+      id: "custom:acme.boundary",
+      version: "1",
+      title: "Boundary",
+      pane: "main",
+      inputs: [],
+      outputs: [{ id: "line", title: "Line", type: "line" }],
+      calculate
+    } as unknown as ChartCustomStudyDefinition;
+    const checkpointStore = createCalculationCheckpointStore();
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore,
+      studyDefinitions: parseStudyDefinitions([definition]),
+      reloadPage: async () => undefined
+    });
+
+    await expect(runtime.calculateIndicators({
+      selection,
+      configs: [{
+        instanceId: "boundary",
+        id: definition.id,
+        definitionVersion: definition.version,
+        params: {},
+        visible: true
+      }],
+      targetTimes: new Set(full.candles.map((candle) => candle.time))
+    })).rejects.toThrow(message);
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(0);
+  });
+
+  it("rejects custom checkpoint state accessors without executing them", async () => {
+    const full = createSeries(5);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 0, 5));
+    let getterCalls = 0;
+    const state = {};
+    Object.defineProperty(state, "unsafe", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return true;
+      }
+    });
+    const definition = {
+      id: "custom:acme.state-accessor",
+      version: "1",
+      title: "State accessor",
+      pane: "main",
+      inputs: [],
+      outputs: [{ id: "line", title: "Line", type: "line" }],
+      calculate: ({ candles }) => ({
+        outputs: { line: candles.map((candle) => candle.close) },
+        state
+      })
+    } satisfies ChartCustomStudyDefinition;
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore: createCalculationCheckpointStore(),
+      studyDefinitions: parseStudyDefinitions([definition]),
+      reloadPage: async () => undefined
+    });
+
+    await expect(runtime.calculateIndicators({
+      selection,
+      configs: [{
+        instanceId: "state-accessor",
+        id: definition.id,
+        definitionVersion: definition.version,
+        params: {},
+        visible: true
+      }],
+      targetTimes: new Set(full.candles.map((candle) => candle.time))
+    })).rejects.toThrow("only data properties");
+    expect(getterCalls).toBe(0);
+  });
+
   it("publishes no result for an already aborted calculation", async () => {
     const full = createSeries(40);
     const store = createPagedSeriesStore();
@@ -184,6 +436,47 @@ describe("checkpointed calculation runtime", () => {
         signal: controller.signal
       })
     ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("writes no checkpoint when a custom callback cancels its generation", async () => {
+    const full = createSeries(5);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 0, 5));
+    const controller = new AbortController();
+    const checkpointStore = createCalculationCheckpointStore();
+    const definition = {
+      id: "custom:acme.cancel",
+      version: "1",
+      title: "Cancel",
+      pane: "main",
+      inputs: [],
+      outputs: [{ id: "line", title: "Line", type: "line" }],
+      calculate: ({ candles }) => {
+        controller.abort();
+        return { outputs: { line: candles.map((candle) => candle.close) } };
+      }
+    } satisfies ChartCustomStudyDefinition;
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore,
+      studyDefinitions: parseStudyDefinitions([definition]),
+      reloadPage: async () => undefined
+    });
+
+    await expect(runtime.calculateIndicators({
+      selection,
+      configs: [{
+        instanceId: "cancel",
+        id: definition.id,
+        definitionVersion: definition.version,
+        params: {},
+        visible: true
+      }],
+      targetTimes: new Set(full.candles.map((candle) => candle.time)),
+      signal: controller.signal
+    })).rejects.toMatchObject({ name: "AbortError" });
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(0);
   });
 
   it.each(["indicator", "series"] as const)(

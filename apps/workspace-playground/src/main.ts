@@ -1,6 +1,7 @@
 import {
   advancedChartFeatures,
   createChart,
+  type ChartCustomStudyDefinition,
   type ChartInstance,
   type ChartLocale,
   type ChartOptions,
@@ -110,6 +111,50 @@ const executionOverflow = params.get("executionOverflow") === "1";
 const executionTimeRange = params.get("executionTimeRange") === "1";
 const invalidExecutionRange = params.get("invalidExecutionRange") === "1";
 const executionAnchorTime = Date.UTC(2026, 5, 5, 1, 33);
+const customStudies = params.get("customStudies") === "1";
+let customStudyFailurePending = params.get("customStudyFailure") === "once";
+const studyDefinitions = customStudies
+  ? ([
+      {
+        id: "custom:fixture.average",
+        version: "1",
+        title: "Fixture Average",
+        pane: "main",
+        inputs: [{ id: "factor", title: "Factor", defaultValue: 1, minValue: 0.1 }],
+        outputs: [{ id: "average", title: "Average", type: "line", color: "#7c3aed" }],
+        calculate: ({ candles, inputs }) => {
+          window.__customStudyCalls += 1;
+          if (customStudyFailurePending) {
+            customStudyFailurePending = false;
+            throw new Error("fixture custom study failure");
+          }
+          return {
+            outputs: { average: candles.map((candle) => candle.close * inputs.factor) }
+          };
+        }
+      },
+      {
+        id: "custom:fixture.range",
+        version: "1",
+        title: "Fixture Range",
+        pane: "separate",
+        inputs: [],
+        outputs: [{
+          id: "range",
+          title: "Range",
+          type: "histogram",
+          color: "#ea580c"
+        }],
+        calculate: ({ candles }) => {
+          window.__customStudyCalls += 1;
+          return {
+            outputs: { range: candles.map((candle) => candle.high - candle.low) }
+          };
+        }
+      }
+    ] satisfies readonly ChartCustomStudyDefinition[])
+  : undefined;
+window.__customStudyCalls = 0;
 let chart: ChartInstance | undefined;
 let retriedRenderError = false;
 
@@ -181,6 +226,7 @@ if (params.get("nonElement") === "1") {
           }),
     theme: (params.get("theme") ?? "dark") as ChartTheme,
     locale: (params.get("locale") ?? "zh-CN") as ChartLocale,
+    ...(studyDefinitions === undefined ? {} : { studyDefinitions }),
     onError: (error) => {
       counters.errors += 1;
       if (
@@ -196,6 +242,24 @@ if (params.get("nonElement") === "1") {
   } as ChartOptions;
   chart = createChart(container, options);
   window.__chart = chart;
+  if (customStudies) {
+    window.__customStudyIds = [
+      chart.createStudy({
+        instanceId: "fixture-average",
+        id: "custom:fixture.average",
+        definitionVersion: "1",
+        params: {},
+        visible: true
+      }),
+      chart.createStudy({
+        instanceId: "fixture-range",
+        id: "custom:fixture.range",
+        definitionVersion: "1",
+        params: {},
+        visible: true
+      })
+    ];
+  }
   if (invalid) {
     chart.setSymbol(stock);
     chart.setTimeframe("5m");
@@ -214,5 +278,7 @@ declare global {
     __chart?: ChartInstance;
     __reentrantDataReady?: Promise<boolean>;
     __hostCounters: HostCounters;
+    __customStudyCalls: number;
+    __customStudyIds?: readonly string[];
   }
 }

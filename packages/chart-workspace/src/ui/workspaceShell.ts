@@ -1,5 +1,6 @@
 import { createEngineCapabilityManifest } from "@simoncharts/chart-engine";
 import type { ChartFeature, ChartLocale, ChartTheme } from "../contracts";
+import type { IndicatorConfig } from "../runtime/indicatorRuntime";
 import type {
   WorkspaceUiActions,
   WorkspaceViewModel
@@ -18,6 +19,7 @@ export interface WorkspaceShellOptions {
   readonly features: ReadonlySet<ChartFeature>;
   readonly theme: ChartTheme;
   readonly locale: ChartLocale;
+  readonly studyTitleFor?: (config: Readonly<IndicatorConfig>) => string;
 }
 
 type ShellUiActions = WorkspaceUiActions & { resetToLatest?(): void };
@@ -63,7 +65,12 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
 
   const hasToolbar = [...options.features].some((feature) => toolbarFeatures.has(feature));
   const toolbar = hasToolbar
-    ? createTopToolbar(createEngineCapabilityManifest(), options.features, options.locale)
+    ? createTopToolbar(
+        createEngineCapabilityManifest(),
+        options.features,
+        options.locale,
+        options.studyTitleFor
+      )
     : undefined;
   const body = document.createElement("div");
   body.className = "sc-workspace-body";

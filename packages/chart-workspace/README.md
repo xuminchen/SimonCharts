@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.33.tgz
+npm install ./simoncharts-charts-1.0.0-rc.34.tgz
 ```
 
 ## Embed the default chart
@@ -212,6 +212,70 @@ if (await chart.dataReady()) {
 
 `entity-created`, `entity-updated`, and `entity-removed` events carry the final defensive entity snapshot. Drawing IDs are isolated by chart, persistence scope, data context, symbol, and adjustment; mark IDs additionally follow the current symbol; indicator IDs follow the chart's persisted indicator scope. A stale or foreign ID cannot mutate the current selection.
 
+## Define host-owned custom studies
+
+Custom Study definitions are chart-scoped trusted host code. They reuse the existing Study, Entity, checkpoint, visual-output, pane, crosshair, layout, failure/retry, and `dataReady()` paths; the SDK does not create a global registry or a second indicator engine.
+
+```ts
+import {
+  createChart,
+  type ChartCustomStudyDefinition,
+  type ChartCustomStudyInput
+} from "@simoncharts/charts";
+
+const studyDefinitions = [{
+  id: "custom:review.range",
+  version: "1",
+  title: "Review Range",
+  pane: "separate",
+  inputs: [{
+    id: "factor",
+    title: "Factor",
+    defaultValue: 1,
+    minValue: 0.1
+  }],
+  outputs: [
+    { id: "range", title: "Range", type: "line", color: "#7c3aed" },
+    { id: "strength", title: "Strength", type: "histogram", color: "#ea580c" }
+  ],
+  calculate({ candles, inputs }) {
+    const values = candles.map(
+      (candle) => (candle.high - candle.low) * inputs.factor
+    );
+    return {
+      outputs: {
+        range: values,
+        strength: values
+      }
+    };
+  }
+}] satisfies readonly ChartCustomStudyDefinition[];
+
+const chart = createChart(container, {
+  // ...the required host configuration above
+  studyDefinitions
+});
+
+const customStudy: ChartCustomStudyInput = {
+  instanceId: "review-range",
+  id: "custom:review.range",
+  definitionVersion: "1",
+  params: {},
+  visible: true
+};
+const entityId = chart.createStudy(customStudy);
+chart.getStudyApi(entityId)?.setInputs({ factor: 2 });
+await chart.dataReady();
+```
+
+Definition IDs must use the `custom:` namespace. A chart accepts at most 32 definitions, 16 numeric inputs and 16 fixed outputs per definition; outputs are `line`, `histogram`, `band`, or `marker`. `calculate()` is synchronous and receives only the current chronological real-candle chunk, normalized inputs, accepted selection/data revision, `processedCount`, and the prior JSON-safe checkpoint state. Every declared output must return one dense finite-or-`null` value per input candle; a band returns matching `upper` and `lower` arrays. The SDK assigns candle times and rejects missing, extra, sparse, non-finite, accessor-backed, or oversized data before publishing a visual or checkpoint.
+
+Instances must name the exact registered `definitionVersion`; missing or mismatched versions are rejected atomically by creation, batch replacement, Entity update, and layout import. Use `ChartCustomStudyInput` for the statically exact custom contract. The legacy extendable `ChartIndicator` and `ChartIndicatorInput` interfaces remain source-compatible, while the same ID/version rules are enforced at runtime.
+
+Definitions and callback functions never enter `ChartLayoutV2`, JSON export, or browser storage. Layouts contain only the custom instance's `id`, exact `definitionVersion`, `instanceId`, normalized numeric `params`, and `visible` state. Custom instances are also excluded from automatic browser indicator preferences: the host must retain its definitions and explicitly save/import the layout. The built-in UI displays the custom title and supports visibility/removal, but rc.34 intentionally provides no code editor, marketplace, arbitrary DOM/Canvas renderer, async callback, or custom input form.
+
+Thrown calculations fail closed through the existing `CALCULATION_FAILED` state and `retry()` path. Superseded or cancelled generations cannot publish visuals or checkpoints, and `dataReady()` remains pending until all concurrent study and stateful-series calculations have settled and the resulting presentation has painted.
+
 ## Show host-owned execution marks
 
 Execution marks are opt-in, read-only host data. Add the `executions` feature, then supply or replace the current symbol's real executions. The SDK never creates trades, infers T classifications, or writes an execution back to the host.
@@ -334,4 +398,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.33 adds optional validated first/last times to each host-owned execution and displays them through the existing native hover and pinned tooltip without changing marker placement, grouping, persistence, or interaction. It preserves rc.32's live study handle and selection-safe `dataReady()`, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.34 adds chart-scoped, exact-version Custom Study definitions and routes their bounded synchronous outputs through the existing checkpoint, native renderer, pane, crosshair, Study/Entity, Layout, retry, and `dataReady()` systems. Definition code remains host-owned and never enters JSON or browser persistence. It preserves rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
