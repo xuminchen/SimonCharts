@@ -34,6 +34,7 @@ export type {
   ChartEntityId,
   ChartEntityInput,
   ChartEntityKind,
+  ChartSelectableEntityId,
   ChartEvent,
   ChartEventListener,
   ChartExecution,

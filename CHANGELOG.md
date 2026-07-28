@@ -1,5 +1,15 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.37 - 2026-07-28
+
+- Added typed `getSelection()`, `setSelection()`, and `clearSelection()` APIs for multiple interactive Drawings or exactly one Study, reusing existing opaque Entity IDs.
+- Added defensive `selection-changed`, `drawing-clicked`, `study-clicked`, and grouped `execution-clicked` events through the existing chart event stream.
+- Kept selection transient and outside `ChartLayoutV2` and browser persistence; invalid, mixed, mark, missing, and non-interactive selections are rejected atomically.
+- Unified primary-pointer Canvas click/tap slop so right clicks, secondary pointers, Drawing edits, and chart pans cannot also emit actions; execution actions wait for a completed click/touch gesture, while source replacement or synchronous selection reentry cancels stale pending actions.
+- Made Study actions hit-test rendered line segments, histogram bodies, and band fills inside the active panel, resolve overlaps to the topmost output, and preserve marker geometry, hidden-study behavior, and existing Canvas renderers.
+- Preserved Drawing selection across rematerialization and entity updates, retained surviving selected Drawings after removal, and removed Drawings changed to `interactive: false` without adding a second selection, action, tooltip, or persistence system.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,197 tests`, combined Chrome `130/130`, Charts `14 files / 195 tests`, Charts Chrome/Edge `79/79` per browser, and byte-identical packed Chrome/Edge consumer execution; SHA-256 is `a5c2d85d778dd1717691f6c6c527e74367244a24356f4ef7f5df8c201ced54a7`, SHA-512 is `5f3d7ce8a5e4aec738de962f9034ff1fe1a3908f03550e137050bffbaa8459631e56ce2a5927d351cbf06b66510f81db3183940c7cdf623740f47455d642fa4a`.
+
 ## @simoncharts/charts 1.0.0-rc.36 - 2026-07-28
 
 - Added public `ChartThemeOverrides`, optional `ChartOptions.themeOverrides`, and runtime `getTheme()`, `setTheme()`, `getThemeOverrides()`, and `setThemeOverrides()` APIs over the existing Workspace color tokens.

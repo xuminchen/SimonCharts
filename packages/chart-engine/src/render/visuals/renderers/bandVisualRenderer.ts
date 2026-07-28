@@ -85,7 +85,7 @@ export function createBandVisualRenderer() {
       const renderRange = getVisualRenderRange(hitContext, range);
       const lowerByTime = new Map(output.lower.map((point) => [point.time, point]));
       const indexByTime = createTimeIndex(hitContext.state.series);
-      const candidates = output.upper.flatMap((upperPoint) => {
+      const candidates = output.upper.map((upperPoint) => {
         const lowerPoint = lowerByTime.get(upperPoint.time);
         const upperVisiblePoint = getVisibleIndicatorPoint(hitContext, indexByTime, upperPoint);
         const lowerVisiblePoint = lowerPoint
@@ -93,22 +93,46 @@ export function createBandVisualRenderer() {
           : undefined;
 
         if (!upperVisiblePoint || !lowerVisiblePoint) {
-          return [];
+          return undefined;
         }
 
         const value = (upperVisiblePoint.value + lowerVisiblePoint.value) / 2;
 
-        return [
-          {
-            time: upperVisiblePoint.time,
-            value,
-            x: xForVisualIndex(hitContext, upperVisiblePoint.index),
-            y: yForVisualValue(hitContext, renderRange, value)
-          }
-        ];
+        return {
+          time: upperVisiblePoint.time,
+          value,
+          x: xForVisualIndex(hitContext, upperVisiblePoint.index),
+          y: yForVisualValue(hitContext, renderRange, value),
+          upperY: yForVisualValue(hitContext, renderRange, upperVisiblePoint.value),
+          lowerY: yForVisualValue(hitContext, renderRange, lowerVisiblePoint.value)
+        };
       });
+      for (let index = 1; index < candidates.length; index += 1) {
+        const start = candidates[index - 1];
+        const end = candidates[index];
+        if (!start || !end || x < Math.min(start.x, end.x) || x > Math.max(start.x, end.x)) {
+          continue;
+        }
+        const ratio = end.x === start.x ? 0 : (x - start.x) / (end.x - start.x);
+        const upperY = start.upperY + ratio * (end.upperY - start.upperY);
+        const lowerY = start.lowerY + ratio * (end.lowerY - start.lowerY);
+        if (y < Math.min(upperY, lowerY) || y > Math.max(upperY, lowerY)) continue;
+        const nearest = ratio <= 0.5 ? start : end;
+        return {
+          outputId: output.id,
+          outputType: output.type,
+          time: nearest.time,
+          value: nearest.value,
+          distance: 0
+        };
+      }
 
-      return getNearestVisualHit(output, x, y, candidates);
+      return getNearestVisualHit(
+        output,
+        x,
+        y,
+        candidates.filter((point): point is NonNullable<typeof point> => point !== undefined)
+      );
     }
   );
 }

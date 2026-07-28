@@ -631,6 +631,67 @@ describe("visual renderers", () => {
     expect(hit?.distance).toBeGreaterThanOrEqual(0);
   });
 
+  it("hit-tests the rendered line segment, histogram body, and band fill", () => {
+    const viewport = { ...createViewport(), candleWidth: 48 };
+    const hitRenderedGeometry = (
+      renderer: VisualRenderer,
+      output: IndicatorVisualOutput,
+      point: (context: FakeCanvasContext) => { x: number; y: number }
+    ) => {
+      const state = createState({ viewport, visualOutputs: [output] });
+      const context = createVisualContext(output, state);
+      renderer.render(context);
+      const target = point(context.context as unknown as FakeCanvasContext);
+      return renderer.hitTest(context, target.x, target.y);
+    };
+
+    const lineHit = hitRenderedGeometry(
+      createLineVisualRenderer(),
+      createRenderableOutput("line"),
+      (context) => {
+        const start = callsNamed(context, "moveTo")[0]!.args;
+        const end = callsNamed(context, "lineTo")[0]!.args;
+        return {
+          x: (Number(start[0]) + Number(end[0])) / 2,
+          y: (Number(start[1]) + Number(end[1])) / 2
+        };
+      }
+    );
+    expect(lineHit?.distance).toBeCloseTo(0);
+
+    const histogramHit = hitRenderedGeometry(
+      createHistogramVisualRenderer(),
+      createRenderableOutput("histogram"),
+      (context) => {
+        const rect = callsNamed(context, "fillRect")[0]!.args;
+        return {
+          x: Number(rect[0]) + Number(rect[2]) / 2,
+          y: Number(rect[1]) + Number(rect[3]) / 2
+        };
+      }
+    );
+    expect(histogramHit?.distance).toBe(0);
+
+    const bandHit = hitRenderedGeometry(
+      createBandVisualRenderer(),
+      createRenderableOutput("band"),
+      (context) => {
+        const upperStart = callsNamed(context, "moveTo")[0]!.args;
+        const [upperEnd, lowerEnd, lowerStart] = callsNamed(context, "lineTo").map((call) => call.args);
+        return {
+          x: (Number(upperStart[0]) + Number(upperEnd![0])) / 2,
+          y: (
+            Number(upperStart[1]) +
+            Number(upperEnd![1]) +
+            Number(lowerEnd![1]) +
+            Number(lowerStart![1])
+          ) / 4
+        };
+      }
+    );
+    expect(bandHit?.distance).toBe(0);
+  });
+
   it.each([
     ["line", createLineVisualRenderer()],
     ["histogram", createHistogramVisualRenderer()],

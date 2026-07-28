@@ -32,6 +32,7 @@ import type {
   ChartMark,
   ChartOptions,
   ChartSeriesProperties,
+  ChartSelectableEntityId,
   ChartStateListener,
   ChartStudyApi,
   ChartStudyDefinitionId,
@@ -311,6 +312,12 @@ describe("charts public contract", () => {
       .toEqualTypeOf<(entity: ChartEntity) => void>();
     expectTypeOf<ChartInstance["removeEntity"]>()
       .toEqualTypeOf<(entityId: ChartEntityId) => boolean>();
+    expectTypeOf<ChartInstance["getSelection"]>()
+      .toEqualTypeOf<() => readonly ChartSelectableEntityId[]>();
+    expectTypeOf<ChartInstance["setSelection"]>()
+      .toEqualTypeOf<(entityIds: readonly ChartSelectableEntityId[]) => void>();
+    expectTypeOf<ChartInstance["clearSelection"]>()
+      .toEqualTypeOf<() => void>();
     expectTypeOf<ChartInstance>().toHaveProperty("setSymbol");
     expectTypeOf<ChartInstance>().toHaveProperty("setTimeframe");
     expectTypeOf<ChartInstance>().toHaveProperty("setView");
@@ -379,6 +386,14 @@ describe("charts public contract", () => {
       .toEqualTypeOf<Readonly<ChartLayoutV2>>();
     expectTypeOf<Extract<ChartEvent, { type: "mark-clicked" }>["mark"]>()
       .toEqualTypeOf<Readonly<ChartMark>>();
+    expectTypeOf<Extract<ChartEvent, { type: "selection-changed" }>["selection"]>()
+      .toEqualTypeOf<readonly ChartSelectableEntityId[]>();
+    expectTypeOf<Extract<ChartEvent, { type: "drawing-clicked" }>["entity"]["id"]>()
+      .toEqualTypeOf<`drawing:${string}`>();
+    expectTypeOf<Extract<ChartEvent, { type: "study-clicked" }>["entity"]["id"]>()
+      .toEqualTypeOf<ChartIndicatorEntityId>();
+    expectTypeOf<Extract<ChartEvent, { type: "execution-clicked" }>["executions"]>()
+      .toEqualTypeOf<readonly ChartExecution[]>();
     expectTypeOf<Extract<ChartEvent, { type: "entity-created" }>["entity"]>()
       .toEqualTypeOf<Readonly<ChartEntity>>();
     expectTypeOf<Extract<ChartEvent, { type: "entity-updated" }>["entity"]>()

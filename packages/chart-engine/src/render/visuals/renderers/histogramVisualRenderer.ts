@@ -82,6 +82,16 @@ export function createHistogramVisualRenderer() {
 
       const renderRange = getVisualRenderRange(hitContext, range);
       const indexByTime = createTimeIndex(hitContext.state.series);
+      const baselineValue =
+        hitContext.valueScale.mode === "log"
+          ? scaleValueToPrice(hitContext.valueScale.min, hitContext.valueScale)
+          : range.min <= 0 && range.max >= 0
+            ? 0
+            : range.min > 0
+              ? range.min
+              : range.max;
+      const baselineY = yForVisualValue(hitContext, renderRange, baselineValue);
+      const barWidth = Math.max(1, hitContext.state.viewport.candleWidth * 0.7);
       const candidates = output.values.flatMap((point) => {
         if (!isRenderableVisualValue(hitContext, point.value)) {
           return [];
@@ -93,14 +103,22 @@ export function createHistogramVisualRenderer() {
           return [];
         }
 
-        return [
-          {
+        const pointX = xForVisualIndex(hitContext, index);
+        const pointY = yForVisualValue(hitContext, renderRange, point.value);
+        if (
+          x >= pointX - barWidth / 2 &&
+          x <= pointX + barWidth / 2 &&
+          y >= Math.min(pointY, baselineY) &&
+          y <= Math.max(pointY, baselineY)
+        ) {
+          return [{
             time: point.time,
             value: point.value,
-            x: xForVisualIndex(hitContext, index),
-            y: yForVisualValue(hitContext, renderRange, point.value)
-          }
-        ];
+            x,
+            y
+          }];
+        }
+        return [{ time: point.time, value: point.value, x: pointX, y: pointY }];
       });
 
       return getNearestVisualHit(output, x, y, candidates);

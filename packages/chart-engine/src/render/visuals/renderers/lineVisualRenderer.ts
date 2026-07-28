@@ -95,17 +95,50 @@ export function createLineVisualRenderer() {
 
       const renderRange = getVisualRenderRange(hitContext, range);
       const indexByTime = createTimeIndex(hitContext.state.series);
-      const candidates = output.values
-        .map((point) => getVisibleIndicatorPoint(hitContext, indexByTime, point))
-        .filter((point): point is NonNullable<typeof point> => point !== undefined)
-        .map((point) => ({
-          time: point.time,
-          value: point.value,
-          x: xForVisualIndex(hitContext, point.index),
-          y: yForVisualValue(hitContext, renderRange, point.value)
-        }));
+      const candidates = output.values.map((point) => {
+        const visible = getVisibleIndicatorPoint(hitContext, indexByTime, point);
+        return visible === undefined
+          ? undefined
+          : {
+              time: visible.time,
+              value: visible.value,
+              x: xForVisualIndex(hitContext, visible.index),
+              y: yForVisualValue(hitContext, renderRange, visible.value)
+            };
+      });
+      const pointHit = getNearestVisualHit(
+        output,
+        x,
+        y,
+        candidates.filter((point): point is NonNullable<typeof point> => point !== undefined)
+      );
+      let segmentHit = pointHit;
+      for (let index = 1; index < candidates.length; index += 1) {
+        const start = candidates[index - 1];
+        const end = candidates[index];
+        if (!start || !end) continue;
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const lengthSquared = dx * dx + dy * dy;
+        const ratio = lengthSquared === 0
+          ? 0
+          : Math.max(0, Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared));
+        const distance = Math.hypot(
+          x - (start.x + ratio * dx),
+          y - (start.y + ratio * dy)
+        );
+        if (segmentHit && segmentHit.distance <= distance) continue;
+        const nearest = ratio <= 0.5 ? start : end;
+        segmentHit = {
+          outputId: output.id,
+          outputType: output.type,
+          time: nearest.time,
+          value: nearest.value,
+          distance
+        };
+      }
 
-      return getNearestVisualHit(output, x, y, candidates);
+      return segmentHit;
     }
   );
 }

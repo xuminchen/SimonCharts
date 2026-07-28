@@ -28,6 +28,16 @@ async function findExecutionMarker(
 test("keeps every grouped execution reachable inside a bounded tooltip", async ({ page }) => {
   await page.goto("/?executionOverflow=1");
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  await page.evaluate(() => {
+    (window as typeof window & { __executionClicks?: unknown[] }).__executionClicks = [];
+    window.__chart!.subscribeEvents((event) => {
+      if (event.type === "execution-clicked") {
+        (window as typeof window & { __executionClicks: unknown[] }).__executionClicks.push(
+          event.executions
+        );
+      }
+    });
+  });
 
   const marker = await findExecutionMarker(page, true);
 
@@ -47,6 +57,15 @@ test("keeps every grouped execution reachable inside a bounded tooltip", async (
 
   await page.mouse.click(marker.x, marker.y);
   await expect(tooltip).toHaveAttribute("data-pinned", "true");
+  const clicked = await page.evaluate(() =>
+    (window as typeof window & { __executionClicks?: Array<Array<{ id: string }>> })
+      .__executionClicks ?? []
+  );
+  expect(clicked).toHaveLength(1);
+  expect(clicked[0]).toHaveLength(30);
+  expect(clicked[0]!.map((execution) => execution.id)).toEqual(
+    Array.from({ length: 30 }, (_, index) => `fill-${index + 1}`)
+  );
   await tooltip.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await expect.poll(() => tooltip.evaluate((element) => element.scrollTop > 0)).toBe(true);
   await expect(tooltip).toContainText("#30 时间");
@@ -67,6 +86,14 @@ test("shows a broker split time range in the same hover and pinned tooltip", asy
   await page.goto("/?executionTimeRange=1");
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
   await page.evaluate(async () => {
+    (window as typeof window & { __executionClicks?: unknown[] }).__executionClicks = [];
+    window.__chart?.subscribeEvents((event) => {
+      if (event.type === "execution-clicked") {
+        (window as typeof window & { __executionClicks: unknown[] }).__executionClicks.push(
+          event.executions
+        );
+      }
+    });
     window.__chart?.setVisibleRange({
       from: Date.UTC(2026, 5, 5, 1, 30),
       to: Date.UTC(2026, 5, 5, 1, 40)
@@ -94,10 +121,23 @@ test("shows a broker split time range in the same hover and pinned tooltip", asy
   await expect(tooltip).toContainText("09:33:00");
   await expect(page.locator(".sc-status-time")).toHaveText("2026-06-05 09:33");
   const hoverText = await tooltip.innerText();
+  expect(await page.evaluate(() =>
+    (window as typeof window & { __executionClicks?: unknown[] }).__executionClicks ?? []
+  )).toEqual([]);
 
   await page.mouse.click(marker.x, marker.y);
   await expect(tooltip).toHaveAttribute("data-pinned", "true");
   expect(await tooltip.innerText()).toBe(hoverText);
+  expect(await page.evaluate(() =>
+    (window as typeof window & { __executionClicks?: unknown[] }).__executionClicks ?? []
+  )).toEqual([[
+    expect.objectContaining({
+      id: "broker-split-summary",
+      firstTime: Date.UTC(2026, 5, 5, 1, 31),
+      lastTime: Date.UTC(2026, 5, 5, 1, 33),
+      time: Date.UTC(2026, 5, 5, 1, 33)
+    })
+  ]]);
 
   const canvasBox = await page.locator("canvas.sc-overlay-canvas").boundingBox();
   if (!canvasBox) throw new Error("canvas missing");

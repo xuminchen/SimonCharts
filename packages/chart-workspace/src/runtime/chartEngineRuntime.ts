@@ -1,6 +1,7 @@
 import {
   beginDrawingHandleDrag,
   beginDrawingMoveDrag,
+  chooseNearestVisualHit,
   createBandVisualRenderer,
   createChartEngine,
   createChartLayout,
@@ -16,6 +17,7 @@ import {
   createMainPanelPriceScale,
   createMarkerVisualRenderer,
   createPanelLayout,
+  createPriceScaleFromBounds,
   createRenderScheduler,
   createStaticLayers,
   createVisualLayer,
@@ -28,6 +30,7 @@ import {
   getDrawingHoverState,
   hitTestDrawing,
   hitTestDrawingEditHandle,
+  mergeVisualAutoscaleRanges,
   panViewportByPixels,
   priceToScaleValue,
   projectDrawingObject,
@@ -87,6 +90,7 @@ import { formatShanghaiTime } from "./shanghaiTimeFormatter";
 import { readWorkspaceChartTheme } from "./workspaceTheme";
 import {
   createExecutionMarkerOutput,
+  executionsFromMark,
   executionTooltipRows
 } from "./executionMarks";
 
@@ -160,7 +164,8 @@ export interface ChartEngineRuntime {
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
   setPriceScaleMode(mode: PriceScaleMode): void;
-  setDrawings(drawings: readonly DrawingObject[]): void;
+  setDrawings(drawings: readonly DrawingObject[], selectedDrawingIds?: readonly string[]): void;
+  selectDrawings(ids: readonly string[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
   executeDrawingCommand(command: DrawingEditorCommand): void;
   undoDrawing(): void;
@@ -194,7 +199,11 @@ export interface ChartEngineRuntimeOptions {
   hasCrosshairListeners?: () => boolean;
   onCrosshairChanged?: (snapshot: RuntimeCrosshairSnapshot | undefined) => void;
   onExecutionTooltipChanged?: (snapshot: ExecutionTooltipSnapshot | undefined) => void;
+  onExecutionClicked?: (executions: readonly ChartExecution[]) => void;
   onMarkClicked?: (mark: Readonly<ChartMark>) => void;
+  onDrawingClicked?: (drawingId: string) => void;
+  onStudyClicked?: (instanceId: string) => void;
+  onBlankClicked?: () => void;
   onDrawingsChanged?: (drawings: readonly DrawingObject[], selectedDrawingIds: readonly string[]) => void;
   onDrawingHistoryChanged?: (state: { canUndo: boolean; canRedo: boolean }) => void;
   onCalculationError?: (kind: "indicator" | "series", error: unknown) => void;
@@ -286,6 +295,16 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let drawingHandleDragOperation: DrawingHandleDragOperation | undefined;
   let drawingMoveDragOperation: DrawingMoveDragOperation | undefined;
   let hoveredDrawingId: string | undefined;
+  let suppressDrawingState = false;
+  let pendingClick:
+    | {
+        readonly pointerId: number;
+        readonly start: { readonly x: number; readonly y: number };
+        readonly kind: "drawing" | "study" | "blank" | "execution";
+        readonly id?: string;
+        readonly executions?: readonly ChartExecution[];
+      }
+    | undefined;
   let activePointerId: number | undefined;
   let priceAxisDrag: { pointerId: number; startY: number; scale: PriceScale } | undefined;
   let timeAxisDrag: { pointerId: number; startX: number; viewport: ViewportState } | undefined;
@@ -390,7 +409,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
           event.type === "drawingDeleted"
         ) refreshDrawingScale("drawingChanged");
         else syncDrawings();
-        emitDrawingState();
+        if (!suppressDrawingState) emitDrawingState();
       }
     });
   drawingEditor = createEditor([]);
@@ -1042,11 +1061,62 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       : undefined;
   }
 
-  function updateExecutionTooltip(point: { x: number; y: number }, pinned = false): boolean {
+  function studyAt(point: { x: number; y: number }): string | undefined {
+    if (visualOutputs.length === 0) return undefined;
+    const state = chartEngine.getState();
+    const panels = createPanels();
+    const theme = readWorkspaceChartTheme(options.themeRoot, options.getComputedStyle?.(options.themeRoot));
+    const panel = [...panels].reverse().find(({ plotArea }) =>
+      point.x >= plotArea.x &&
+      point.x <= plotArea.x + plotArea.width &&
+      point.y >= plotArea.y &&
+      point.y <= plotArea.y + plotArea.height
+    );
+    if (!panel) return undefined;
+    const activeOutputs = visualOutputs.filter((output) =>
+      output.visible !== false && (output.panelId ?? "main") === panel.id
+    );
+    const valueRange = mergeVisualAutoscaleRanges(activeOutputs.map((output) =>
+      visualRegistry.require(output.type).getAutoscale(output)
+    ));
+    const hits = [...activeOutputs].reverse()
+      .map((output) => {
+        const renderer = visualRegistry.require(output.type);
+        return renderer.hitTest({
+          output,
+          panel,
+          state: {
+            series: state.series,
+            viewport,
+            priceScale,
+            formatTime: formatShanghaiTime,
+            theme,
+            layout,
+            panels,
+            visualOutputs: activeOutputs,
+            ...(timeCoordinates === undefined ? {} : { timeCoordinates })
+          },
+          valueScale: panel.kind === "main"
+            ? priceScale
+            : createPriceScaleFromBounds(valueRange ?? { min: 0, max: 1 }, 1, "linear"),
+          valueRange
+        }, point.x, point.y);
+      });
+    const hit = chooseNearestVisualHit(hits);
+    if (!hit || hit.distance > 14) return undefined;
+    return indicatorConfigs.find((config) =>
+      hit.outputId.startsWith(indicatorOutputPrefix(config.instanceId))
+    )?.instanceId;
+  }
+
+  function updateExecutionTooltip(
+    point: { x: number; y: number },
+    pinned = false
+  ): readonly ChartExecution[] | undefined {
     const mark = markerAt(executionOutput, point);
     if (!mark) {
       if (!executionTooltipPinned) clearExecutionTooltip();
-      return false;
+      return undefined;
     }
     executionTooltipPinned = pinned;
     executionTooltip = {
@@ -1057,7 +1127,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       rows: executionTooltipRows(mark, options.themeRoot.lang === "en-US" ? "en-US" : "zh-CN")
     };
     scheduler.invalidate({ layers: ["tooltip"], reason: "executionTooltipChanged" });
-    return true;
+    return executionsFromMark(mark);
   }
 
   function clearExecutionTooltip(): void {
@@ -1093,7 +1163,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     session.handleInput({ type: "cursor", cursor: hover.cursor });
   }
 
-  function handleDrawingPointerDown(point: { x: number; y: number }): boolean {
+  function handleDrawingPointerDown(point: { x: number; y: number }): boolean | string {
     const state = drawingEditor.getState();
     hoveredDrawingId = undefined;
     if (state.activeTool !== "select") {
@@ -1108,12 +1178,11 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         selectedDrawingIds: state.selectedDrawingIds,
         startPoint: point
       });
-      if (drawingHandleDragOperation) return true;
+      if (drawingHandleDragOperation) return handle.drawingId;
     }
     const projectedDrawings = state.drawings.map((drawing) => projectDrawingObject(drawing, coordinateContext()));
     const hit = hitTestDrawing(projectedDrawings, point, { registry: drawingRegistry })?.drawing;
     if (!hit) {
-      if (state.selectedDrawingIds.length > 0) drawingEditor.selectDrawings([]);
       return false;
     }
     if (!state.selectedDrawingIds.includes(hit.id)) drawingEditor.selectDrawing(hit.id);
@@ -1123,7 +1192,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       selectedDrawingIds: selected.selectedDrawingIds,
       startPoint: point
     });
-    return true;
+    return hit.id;
   }
 
   function handleDrawingPointerMove(point: { x: number; y: number }): boolean {
@@ -1199,6 +1268,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   }
 
   function cancelPointerInteraction(input: "pointerCancel" | "leave" | "blur"): void {
+    pendingClick = undefined;
     drawingEditor.cancel();
     drawingHandleDragOperation = undefined;
     drawingMoveDragOperation = undefined;
@@ -1313,6 +1383,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     return { x: event.offsetX ?? 0, y: event.offsetY ?? 0 };
   };
   const expectedLostPointerIds = new Set<number>();
+  const isPrimaryActionPointer = (event: PointerEvent): boolean =>
+    event.isPrimary !== false &&
+    (typeof event.button !== "number" || event.button === 0);
   const capture = (pointerId: number) => {
     activePointerId = pointerId;
     options.overlayCanvas.setPointerCapture?.(pointerId);
@@ -1325,9 +1398,21 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
 
   listen("pointerdown", ((raw: Event) => {
     const event = raw as PointerEvent;
+    if (activePointerId !== undefined || !isPrimaryActionPointer(event)) return;
     const p = point(event);
+    pendingClick = undefined;
     options.overlayCanvas.focus?.({ preventScroll: true });
-    if (updateExecutionTooltip(p, true)) return;
+    const executionHit = updateExecutionTooltip(p, true);
+    if (executionHit) {
+      pendingClick = {
+        pointerId: event.pointerId,
+        start: p,
+        kind: "execution",
+        executions: structuredClone(executionHit)
+      };
+      capture(event.pointerId);
+      return;
+    }
     const mark = markerAt(markOutput, p);
     if (mark) {
       options.onMarkClicked?.({
@@ -1356,16 +1441,28 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       return;
     }
     const drawing = handleDrawingPointerDown(p);
-    if (!drawing && intradayLocked()) return;
+    const studyId = drawing ? undefined : studyAt(p);
+    pendingClick = typeof drawing === "string"
+      ? { pointerId: event.pointerId, start: p, kind: "drawing", id: drawing }
+      : drawing
+        ? undefined
+        : studyId === undefined
+          ? { pointerId: event.pointerId, start: p, kind: "blank" }
+          : { pointerId: event.pointerId, start: p, kind: "study", id: studyId };
     capture(event.pointerId);
     session.handleInput({ type: "pointerDown", point: p, mode: drawing ? "drawing" : "dragPan" });
-    if (!drawing) interaction?.handlePointerDown(p);
+    if (!drawing && !intradayLocked()) interaction?.handlePointerDown(p);
   }) as EventListener);
 
   listen("pointermove", ((raw: Event) => {
     const event = raw as PointerEvent;
     if (activePointerId !== undefined && event.pointerId !== activePointerId) return;
     const p = point(event);
+    const pending = pendingClick;
+    if (pending !== undefined && pending.pointerId === event.pointerId) {
+      if (Math.hypot(p.x - pending.start.x, p.y - pending.start.y) <= 4) return;
+      pendingClick = undefined;
+    }
     if (activePointerId === undefined && !executionTooltipPinned && event.pointerType !== "touch") {
       updateExecutionTooltip(p);
     }
@@ -1416,6 +1513,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
 
   const finishPointer = (event: PointerEvent, canceled = false) => {
     if (activePointerId !== undefined && event.pointerId !== activePointerId) return;
+    if (!canceled && !isPrimaryActionPointer(event)) return;
     const p = point(event);
     session.handleInput(canceled ? { type: "pointerCancel" } : { type: "pointerUp", point: p });
     release(event.pointerId);
@@ -1434,7 +1532,22 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       session.handleInput({ type: "cursor", cursor: "crosshair" });
       return;
     }
-    if (!handleDrawingPointerUp(p)) interaction?.handlePointerUp(p);
+    const pending = pendingClick;
+    const click = pending !== undefined &&
+      pending.pointerId === event.pointerId &&
+      Math.hypot(p.x - pending.start.x, p.y - pending.start.y) <= 4
+      ? pending
+      : undefined;
+    pendingClick = undefined;
+    if (click?.kind === "execution") {
+      options.onExecutionClicked?.(click.executions ?? []);
+      return;
+    }
+    const finishPoint = click?.kind === "drawing" ? click.start : p;
+    if (!handleDrawingPointerUp(finishPoint)) interaction?.handlePointerUp(finishPoint);
+    if (click?.kind === "drawing") options.onDrawingClicked?.(click.id!);
+    else if (click?.kind === "study") options.onStudyClicked?.(click.id!);
+    else if (click?.kind === "blank") options.onBlankClicked?.();
   };
   listen("pointerup", ((event: Event) => finishPointer(event as PointerEvent)) as EventListener);
   listen("pointercancel", ((event: Event) => finishPointer(event as PointerEvent, true)) as EventListener);
@@ -1562,6 +1675,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         indicatorCalculationFailed = false;
         calculationRecoveryPending = true;
       }
+      if (pendingClick?.kind === "study") pendingClick = undefined;
       visualOutputs = configs.flatMap((config) =>
         config.visible ? results.get(config.instanceId)?.outputs ?? [] : []
       );
@@ -1639,6 +1753,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   return {
     setMaterializedSeries(input, anchorTime) {
       if (destroyed) return;
+      pendingClick = undefined;
       const eventsWereSuspended = crosshairEventsSuspended;
       const previousMaterialized = materialized;
       const previousSeries = chartEngine.getState().series;
@@ -1800,6 +1915,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     },
     setIndicators(configs) {
       if (destroyed) return;
+      if (pendingClick?.kind === "study") pendingClick = undefined;
       indicatorConfigs = configs.map((config) => structuredClone(config));
       visualOutputs = [];
       syncVisualOutputs();
@@ -1815,10 +1931,29 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       void calculateIndicators(indicatorConfigs, indicatorGeneration);
     },
     setMarks(nextMarks) { if (destroyed) return; marks = nextMarks.map((mark) => ({ ...mark })); rebuildMarkOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair"], reason: "marksChanged" }); },
-    setExecutions(nextExecutions) { if (destroyed) return; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionsChanged" }); },
-    setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionVisibilityChanged" }); },
+    setExecutions(nextExecutions) { if (destroyed) return; if (pendingClick?.kind === "execution") pendingClick = undefined; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionsChanged" }); },
+    setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; if (pendingClick?.kind === "execution") pendingClick = undefined; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionVisibilityChanged" }); },
     setPriceScaleMode(mode) { if (destroyed) return; manualPriceScale = undefined; viewport = { ...viewport, priceScaleMode: mode }; chartEngine.dispatch({ type: "setPriceScaleMode", mode }); rebuildInteraction(); scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"], reason: "priceScaleChanged" }); },
-    setDrawings(drawings) { if (destroyed) return; drawingHandleDragOperation = undefined; drawingMoveDragOperation = undefined; hoveredDrawingId = undefined; drawingEditor = createEditor(drawings); refreshDrawingScale("drawingsReplaced"); emitDrawingHistoryState(); },
+    setDrawings(drawings, selectedDrawingIds = []) {
+      if (destroyed) return;
+      if (pendingClick?.kind === "drawing") pendingClick = undefined;
+      drawingHandleDragOperation = undefined;
+      drawingMoveDragOperation = undefined;
+      hoveredDrawingId = undefined;
+      drawingEditor = createEditor(drawings);
+      suppressDrawingState = true;
+      try {
+        drawingEditor.selectDrawings([...selectedDrawingIds]);
+      } finally {
+        suppressDrawingState = false;
+      }
+      refreshDrawingScale("drawingsReplaced");
+      emitDrawingHistoryState();
+    },
+    selectDrawings(ids) {
+      if (destroyed) return;
+      drawingEditor.selectDrawings([...ids]);
+    },
     setDrawingTool(tool) { if (destroyed) return; drawingEditor.setTool(tool); },
     executeDrawingCommand(command) { if (destroyed) return; drawingEditor.executeCommand(command); },
     undoDrawing() { if (destroyed) return; drawingEditor.undo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },

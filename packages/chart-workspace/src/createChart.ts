@@ -26,6 +26,7 @@ import type {
   ChartConfigurableSeriesType,
   ChartSeriesProperties,
   ChartSeriesType,
+  ChartSelectableEntityId,
   ChartState,
   ChartStateListener,
   ChartStudyApi,
@@ -545,6 +546,11 @@ export function createChart(
       },
       getEntity: () => undefined,
       getEntities: () => [],
+      getSelection: () => [],
+      setSelection: () => {
+        throw new DOMException("Chart selection API is unavailable", "InvalidStateError");
+      },
+      clearSelection: () => undefined,
       updateEntity: () => {
         throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
       },
@@ -586,6 +592,39 @@ export function createChart(
   }
 
   let controller: ChartController | undefined;
+  let selectedStudyId: ChartIndicatorEntityId | undefined;
+  let lastSelectionKey = "[]";
+  const selectionSnapshot = (
+    viewModel: Readonly<WorkspaceViewModel>
+  ): readonly ChartSelectableEntityId[] => {
+    const entities = entitySnapshot(viewModel, entityScope);
+    if (selectedStudyId !== undefined) {
+      const study = entities.find(
+        (entity) => entity.id === selectedStudyId && entity.kind === "indicator"
+      );
+      if (study) return [selectedStudyId];
+      selectedStudyId = undefined;
+    }
+    const drawings = new Map(
+      entities
+        .filter((entity): entity is Extract<ChartEntity, { kind: "drawing" }> =>
+          entity.kind === "drawing"
+        )
+        .map((entity) => [entity.value.id, entity.id as ChartSelectableEntityId])
+    );
+    return viewModel.selectedDrawingIds.flatMap((id) => {
+      const entityId = drawings.get(id);
+      return entityId === undefined ? [] : [entityId];
+    });
+  };
+  const emitSelectionChanged = (viewModel: Readonly<WorkspaceViewModel>): void => {
+    if (applyingLayout) return;
+    const selection = selectionSnapshot(viewModel);
+    const key = JSON.stringify(selection);
+    if (key === lastSelectionKey) return;
+    lastSelectionKey = key;
+    emitEvent({ type: "selection-changed", selection });
+  };
   const schedulePresentationReadiness = (key: string): void => {
     cancelReadinessFrame();
     const markReady = (): void => {
@@ -660,7 +699,57 @@ export function createChart(
           });
     },
     onExecutionTooltipChanged: (snapshot) => shell.renderExecutionTooltip(snapshot),
-    onDrawingsChanged: (drawings, selectedDrawingIds) => controller?.handleDrawingsChanged(drawings, selectedDrawingIds),
+    onExecutionClicked: (executions) => emitEvent({ type: "execution-clicked", executions }),
+    onDrawingsChanged: (drawings, selectedDrawingIds) => {
+      if (selectedDrawingIds.length > 0) selectedStudyId = undefined;
+      controller?.handleDrawingsChanged(drawings, selectedDrawingIds);
+    },
+    onDrawingClicked: (drawingId) => {
+      if (controller === undefined) return;
+      const viewModel = controller.getViewModel();
+      const entity = entitySnapshot(viewModel, entityScope).find(
+        (candidate): candidate is Extract<ChartEntity, { kind: "drawing" }> & {
+          id: `drawing:${string}`;
+        } =>
+          candidate.kind === "drawing" &&
+          candidate.id.startsWith("drawing:") &&
+          candidate.value.id === drawingId
+      );
+      if (entity && selectionSnapshot(viewModel).includes(entity.id)) {
+        emitEvent({ type: "drawing-clicked", entity });
+      }
+    },
+    onStudyClicked: (instanceId) => {
+      if (controller === undefined) return;
+      const entity = entitySnapshot(controller.getViewModel(), entityScope).find(
+        (candidate): candidate is Extract<ChartEntity, { kind: "indicator" }> & {
+          id: ChartIndicatorEntityId;
+        } =>
+          candidate.kind === "indicator" &&
+          candidate.id.startsWith("indicator:") &&
+          candidate.value.instanceId === instanceId
+      );
+      if (!entity) return;
+      selectedStudyId = entity.id as ChartIndicatorEntityId;
+      runtime.selectDrawings([]);
+      emitSelectionChanged(controller.getViewModel());
+      if (destroyed) return;
+      const viewModel = controller.getViewModel();
+      const current = entitySnapshot(viewModel, entityScope).find(
+        (candidate): candidate is Extract<ChartEntity, { kind: "indicator" }> & {
+          id: ChartIndicatorEntityId;
+        } => candidate.kind === "indicator" && candidate.id === entity.id
+      );
+      if (current && selectionSnapshot(viewModel)[0] === current.id) {
+        emitEvent({ type: "study-clicked", entity: current });
+      }
+    },
+    onBlankClicked: () => {
+      if (controller === undefined) return;
+      selectedStudyId = undefined;
+      runtime.selectDrawings([]);
+      emitSelectionChanged(controller.getViewModel());
+    },
     onDrawingHistoryChanged: (history) => controller?.handleDrawingHistoryChanged(history),
     onCalculationError: (kind, error) => controller?.handleRenderError(error, kind),
     onRenderError: (error) => controller?.handleRenderError(error),
@@ -770,6 +859,8 @@ export function createChart(
       shell.render(viewModel);
       emitEntityChanges(viewModel);
       if (destroyed || latestViewModelRevision !== revision) return;
+      emitSelectionChanged(viewModel);
+      if (destroyed || latestViewModelRevision !== revision) return;
       emitLayoutChanged(viewModel);
       if (destroyed || latestViewModelRevision !== revision) return;
       const nextState = JSON.stringify(viewModel.state);
@@ -860,6 +951,42 @@ export function createChart(
       remove: () => removeStudy(value)
     });
   };
+  const setSelection = (value: readonly ChartSelectableEntityId[]): void => {
+    if (destroyed) {
+      throw new DOMException("Chart selection API is unavailable", "InvalidStateError");
+    }
+    if (!Array.isArray(value)) {
+      throw new TypeError("Chart selection must be an array");
+    }
+    const ids = [...new Set(value.map((candidate) => parseEntityId(candidate)))];
+    const entities = entitySnapshot(controller!.getViewModel(), entityScope);
+    const selected = ids.map((id) => {
+      const entity = entities.find((candidate) => candidate.id === id);
+      if (!entity) throw new DOMException("Chart selectable entity was not found", "NotFoundError");
+      return entity;
+    });
+    if (
+      selected.some((entity) => entity.kind === "mark") ||
+      (selected.some((entity) => entity.kind === "indicator") && selected.length !== 1)
+    ) {
+      throw new TypeError("Chart selection accepts multiple drawings or one study");
+    }
+    if (selected.some(
+      (entity) => entity.kind === "drawing" && entity.value.interactive === false
+    )) {
+      throw new TypeError("Non-interactive drawings cannot be selected");
+    }
+    const indicator = selected[0]?.kind === "indicator" ? selected[0] : undefined;
+    selectedStudyId = indicator?.id as ChartIndicatorEntityId | undefined;
+    runtime.selectDrawings(indicator
+      ? []
+      : selected
+          .filter((entity): entity is Extract<ChartEntity, { kind: "drawing" }> =>
+            entity.kind === "drawing"
+          )
+          .map((entity) => entity.value.id));
+    emitSelectionChanged(controller!.getViewModel());
+  };
 
   return Object.freeze({
     getState: () => controller!.getState(),
@@ -948,6 +1075,9 @@ export function createChart(
           : entities.filter((entity) => entity.kind === parsedKind)
       );
     },
+    getSelection: () => structuredClone(selectionSnapshot(controller!.getViewModel())),
+    setSelection,
+    clearSelection: () => setSelection([]),
     updateEntity: (value: ChartEntity) => {
       if (destroyed) {
         throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
@@ -979,11 +1109,14 @@ export function createChart(
         )));
       } else if (entity.kind === "drawing") {
         requireReadyLayout(viewModel, readySelectionKey);
-        controller!.setDrawings(toEngineDrawings(parseDrawings(
-          fromEngineDrawings(viewModel.drawings).map((candidate) =>
-            candidate.id === current.value.id ? entity.value : candidate
-          )
-        )));
+        controller!.setDrawings(
+          toEngineDrawings(parseDrawings(
+            fromEngineDrawings(viewModel.drawings).map((candidate) =>
+              candidate.id === current.value.id ? entity.value : candidate
+            )
+          )),
+          viewModel.selectedDrawingIds
+        );
       } else {
         controller!.setMarks(parseMarks(viewModel.marks.map((candidate) =>
           candidate.id === current.value.id ? entity.value : candidate
@@ -1005,10 +1138,13 @@ export function createChart(
         ));
       } else if (current.kind === "drawing") {
         requireReadyLayout(viewModel, readySelectionKey);
-        controller!.setDrawings(toEngineDrawings(parseDrawings(
-          fromEngineDrawings(viewModel.drawings)
-            .filter((candidate) => candidate.id !== current.value.id)
-        )));
+        controller!.setDrawings(
+          toEngineDrawings(parseDrawings(
+            fromEngineDrawings(viewModel.drawings)
+              .filter((candidate) => candidate.id !== current.value.id)
+          )),
+          viewModel.selectedDrawingIds.filter((id) => id !== current.value.id)
+        );
       } else {
         controller!.setMarks(parseMarks(
           viewModel.marks.filter((candidate) => candidate.id !== current.value.id)
@@ -1104,6 +1240,7 @@ export function createChart(
         applyingLayout = false;
       }
       emitEntityChanges(controller!.getViewModel());
+      emitSelectionChanged(controller!.getViewModel());
       const applied = layoutSnapshot(controller!.getViewModel());
       const nextLayout = JSON.stringify(applied);
       if (nextLayout !== lastNotifiedLayout) {

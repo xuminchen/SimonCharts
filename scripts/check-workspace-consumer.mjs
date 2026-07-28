@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.36";
+const expectedVersion = "1.0.0-rc.37";
 let tempRoot;
 
 try {
@@ -144,6 +144,7 @@ function consumerSource() {
   type ChartLayoutV2,
   type ChartMark,
   type ChartSeriesProperties,
+  type ChartSelectableEntityId,
   type ChartStudyApi,
   type ChartThemeOverrides,
   type ChartVisibleRange,
@@ -261,6 +262,18 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
     void dataVersion;
     void phase;
     void view;
+  } else if (event.type === "selection-changed") {
+    const selection: readonly ChartSelectableEntityId[] = event.selection;
+    void selection;
+  } else if (event.type === "drawing-clicked") {
+    const drawingId: ChartSelectableEntityId = event.entity.id;
+    void drawingId;
+  } else if (event.type === "study-clicked") {
+    const studyId: ChartSelectableEntityId = event.entity.id;
+    void studyId;
+  } else if (event.type === "execution-clicked") {
+    const clickedExecutions: readonly ChartExecution[] = event.executions;
+    void clickedExecutions;
   }
 });
 const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
@@ -367,6 +380,18 @@ if (
 }
 customStudyApi.setInputs({ factor: 2 });
 if (!await chart.dataReady()) throw new Error("custom study recalculation did not become usable");
+const selectedStudy: ChartSelectableEntityId = customStudyId;
+chart.setSelection([selectedStudy]);
+if (
+  chart.getSelection()[0] !== selectedStudy ||
+  Object.hasOwn(chart.exportLayout(), "selection")
+) {
+  throw new Error("selection API was not usable or leaked into layout");
+}
+chart.clearSelection();
+if (chart.getSelection().length !== 0) {
+  throw new Error("selection API did not clear");
+}
 const customLayout = chart.exportLayout();
 if (!customLayout.indicators.some((study) =>
   study.id === "custom:consumer.range" &&

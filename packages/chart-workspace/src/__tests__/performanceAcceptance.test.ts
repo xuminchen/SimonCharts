@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createChartLayout,
   createMainPanelPriceScale,
+  createPanelLayout,
+  createPriceScaleFromBounds,
   indexToX,
   priceAtY,
   priceToY,
@@ -13,7 +15,10 @@ import {
 import type { MaterializedSeries } from "../data/materializedSeries";
 import type { CheckpointedCalculationRuntime } from "../runtime/checkpointedCalculationRuntime";
 import { createChartEngineRuntime } from "../runtime/chartEngineRuntime";
-import { indicatorOutputId } from "../runtime/indicatorRuntime";
+import {
+  indicatorOutputId,
+  indicatorPanelId
+} from "../runtime/indicatorRuntime";
 import { readWorkspaceChartTheme } from "../runtime/workspaceTheme";
 
 class FakeCanvas {
@@ -166,6 +171,7 @@ describe("workspace engine runtime", () => {
     let currentViewport: ViewportState | undefined;
     const onRenderError = vi.fn();
     const onExecutionTooltipChanged = vi.fn();
+    const onExecutionClicked = vi.fn();
     const flushFrames = () => {
       while (frames.size > 0) {
         const pending = [...frames.values()];
@@ -185,6 +191,7 @@ describe("workspace engine runtime", () => {
       getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
       onRenderError,
       onExecutionTooltipChanged,
+      onExecutionClicked,
       onViewportChanged(viewport) { currentViewport = viewport; }
     });
     const source = materialized(1, 100);
@@ -226,6 +233,7 @@ describe("workspace engine runtime", () => {
     const hoverTime = hoverTooltip?.rows.find((row) => row.label === "时间")?.value;
     expect(hoverTime).toContain("08:00:01");
     expect(overlayCanvas.texts.some((text) => text.includes("金额:"))).toBe(false);
+    expect(onExecutionClicked).not.toHaveBeenCalled();
 
     overlayCanvas.dispatch("pointerleave", {});
     flushFrames();
@@ -235,7 +243,13 @@ describe("workspace engine runtime", () => {
     flushFrames();
     const pinnedTooltip = onExecutionTooltipChanged.mock.lastCall?.[0];
     expect(pinnedTooltip).toEqual({ ...hoverTooltip, pinned: true });
+    expect(onExecutionClicked).not.toHaveBeenCalled();
+    overlayCanvas.dispatch("pointerup", { pointerId: 1, clientX: x, clientY: y });
+    expect(onExecutionClicked).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: "execution", label: "T买" })
+    ]);
     overlayCanvas.dispatch("pointerdown", { pointerId: 2, clientX: 700, clientY: 100 });
+    overlayCanvas.dispatch("pointerup", { pointerId: 2, clientX: 700, clientY: 100 });
     flushFrames();
     expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
 
@@ -247,6 +261,8 @@ describe("workspace engine runtime", () => {
     overlayCanvas.dispatch("pointerdown", { pointerId: 3, clientX: x, clientY: y, pointerType: "touch" });
     flushFrames();
     expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith({ ...hoverTooltip, pinned: true });
+    overlayCanvas.dispatch("pointerup", { pointerId: 3, clientX: x, clientY: y, pointerType: "touch" });
+    expect(onExecutionClicked).toHaveBeenCalledTimes(2);
     runtime.setExecutions(rows);
     flushFrames();
     expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
@@ -257,12 +273,42 @@ describe("workspace engine runtime", () => {
     runtime.setExecutions([]);
     flushFrames();
     expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
+    overlayCanvas.dispatch("pointerup", {
+      pointerId: 4,
+      clientX: x,
+      clientY: y,
+      pointerType: "touch"
+    });
+    expect(onExecutionClicked).toHaveBeenCalledTimes(2);
 
     runtime.setExecutions(rows);
     flushFrames();
+    overlayCanvas.dispatch("pointerdown", {
+      pointerId: 40,
+      clientX: x,
+      clientY: y,
+      pointerType: "mouse",
+      button: 2
+    });
+    overlayCanvas.dispatch("pointerup", {
+      pointerId: 40,
+      clientX: x,
+      clientY: y,
+      pointerType: "mouse",
+      button: 2
+    });
+    expect(onExecutionClicked).toHaveBeenCalledTimes(2);
     overlayCanvas.dispatch("pointerdown", { pointerId: 5, clientX: x, clientY: y });
     flushFrames();
     expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(expect.objectContaining({ pinned: true }));
+    overlayCanvas.dispatch("pointermove", { pointerId: 5, clientX: x + 20, clientY: y });
+    overlayCanvas.dispatch("pointerup", { pointerId: 5, clientX: x + 20, clientY: y });
+    expect(onExecutionClicked).toHaveBeenCalledTimes(2);
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 6, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointercancel", { pointerId: 6, clientX: x, clientY: y });
+    expect(onExecutionClicked).toHaveBeenCalledTimes(2);
+
     staticCanvas.texts.splice(0);
     runtime.setExecutionsVisible(false);
     flushFrames();
@@ -1065,6 +1111,7 @@ describe("workspace engine runtime", () => {
     const source = materialized(1, 100);
     const viewports: ViewportState[] = [];
     const drawingUpdates: import("@simoncharts/chart-engine").DrawingObject[][] = [];
+    const onDrawingClicked = vi.fn();
     const runtime = createChartEngineRuntime({
       staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
       overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
@@ -1074,7 +1121,8 @@ describe("workspace engine runtime", () => {
       requestFrame: () => 1,
       cancelFrame: () => undefined,
       onViewportChanged: (next) => viewports.push(structuredClone(next)),
-      onDrawingsChanged: (drawings) => drawingUpdates.push(drawings)
+      onDrawingsChanged: (drawings) => drawingUpdates.push(drawings),
+      onDrawingClicked
     });
     runtime.setMaterializedSeries(source);
     const viewport = viewports.at(-1)!;
@@ -1092,6 +1140,44 @@ describe("workspace engine runtime", () => {
     overlayCanvas.dispatch("pointermove", { pointerId: 3, clientX: startX + viewport.candleWidth * 2, clientY: startY });
     overlayCanvas.dispatch("pointerup", { pointerId: 3, clientX: startX + viewport.candleWidth * 2, clientY: startY });
     expect(drawingUpdates.at(-1)?.[0]?.anchors[0]?.time).toBe(42);
+    expect(onDrawingClicked).not.toHaveBeenCalled();
+
+    const bodyX = indexToX(source.series.candles.findIndex((candle) => candle.time === 47), viewport, 0);
+    overlayCanvas.dispatch("pointerdown", {
+      pointerId: 20,
+      clientX: bodyX,
+      clientY: startY,
+      pointerType: "mouse",
+      button: 2
+    });
+    overlayCanvas.dispatch("pointerup", {
+      pointerId: 20,
+      clientX: bodyX,
+      clientY: startY,
+      pointerType: "mouse",
+      button: 2
+    });
+    expect(onDrawingClicked).not.toHaveBeenCalled();
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 2, clientX: bodyX, clientY: startY });
+    overlayCanvas.dispatch("pointerup", { pointerId: 2, clientX: bodyX, clientY: startY });
+    expect(onDrawingClicked).toHaveBeenCalledWith("line");
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 21, clientX: bodyX, clientY: startY });
+    runtime.setDrawings([{
+      id: "line",
+      type: "trendLine",
+      anchors: [{ time: 42, price: 140 }, { time: 62, price: 140 }]
+    }]);
+    overlayCanvas.dispatch("pointerup", { pointerId: 21, clientX: bodyX, clientY: startY });
+    expect(onDrawingClicked).toHaveBeenCalledTimes(1);
+
+    const beforeSlop = structuredClone(drawingUpdates.at(-1));
+    overlayCanvas.dispatch("pointerdown", { pointerId: 6, clientX: bodyX, clientY: startY });
+    overlayCanvas.dispatch("pointermove", { pointerId: 6, clientX: bodyX, clientY: startY + 3 });
+    overlayCanvas.dispatch("pointerup", { pointerId: 6, clientX: bodyX, clientY: startY + 3 });
+    expect(drawingUpdates.at(-1)).toEqual(beforeSlop);
+    expect(onDrawingClicked).toHaveBeenCalledTimes(2);
 
     const handleX = indexToX(source.series.candles.findIndex((candle) => candle.time === 42), viewport, 0);
     overlayCanvas.dispatch("pointerdown", { pointerId: 5, clientX: handleX, clientY: startY });
@@ -1104,6 +1190,173 @@ describe("workspace engine runtime", () => {
     overlayCanvas.dispatch("pointermove", { pointerId: 4, clientX: 700 + viewport.candleWidth * 2, clientY: 100 });
     overlayCanvas.dispatch("pointerup", { pointerId: 4, clientX: 700 + viewport.candleWidth * 2, clientY: 100 });
     expect(viewports.at(-1)?.scrollOffset).toBe(beforePan + 2);
+    runtime.destroy();
+  });
+
+  it("hit-tests rendered studies without turning drags into study clicks", async () => {
+    const overlayCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    let currentViewport: ViewportState | undefined;
+    const onStudyClicked = vi.fn();
+    const source = materialized(1, 100);
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        async calculateIndicators({ configs }) {
+          return new Map(configs.map((config) => [config.instanceId, {
+            outputs: config.instanceId === "separate"
+              ? [
+                  {
+                    id: indicatorOutputId("separate", "low"),
+                    label: "Low",
+                    type: "line" as const,
+                    panelId: indicatorPanelId("separate"),
+                    values: source.series.candles.map((candle) => ({
+                      time: candle.time,
+                      value: 0
+                    }))
+                  },
+                  {
+                    id: indicatorOutputId("separate", "high"),
+                    label: "High",
+                    type: "line" as const,
+                    panelId: indicatorPanelId("separate"),
+                    values: source.series.candles.map((candle) => ({
+                      time: candle.time,
+                      value: 100
+                    }))
+                  }
+                ]
+              : [{
+                  id: indicatorOutputId(config.instanceId, "MA"),
+                  label: "MA",
+                  type: "line" as const,
+                  panelId: "main",
+                  values: source.series.candles.map((candle) => ({
+                    time: candle.time,
+                    value: 150
+                  }))
+                }]
+          }]));
+        },
+        async calculateSeries(input) {
+          return { type: input.type, source: source.series, sourceIndexOffset: 0, points: [] };
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onViewportChanged: (viewport) => { currentViewport = viewport; },
+      onStudyClicked
+    });
+    runtime.setMaterializedSeries(source);
+    runtime.setIndicators([
+      {
+        instanceId: "bottom",
+        id: "MA",
+        params: { period: 5 },
+        visible: true
+      },
+      {
+        instanceId: "top",
+        id: "MA",
+        params: { period: 5 },
+        visible: true
+      },
+      {
+        instanceId: "separate",
+        id: "RSI",
+        params: { period: 14 },
+        visible: true
+      }
+    ]);
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    flushFrames();
+
+    const layout = createChartLayout(800, 500);
+    const scale = createMainPanelPriceScale(source.series, currentViewport!.visibleRange, "linear", [], []);
+    const x = indexToX(50, currentViewport!, layout.plotArea.x);
+    const y = priceToY(150, scale, layout.plotArea.y, layout.plotArea.height);
+    overlayCanvas.dispatch("pointerdown", { pointerId: 7, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointerup", { pointerId: 7, clientX: x, clientY: y });
+    expect(onStudyClicked).toHaveBeenCalledWith("top");
+
+    const panels = createPanelLayout({
+      width: 800,
+      height: 500,
+      rightAxisWidth: layout.rightAxisWidth,
+      bottomAxisHeight: layout.bottomAxisHeight,
+      panels: [
+        { id: "main", kind: "main", label: "Main", heightRatio: 3 },
+        {
+          id: indicatorPanelId("separate"),
+          kind: "sub",
+          label: "Separate",
+          heightRatio: 1
+        }
+      ]
+    });
+    const separatePanel = panels[1]!;
+    const separateScale = createPriceScaleFromBounds({ min: 0, max: 100 }, 1, "linear");
+    const separateY = priceToY(
+      100,
+      separateScale,
+      separatePanel.plotArea.y,
+      separatePanel.plotArea.height
+    );
+    overlayCanvas.dispatch("pointerdown", {
+      pointerId: 70,
+      clientX: x,
+      clientY: separateY
+    });
+    overlayCanvas.dispatch("pointerup", {
+      pointerId: 70,
+      clientX: x,
+      clientY: separateY
+    });
+    expect(onStudyClicked).toHaveBeenLastCalledWith("separate");
+    const beforeBoundaryMiss = onStudyClicked.mock.calls.length;
+    overlayCanvas.dispatch("pointerdown", {
+      pointerId: 71,
+      clientX: x,
+      clientY: separatePanel.plotArea.y - 3
+    });
+    overlayCanvas.dispatch("pointerup", {
+      pointerId: 71,
+      clientX: x,
+      clientY: separatePanel.plotArea.y - 3
+    });
+    expect(onStudyClicked).toHaveBeenCalledTimes(beforeBoundaryMiss);
+
+    const beforeSlop = structuredClone(currentViewport);
+    overlayCanvas.dispatch("pointerdown", { pointerId: 9, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointermove", { pointerId: 9, clientX: x + 3, clientY: y });
+    overlayCanvas.dispatch("pointerup", { pointerId: 9, clientX: x + 3, clientY: y });
+    expect(currentViewport).toEqual(beforeSlop);
+    expect(onStudyClicked).toHaveBeenCalledTimes(beforeBoundaryMiss + 1);
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 8, clientX: x, clientY: y });
+    const beforeDrag = currentViewport!.scrollOffset;
+    overlayCanvas.dispatch("pointermove", { pointerId: 8, clientX: x + 20, clientY: y });
+    overlayCanvas.dispatch("pointerup", { pointerId: 8, clientX: x + 20, clientY: y });
+    expect(currentViewport!.scrollOffset).not.toBe(beforeDrag);
+    expect(onStudyClicked).toHaveBeenCalledTimes(beforeBoundaryMiss + 1);
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 10, clientX: x, clientY: y });
+    runtime.setIndicators([]);
+    overlayCanvas.dispatch("pointerup", { pointerId: 10, clientX: x, clientY: y });
+    expect(onStudyClicked).toHaveBeenCalledTimes(beforeBoundaryMiss + 1);
     runtime.destroy();
   });
 

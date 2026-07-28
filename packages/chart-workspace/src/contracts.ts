@@ -379,6 +379,9 @@ export type ChartEntityId =
   | ChartIndicatorEntityId
   | `drawing:${string}`
   | `mark:${string}`;
+export type ChartSelectableEntityId =
+  | ChartIndicatorEntityId
+  | `drawing:${string}`;
 
 export type ChartEntityInput =
   | { readonly kind: "indicator"; readonly value: ChartIndicator }
@@ -521,6 +524,20 @@ export type ChartEvent =
   | { readonly type: "visible-range"; readonly range: Readonly<ChartVisibleRange> }
   | { readonly type: "layout-changed"; readonly layout: Readonly<ChartLayoutV2> }
   | { readonly type: "mark-clicked"; readonly mark: Readonly<ChartMark> }
+  | { readonly type: "selection-changed"; readonly selection: readonly ChartSelectableEntityId[] }
+  | {
+      readonly type: "drawing-clicked";
+      readonly entity: Readonly<
+        Extract<ChartEntity, { readonly kind: "drawing" }> & { readonly id: `drawing:${string}` }
+      >;
+    }
+  | {
+      readonly type: "study-clicked";
+      readonly entity: Readonly<
+        Extract<ChartEntity, { readonly kind: "indicator" }> & { readonly id: ChartIndicatorEntityId }
+      >;
+    }
+  | { readonly type: "execution-clicked"; readonly executions: readonly ChartExecution[] }
   | { readonly type: "entity-created"; readonly entity: Readonly<ChartEntity> }
   | { readonly type: "entity-updated"; readonly entity: Readonly<ChartEntity> }
   | { readonly type: "entity-removed"; readonly entity: Readonly<ChartEntity> };
@@ -549,6 +566,9 @@ export interface ChartInstance {
   createEntity(entity: ChartEntityInput): ChartEntityId;
   getEntity(entityId: ChartEntityId): ChartEntity | undefined;
   getEntities(kind?: ChartEntityKind): readonly ChartEntity[];
+  getSelection(): readonly ChartSelectableEntityId[];
+  setSelection(entityIds: readonly ChartSelectableEntityId[]): void;
+  clearSelection(): void;
   updateEntity(entity: ChartEntity): void;
   removeEntity(entityId: ChartEntityId): boolean;
   exportLayout(): ChartLayoutV2;

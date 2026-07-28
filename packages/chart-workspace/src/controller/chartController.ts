@@ -120,7 +120,10 @@ export interface WorkspaceUiActions {
   setFavoriteTimeframe(timeframe: FavoriteTimeframe, favorite: boolean): boolean;
   setPriceScaleMode(mode: PriceScaleMode): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
-  setDrawings(drawings: readonly DrawingObject[]): void;
+  setDrawings(
+    drawings: readonly DrawingObject[],
+    selectedDrawingIds?: readonly string[]
+  ): void;
   setMarks(marks: readonly ChartMark[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
   executeDrawingCommand(command: DrawingEditorCommand): void;
@@ -674,7 +677,7 @@ export function createChartController(
     );
     dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
     dependencies.runtime.setIndicators(viewModel.indicators);
-    dependencies.runtime.setDrawings(viewModel.drawings);
+    dependencies.runtime.setDrawings(viewModel.drawings, viewModel.selectedDrawingIds);
     dependencies.runtime.setGridVisible(viewModel.gridVisible);
     if (result.series.candles.length === 0) {
       transientCandles.clear();
@@ -1545,14 +1548,25 @@ export function createChartController(
       dependencies.persistence.saveIndicators(viewModel.indicators);
       publish();
     },
-    setDrawings(drawings) {
+    setDrawings(drawings, selectedDrawingIds = []) {
       if (!active) return;
+      const drawingIds = new Set(
+        drawings
+          .filter((drawing) => drawing.interactive !== false)
+          .map((drawing) => drawing.id)
+      );
+      const selection = [...new Set(selectedDrawingIds)]
+        .filter((id) => drawingIds.has(id));
       viewModel = {
         ...viewModel,
         drawings: drawings.map((drawing) => structuredClone(drawing)),
-        selectedDrawingIds: []
+        selectedDrawingIds: selection
       };
-      dependencies.runtime.setDrawings(viewModel.drawings);
+      if (selection.length > 0) {
+        dependencies.runtime.setDrawings(viewModel.drawings, selection);
+      } else {
+        dependencies.runtime.setDrawings(viewModel.drawings);
+      }
       if (dependencies.drawingPersistenceEnabled) {
         dependencies.persistence.saveDrawings(state.symbol, state.adjustMode, viewModel.drawings);
       }

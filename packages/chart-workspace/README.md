@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.36.tgz
+npm install ./simoncharts-charts-1.0.0-rc.37.tgz
 ```
 
 ## Embed the default chart
@@ -243,6 +243,25 @@ if (await chart.dataReady()) {
 
 `entity-created`, `entity-updated`, and `entity-removed` events carry the final defensive entity snapshot. Drawing IDs are isolated by chart, persistence scope, data context, symbol, and adjustment; mark IDs additionally follow the current symbol; indicator IDs follow the chart's persisted indicator scope. A stale or foreign ID cannot mutate the current selection.
 
+## Select entities and subscribe to user actions
+
+Selection reuses the existing opaque Entity IDs. A chart may select multiple interactive Drawings or exactly one Study; marks, mixed Drawing/Study batches, missing IDs, and `interactive: false` Drawings are rejected atomically. Selection is transient host/UI state: it is not exported in `ChartLayoutV2` and is not written to browser persistence.
+
+```ts
+const stopActions = chart.subscribeEvents((event) => {
+  if (event.type === "selection-changed") syncInspector(event.selection);
+  if (event.type === "drawing-clicked") openDrawingEditor(event.entity);
+  if (event.type === "study-clicked") openStudyEditor(event.entity);
+  if (event.type === "execution-clicked") openExecutionDetails(event.executions);
+});
+
+chart.setSelection([drawingEntityIdA, drawingEntityIdB]);
+chart.getSelection();
+chart.clearSelection();
+```
+
+Drawing and Study actions are emitted only after a primary Canvas click/tap; right clicks, secondary pointers, pans, and edit drags do not emit an action. Replacing the action's Drawing, Study output, execution source, or active market presentation before release cancels that pending action. If a synchronous selection listener removes or reselects the entity, the stale action is suppressed. Study hit testing follows the rendered line, histogram, band, or marker geometry in the active panel and resolves overlaps to the topmost rendered output rather than a DOM legend. Execution actions preserve every execution in the native grouped marker and share the pinned tooltip click/touch gesture. Drawing selection survives entity updates, retains surviving IDs after removal, and drops an entity changed to `interactive: false`. All payloads are defensive snapshots, and `locked` remains independent from Drawing interactivity.
+
 ## Define host-owned custom studies
 
 Custom Study definitions are chart-scoped trusted host code. They reuse the existing Study, Entity, checkpoint, visual-output, pane, crosshair, layout, failure/retry, and `dataReady()` paths; the SDK does not create a global registry or a second indicator engine.
@@ -431,4 +450,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.36 adds strict host-owned Theme Overrides and runtime dark/light switching over the existing Workspace color tokens. Overrides replace atomically, survive base-theme changes, repaint DOM and Canvas without recalculation, and stay outside Layout V2 and browser persistence. It preserves rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.37 adds typed Selection and semantic Drawing, Study, and execution action events through the existing event and Entity systems. Selection remains transient, true clicks are separated from pan/edit gestures by one shared pointer threshold, and Study actions hit-test the rendered Canvas geometry. It preserves rc.36's Theme Overrides, rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

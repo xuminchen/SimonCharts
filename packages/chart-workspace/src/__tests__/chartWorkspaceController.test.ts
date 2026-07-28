@@ -39,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -96,6 +96,43 @@ describe("chart workspace controller", () => {
     );
     expect(deps.runtime.setMarks).toHaveBeenLastCalledWith(marks);
     expect(deps.persistence.saveDrawings).toHaveBeenCalledWith(stock, "forward", expect.any(Array));
+  });
+
+  it("keeps drawing selection when the same presentation rematerializes", async () => {
+    const deps = dependencies();
+    const valid = validateSeriesPage({
+      candles: [{
+        time: 1,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10,
+        volume: 1,
+        turnover: 10
+      }],
+      hasMoreBefore: false,
+      dataVersion: "v1"
+    }, { seenCursors: new Set() });
+    if (!valid.ok) throw new Error("fixture invalid");
+    deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    deps.store.mergePage(undefined, valid.page);
+    const controller = createChartController(deps);
+    controller.handleDrawingsChanged([{
+      id: "d1",
+      type: "trendLine",
+      anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }]
+    }], ["d1"]);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+
+    expect(deps.runtime.setDrawings).toHaveBeenLastCalledWith(
+      expect.any(Array),
+      ["d1"]
+    );
   });
 
   it("rejects invalid indicator batches at the controller write boundary", () => {
