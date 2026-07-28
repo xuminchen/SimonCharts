@@ -120,3 +120,147 @@ test("converts render failures into a recoverable blocking state", async ({ page
   await expect(page.locator('[data-error-code="RENDER_FAILED"]')).toBeVisible();
   await expect(page.getByRole("button", { name: "重试", exact: true })).toBeVisible();
 });
+
+test("invalidates dataReady when an already-ready presentation becomes blocked", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  expect(await page.evaluate(() => window.__chart!.dataReady())).toBe(true);
+
+  await page.evaluate(() => {
+    HTMLCanvasElement.prototype.getContext = () => {
+      throw new Error("controlled post-ready canvas failure");
+    };
+    window.__chart!.setGridVisible(false);
+  });
+
+  await expect(page.locator('[data-error-code="RENDER_FAILED"]')).toBeVisible();
+  expect(await page.evaluate(() => window.__chart!.dataReady())).toBe(false);
+});
+
+test("recovers a blocked presentation after a successful render retry", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  await page.evaluate(() => {
+    const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+    let failOnce = true;
+    HTMLCanvasElement.prototype.getContext = function(...args) {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("controlled one-shot canvas failure");
+      }
+      return (nativeGetContext as any).apply(this, args);
+    };
+    window.__chart!.setGridVisible(false);
+  });
+  await expect(page.locator('[data-error-code="RENDER_FAILED"]')).toBeVisible();
+
+  const recovered = page.evaluate(async () => {
+    const chart = window.__chart!;
+    chart.retry();
+    return chart.dataReady();
+  });
+  expect(await recovered).toBe(true);
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  await expect(page.locator('[data-error-code="RENDER_FAILED"]')).toHaveCount(0);
+});
+
+test("preserves terminal data unavailability across a successful render retry", async ({ page }) => {
+  await page.goto("/?million=1");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  expect(await page.evaluate(async () => {
+    const chart = window.__chart!;
+    const origin = Date.UTC(2026, 5, 5, 1, 30);
+    chart.setTimeframe("5m");
+    chart.setVisibleRange({
+      from: origin + 975_000 * 60_000,
+      to: origin + 999_999 * 60_000
+    });
+    return chart.dataReady();
+  })).toBe(false);
+
+  await page.evaluate(() => {
+    const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+    let failOnce = true;
+    HTMLCanvasElement.prototype.getContext = function(...args) {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("controlled one-shot canvas failure");
+      }
+      return (nativeGetContext as any).apply(this, args);
+    };
+    window.__chart!.setGridVisible(false);
+  });
+  await expect(page.locator('[data-error-code="RENDER_FAILED"]')).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    chart.retry();
+    return Promise.race([
+      chart.dataReady(),
+      new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), 3_000))
+    ]);
+  });
+  expect(result).toBe(false);
+});
+
+test("preserves the original ready state across a failed render retry", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  await page.evaluate(() => {
+    const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+    let failuresRemaining = 2;
+    HTMLCanvasElement.prototype.getContext = function(...args) {
+      if (failuresRemaining > 0) {
+        failuresRemaining -= 1;
+        throw new Error("controlled repeated canvas failure");
+      }
+      return (nativeGetContext as any).apply(this, args);
+    };
+    window.__chart!.setGridVisible(false);
+  });
+  await expect(page.locator('[data-error-code="RENDER_FAILED"]')).toBeVisible();
+
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    const workspace = document.querySelector(".sc-workspace")!;
+    let sawLoading = false;
+    const observer = new MutationObserver(() => {
+      const state = workspace.getAttribute("data-state");
+      if (state === "loading") sawLoading = true;
+      if (!sawLoading || state !== "blocked") return;
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(workspace, { attributes: true, attributeFilter: ["data-state"] });
+    window.__chart!.retry();
+  }));
+
+  const recovered = page.evaluate(async () => {
+    const chart = window.__chart!;
+    chart.retry();
+    return chart.dataReady();
+  });
+  expect(await recovered).toBe(true);
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+});
+
+test("does not expose stale readiness to a synchronous onError retry", async ({ page }) => {
+  await page.goto("/?retryOnRenderError=1");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  await page.evaluate(() => {
+    HTMLCanvasElement.prototype.getContext = () => {
+      throw new Error("controlled persistent canvas failure");
+    };
+    window.__chart!.setGridVisible(false);
+  });
+  await expect(page.locator('[data-error-code="RENDER_FAILED"]')).toBeVisible();
+
+  const result = await page.evaluate(() => Promise.race([
+    window.__reentrantDataReady!,
+    new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), 3_000))
+  ]));
+  expect(result).toBe(false);
+});

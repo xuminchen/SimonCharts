@@ -39,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -374,8 +374,31 @@ describe("chart workspace controller", () => {
     expect(deps.dataCoordinator.retryInitial).toHaveBeenCalledTimes(1);
 
     controller.handleRenderError(new Error("canvas failed"));
+    expect(controller.getViewModel().status).toMatchObject({
+      type: "blocked",
+      error: { code: "INITIAL_DATA_FAILED" }
+    });
     controller.retry();
-    expect(deps.runtime.retryRender).toHaveBeenCalledTimes(1);
+    expect(deps.dataCoordinator.retryInitial).toHaveBeenCalledTimes(2);
+    expect(deps.runtime.retryRender).not.toHaveBeenCalled();
+
+    const renderDeps = dependencies();
+    const renderController = createChartController(renderDeps);
+    renderController.handleRenderError(new Error("canvas failed"));
+    renderController.retry();
+    expect(renderDeps.runtime.retryRender).toHaveBeenCalledTimes(1);
+
+    const calculationDeps = dependencies();
+    const calculationController = createChartController(calculationDeps);
+    calculationController.handleRenderError(new Error("calculation failed"), "indicator");
+    expect(calculationController.getViewModel().status).toMatchObject({
+      type: "blocked",
+      error: {
+        code: "CALCULATION_FAILED",
+        scope: "calculation",
+        context: { calculationKind: "indicator" }
+      }
+    });
   });
 
   it("preserves typed safe data-source failures and their retry policy", async () => {
@@ -995,6 +1018,8 @@ describe("chart workspace controller", () => {
     };
     let resolveInitial!: (page: SeriesPage) => void;
     const initial = new Promise<SeriesPage>((resolve) => { resolveInitial = resolve; });
+    let resolveNewestReload!: (page: SeriesPage) => void;
+    const newestReload = new Promise<SeriesPage>((resolve) => { resolveNewestReload = resolve; });
     const requests: Array<string | undefined> = [];
     const datafeed: ChartDatafeed = {
       async getCapabilities() {
@@ -1003,7 +1028,7 @@ describe("chart workspace controller", () => {
       async searchSymbols() { return []; },
       async loadSeries(request) {
         requests.push(request.beforeCursor);
-        if (request.beforeCursor === undefined) return requests.length === 1 ? initial : newestPage;
+        if (request.beforeCursor === undefined) return requests.length === 1 ? initial : newestReload;
         if (request.beforeCursor === "page-2") {
           return {
             candles: Array.from({ length: 80 }, (_, index) =>
@@ -1034,6 +1059,8 @@ describe("chart workspace controller", () => {
     deps.initialTimeframe = "1m";
     deps.store = store;
     deps.getCapabilities = datafeed.getCapabilities;
+    deps.onPresentationReady = vi.fn();
+    deps.onPresentationUnavailable = vi.fn();
     deps.dataCoordinator = createDataCoordinator({
       dataSource: datafeed,
       store,
@@ -1045,6 +1072,13 @@ describe("chart workspace controller", () => {
     controller.setView("intraday");
     resolveInitial(newestPage);
 
+    await vi.waitFor(() =>
+      expect(requests).toEqual([undefined, "page-2", "page-3", undefined])
+    );
+    expect(deps.runtime.setMaterializedSeries).not.toHaveBeenCalled();
+    controller.resetToLatest();
+    resolveNewestReload(newestPage);
+
     await vi.waitFor(() => {
       const materialized = vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0];
       expect(materialized?.series.candles).toHaveLength(241);
@@ -1054,6 +1088,9 @@ describe("chart workspace controller", () => {
     expect(materialized.series.candles.at(-1)?.time).toBe(lastDay + 240 * minute);
     expect(requests).toEqual([undefined, "page-2", "page-3", undefined, "page-2"]);
     expect(requests).not.toContain("older-day");
+    expect(deps.runtime.resetToLatest).toHaveBeenCalledTimes(1);
+    expect(deps.onPresentationReady).toHaveBeenCalledTimes(1);
+    expect(deps.onPresentationUnavailable).not.toHaveBeenCalled();
     expect(store.getDiagnostics()).toMatchObject({
       cachedPageCount: 1,
       maxPages: 1,

@@ -7,6 +7,7 @@ import {
   priceToY,
   type IndicatorResult,
   type SeriesRenderModel,
+  type StatefulSeriesTransformType,
   type ViewportState
 } from "@simoncharts/chart-engine";
 import type { MaterializedSeries } from "../data/materializedSeries";
@@ -1105,6 +1106,443 @@ describe("workspace engine runtime", () => {
     expect(staticCanvas.listenerCount()).toBe(0);
     expect(overlayCanvas.listenerCount()).toBe(0);
     expect(onDrawingsChanged).not.toHaveBeenCalled();
+  });
+
+  it.each(["indicator", "series"] as const)(
+    "retries a failed %s calculation before reporting render recovery",
+    async (kind) => {
+      const frames = new Map<number, () => void>();
+      let nextFrame = 1;
+      let indicatorAttempts = 0;
+      let seriesAttempts = 0;
+      const onRenderError = vi.fn();
+      const onCalculationError = vi.fn();
+      const onRenderRecovered = vi.fn();
+      const runtime = createChartEngineRuntime({
+        staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+        observer: { observe() {}, disconnect() {} },
+        calculationRuntime: {
+          async calculateIndicators() {
+            indicatorAttempts += 1;
+            if (kind === "indicator" && indicatorAttempts === 1) {
+              throw new Error("controlled indicator failure");
+            }
+            return new Map<string, IndicatorResult>();
+          },
+          async calculateSeries(input) {
+            seriesAttempts += 1;
+            if (kind === "series" && seriesAttempts === 1) {
+              throw new Error("controlled series failure");
+            }
+            return {
+              type: input.type,
+              source: materialized().series,
+              sourceIndexOffset: 0,
+              points: []
+            } satisfies SeriesRenderModel;
+          }
+        },
+        requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+        cancelFrame: (id) => { frames.delete(id); },
+        getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+        onRenderError,
+        onCalculationError,
+        onRenderRecovered
+      });
+      const flushFrames = () => {
+        while (frames.size > 0) {
+          const pending = [...frames.values()];
+          frames.clear();
+          for (const callback of pending) callback();
+        }
+      };
+
+      runtime.setMaterializedSeries(materialized());
+      if (kind === "indicator") {
+        runtime.setIndicators([
+          { instanceId: "ma-a", id: "MA", params: { period: 5 }, visible: true }
+        ]);
+      } else {
+        runtime.setSeriesType("renko");
+      }
+      await vi.waitFor(() => expect(onCalculationError).toHaveBeenCalledWith(
+        kind,
+        expect.any(Error)
+      ));
+      expect(onRenderError).not.toHaveBeenCalled();
+      flushFrames();
+      expect(onRenderRecovered).not.toHaveBeenCalled();
+
+      runtime.retryRender();
+      await vi.waitFor(() => expect(
+        kind === "indicator" ? indicatorAttempts : seriesAttempts
+      ).toBe(2));
+      await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+      flushFrames();
+      expect(onCalculationError).toHaveBeenCalledTimes(1);
+      expect(onRenderError).not.toHaveBeenCalled();
+      expect(onRenderRecovered).toHaveBeenCalledTimes(1);
+      runtime.destroy();
+    }
+  );
+
+  it.each([
+    { kind: "indicator", calculationFirst: false },
+    { kind: "series", calculationFirst: false },
+    { kind: "indicator", calculationFirst: true },
+    { kind: "series", calculationFirst: true }
+  ] as const)(
+    "does not complete render recovery while a $kind calculation is pending or failed (calculation first: $calculationFirst)",
+    async ({ kind, calculationFirst }) => {
+      const frames = new Map<number, () => void>();
+      let nextFrame = 1;
+      let attempts = 0;
+      let rejectCalculation!: (error: Error) => void;
+      const onCalculationError = vi.fn();
+      const onRenderRecovered = vi.fn();
+      const calculation = () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return new Promise<void>((_resolve, reject) => { rejectCalculation = reject; });
+        }
+        return Promise.resolve();
+      };
+      const runtime = createChartEngineRuntime({
+        staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+        observer: { observe() {}, disconnect() {} },
+        calculationRuntime: {
+          async calculateIndicators() {
+            if (kind === "indicator") await calculation();
+            return new Map<string, IndicatorResult>();
+          },
+          async calculateSeries(input) {
+            if (kind === "series") await calculation();
+            return {
+              type: input.type,
+              source: materialized().series,
+              sourceIndexOffset: 0,
+              points: []
+            } satisfies SeriesRenderModel;
+          }
+        },
+        requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+        cancelFrame: (id) => { frames.delete(id); },
+        getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+        onCalculationError,
+        onRenderRecovered
+      });
+      const flushFrames = () => {
+        while (frames.size > 0) {
+          const pending = [...frames.values()];
+          frames.clear();
+          for (const callback of pending) callback();
+        }
+      };
+
+      runtime.setMaterializedSeries(materialized());
+      flushFrames();
+      if (!calculationFirst) runtime.retryRender();
+      if (kind === "indicator") {
+        runtime.setIndicators([
+          { instanceId: "ma-a", id: "MA", params: { period: 5 }, visible: true }
+        ]);
+      } else {
+        runtime.setSeriesType("renko");
+      }
+      await vi.waitFor(() => expect(attempts).toBe(1));
+      if (calculationFirst) runtime.retryRender();
+      flushFrames();
+      expect(onRenderRecovered).not.toHaveBeenCalled();
+
+      rejectCalculation(new Error(`controlled ${kind} failure`));
+      await vi.waitFor(() => expect(onCalculationError).toHaveBeenCalledTimes(1));
+      flushFrames();
+      expect(onRenderRecovered).not.toHaveBeenCalled();
+
+      runtime.retryRender();
+      await vi.waitFor(() => expect(attempts).toBe(2));
+      await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+      flushFrames();
+      expect(onRenderRecovered).toHaveBeenCalledTimes(1);
+      runtime.destroy();
+    }
+  );
+
+  it.each([
+    { failReplacement: false, expectedTypes: ["renko", "kagi"], expectedErrors: 1 },
+    { failReplacement: true, expectedTypes: ["renko", "kagi", "kagi"], expectedErrors: 2 }
+  ] as const)(
+    "replaces a failed stateful series without reviving it (replacement failure: $failReplacement)",
+    async ({ failReplacement, expectedTypes, expectedErrors }) => {
+      const frames = new Map<number, () => void>();
+      let nextFrame = 1;
+      let kagiAttempts = 0;
+      const calculatedTypes: StatefulSeriesTransformType[] = [];
+      const onCalculationError = vi.fn();
+      const onRenderRecovered = vi.fn();
+      const runtime = createChartEngineRuntime({
+        staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+        themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+        observer: { observe() {}, disconnect() {} },
+        calculationRuntime: {
+          async calculateIndicators() {
+            return new Map<string, IndicatorResult>();
+          },
+          async calculateSeries(input) {
+            calculatedTypes.push(input.type);
+            if (input.type === "renko") throw new Error("controlled renko failure");
+            kagiAttempts += 1;
+            if (failReplacement && kagiAttempts === 1) {
+              throw new Error("controlled kagi failure");
+            }
+            return {
+              type: input.type,
+              source: materialized().series,
+              sourceIndexOffset: 0,
+              points: []
+            } satisfies SeriesRenderModel;
+          }
+        },
+        requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+        cancelFrame: (id) => { frames.delete(id); },
+        getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+        onCalculationError,
+        onRenderRecovered
+      });
+      const flushFrames = () => {
+        while (frames.size > 0) {
+          const pending = [...frames.values()];
+          frames.clear();
+          for (const callback of pending) callback();
+        }
+      };
+
+      runtime.setMaterializedSeries(materialized());
+      runtime.setSeriesType("renko");
+      await vi.waitFor(() => expect(onCalculationError).toHaveBeenCalledTimes(1));
+      flushFrames();
+
+      runtime.setSeriesType("kagi");
+      if (failReplacement) {
+        await vi.waitFor(() => expect(onCalculationError).toHaveBeenCalledTimes(2));
+        flushFrames();
+        runtime.retryRender();
+      }
+      await vi.waitFor(() => expect(calculatedTypes).toEqual(expectedTypes));
+      await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+      flushFrames();
+
+      expect(onCalculationError).toHaveBeenCalledTimes(expectedErrors);
+      expect(onRenderRecovered).toHaveBeenCalledTimes(1);
+      runtime.destroy();
+    }
+  );
+
+  it("does not recover while a replacement stateful series is still calculating", async () => {
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    let resolveKagi!: (model: SeriesRenderModel) => void;
+    const calculatedTypes: StatefulSeriesTransformType[] = [];
+    const onCalculationError = vi.fn();
+    const onRenderRecovered = vi.fn();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        async calculateIndicators() {
+          return new Map<string, IndicatorResult>();
+        },
+        calculateSeries(input) {
+          calculatedTypes.push(input.type);
+          if (input.type === "renko") return Promise.reject(new Error("controlled renko failure"));
+          return new Promise<SeriesRenderModel>((resolve) => { resolveKagi = resolve; });
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onCalculationError,
+      onRenderRecovered
+    });
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+
+    runtime.setMaterializedSeries(materialized());
+    runtime.setSeriesType("renko");
+    await vi.waitFor(() => expect(onCalculationError).toHaveBeenCalledTimes(1));
+    flushFrames();
+
+    runtime.setSeriesType("kagi");
+    await vi.waitFor(() => expect(calculatedTypes).toEqual(["renko", "kagi"]));
+    runtime.retryRender();
+    flushFrames();
+    expect(onRenderRecovered).not.toHaveBeenCalled();
+
+    resolveKagi({
+      type: "kagi",
+      source: materialized().series,
+      sourceIndexOffset: 0,
+      points: []
+    });
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    flushFrames();
+    expect(onRenderRecovered).toHaveBeenCalledTimes(1);
+    runtime.destroy();
+  });
+
+  it("waits for both failed calculation paths before reporting recovery", async () => {
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    let indicatorAttempts = 0;
+    let seriesAttempts = 0;
+    const onRenderError = vi.fn();
+    const onCalculationError = vi.fn();
+    const onRenderRecovered = vi.fn();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        async calculateIndicators() {
+          indicatorAttempts += 1;
+          if (indicatorAttempts === 1) throw new Error("controlled indicator failure");
+          return new Map<string, IndicatorResult>();
+        },
+        async calculateSeries(input) {
+          seriesAttempts += 1;
+          if (seriesAttempts === 1) throw new Error("controlled series failure");
+          return {
+            type: input.type,
+            source: materialized().series,
+            sourceIndexOffset: 0,
+            points: []
+          } satisfies SeriesRenderModel;
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onRenderError,
+      onCalculationError,
+      onRenderRecovered
+    });
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+
+    runtime.setMaterializedSeries(materialized());
+    runtime.setIndicators([
+      { instanceId: "ma-a", id: "MA", params: { period: 5 }, visible: true }
+    ]);
+    runtime.setSeriesType("renko");
+    await vi.waitFor(() => expect(onCalculationError).toHaveBeenCalledTimes(2));
+    expect(onCalculationError.mock.calls.map(([kind]) => kind).sort()).toEqual([
+      "indicator",
+      "series"
+    ]);
+    expect(onRenderError).not.toHaveBeenCalled();
+    flushFrames();
+
+    runtime.retryRender();
+    await vi.waitFor(() => {
+      expect(indicatorAttempts).toBe(2);
+      expect(seriesAttempts).toBe(2);
+    });
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    flushFrames();
+    expect(onRenderRecovered).toHaveBeenCalledTimes(1);
+    runtime.destroy();
+  });
+
+  it("does not let a stale calculation block or fail current recovery", async () => {
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    let attempts = 0;
+    let rejectCalculation!: (error: Error) => void;
+    let firstSignal: AbortSignal | undefined;
+    const calculateIndicators = vi.fn((input: Parameters<CheckpointedCalculationRuntime["calculateIndicators"]>[0]) => {
+      attempts += 1;
+      if (attempts === 1) {
+        firstSignal = input.signal;
+        return new Promise<Map<string, IndicatorResult>>(
+          (_resolve, reject) => { rejectCalculation = reject; }
+        );
+      }
+      if (attempts === 2) return Promise.reject(new Error("current calculation failure"));
+      return Promise.resolve(new Map<string, IndicatorResult>());
+    });
+    const onCalculationError = vi.fn();
+    const onRenderRecovered = vi.fn();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        calculateIndicators,
+        async calculateSeries(input) {
+          return {
+            type: input.type,
+            source: materialized().series,
+            sourceIndexOffset: 0,
+            points: []
+          } satisfies SeriesRenderModel;
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onCalculationError,
+      onRenderRecovered
+    });
+
+    runtime.setMaterializedSeries(materialized());
+    const indicators = [
+      { instanceId: "ma-a", id: "MA", params: { period: 5 }, visible: true }
+    ] as const;
+    runtime.setIndicators(indicators);
+    await vi.waitFor(() => expect(calculateIndicators).toHaveBeenCalledTimes(1));
+    runtime.cancelCalculations();
+    expect(firstSignal?.aborted).toBe(true);
+    runtime.setIndicators(indicators);
+    await vi.waitFor(() => expect(onCalculationError).toHaveBeenCalledTimes(1));
+    while (frames.size > 0) {
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const callback of pending) callback();
+    }
+    runtime.retryRender();
+    await vi.waitFor(() => expect(calculateIndicators).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+      expect(onRenderRecovered).toHaveBeenCalledTimes(1);
+    });
+
+    rejectCalculation(new Error("stale selection calculation"));
+    await Promise.resolve();
+    expect(onCalculationError).toHaveBeenCalledTimes(1);
+    runtime.destroy();
   });
 
   it("reads the approved Canvas colors from workspace variables", () => {

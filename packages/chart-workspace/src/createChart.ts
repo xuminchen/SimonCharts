@@ -25,6 +25,7 @@ import type {
   ChartSeriesType,
   ChartState,
   ChartStateListener,
+  ChartStudyApi,
   ChartSymbol,
   ChartTheme,
   ChartView,
@@ -42,6 +43,7 @@ import { createChartError, type ChartError } from "./errors";
 import { createBrowserPersistence, defaultLayoutState, defaultPreferences } from "./persistence/browserPersistence";
 import {
   fromEngineDrawings,
+  mergeIndicatorInputs,
   parseEntity,
   parseEntityId,
   parseEntityInput,
@@ -211,6 +213,16 @@ function layoutSelectionKey(state: Readonly<ChartState>): string {
   return JSON.stringify([state.symbol.id, state.timeframe, state.adjustMode]);
 }
 
+function presentationKey(state: Readonly<ChartState>): string {
+  return JSON.stringify([
+    state.symbol.id,
+    state.timeframe,
+    state.adjustMode,
+    state.view,
+    state.view === "intraday" ? state.intradayDays : null
+  ]);
+}
+
 function entitySnapshot(
   viewModel: Readonly<WorkspaceViewModel>,
   scope: readonly [chartId: string, persistenceScopeId: string, dataContextId: string]
@@ -267,6 +279,27 @@ export function createChart(
   let applyingLayout = false;
   let latestViewModelRevision = 0;
   let readySelectionKey: string | undefined;
+  let materializedPresentationKey: string | undefined;
+  let readyPresentationKey: string | undefined;
+  let unavailablePresentationKey: string | undefined;
+  const readinessWindow = container.ownerDocument.defaultView;
+  let readinessFrameId: number | undefined;
+  const cancelReadinessFrame = (): void => {
+    if (readinessFrameId === undefined) return;
+    readinessWindow?.cancelAnimationFrame(readinessFrameId);
+    readinessFrameId = undefined;
+  };
+  const dataReadyWaiters = new Set<{
+    readonly key: string;
+    readonly resolve: (value: boolean) => void;
+  }>();
+  const settleDataReady = (predicate: (key: string) => boolean, value: boolean): void => {
+    for (const waiter of [...dataReadyWaiters]) {
+      if (!predicate(waiter.key)) continue;
+      dataReadyWaiters.delete(waiter);
+      waiter.resolve(value);
+    }
+  };
   let lastEntitySnapshot: Map<ChartEntityId, ChartEntity> | undefined;
   const entityScope = [
     options?.chartId ?? "",
@@ -416,10 +449,12 @@ export function createChart(
       getIndicators: () => [],
       getDrawings: () => [],
       getMarks: () => [],
+      dataReady: () => Promise.resolve(false),
       createStudy: () => {
         throw new DOMException("Chart study API is unavailable", "InvalidStateError");
       },
       getStudyById: () => undefined,
+      getStudyApi: () => undefined,
       getAllStudies: () => [],
       removeStudy: () => false,
       createEntity: () => {
@@ -520,7 +555,9 @@ export function createChart(
     onExecutionTooltipChanged: (snapshot) => shell.renderExecutionTooltip(snapshot),
     onDrawingsChanged: (drawings, selectedDrawingIds) => controller?.handleDrawingsChanged(drawings, selectedDrawingIds),
     onDrawingHistoryChanged: (history) => controller?.handleDrawingHistoryChanged(history),
-    onRenderError: (error) => controller?.handleRenderError(error)
+    onCalculationError: (kind, error) => controller?.handleRenderError(error, kind),
+    onRenderError: (error) => controller?.handleRenderError(error),
+    onRenderRecovered: () => controller?.handleRenderRecovered()
   });
   controller = createChartController({
     chartId: options.chartId,
@@ -546,8 +583,77 @@ export function createChart(
         emitLayoutChanged(controller!.getViewModel());
       }
     },
+    onPresentationReady: (state) => {
+      if (destroyed) return;
+      const key = presentationKey(state);
+      if (unavailablePresentationKey === key) unavailablePresentationKey = undefined;
+      materializedPresentationKey = key;
+      cancelReadinessFrame();
+      const markReady = (): void => {
+        readinessFrameId = undefined;
+        if (destroyed || materializedPresentationKey !== key) return;
+        const viewModel = controller!.getViewModel();
+        if (
+          presentationKey(viewModel.state) !== key ||
+          viewModel.state.loading ||
+          viewModel.status.type === "blocked"
+        ) return;
+        readyPresentationKey = key;
+        unavailablePresentationKey = undefined;
+        settleDataReady((candidate) => candidate === key, true);
+      };
+      if (readinessWindow === null) markReady();
+      else readinessFrameId = readinessWindow.requestAnimationFrame(markReady);
+    },
+    onPresentationPending: (state) => {
+      const key = presentationKey(state);
+      if (unavailablePresentationKey === key) unavailablePresentationKey = undefined;
+    },
+    onPresentationUnavailable: (state) => {
+      if (destroyed) return;
+      const key = presentationKey(state);
+      if (materializedPresentationKey === key || readyPresentationKey === key) return;
+      unavailablePresentationKey = key;
+      settleDataReady((candidate) => candidate === key, false);
+    },
     onViewModelChanged: (viewModel, revision) => {
       latestViewModelRevision = revision;
+      const currentPresentationKey = presentationKey(viewModel.state);
+      if (
+        materializedPresentationKey !== undefined &&
+        materializedPresentationKey !== currentPresentationKey
+      ) {
+        materializedPresentationKey = undefined;
+        cancelReadinessFrame();
+      }
+      if (
+        readyPresentationKey !== undefined &&
+        readyPresentationKey !== currentPresentationKey
+      ) readyPresentationKey = undefined;
+      if (
+        unavailablePresentationKey !== undefined &&
+        unavailablePresentationKey !== currentPresentationKey
+      ) unavailablePresentationKey = undefined;
+      settleDataReady((candidate) => candidate !== currentPresentationKey, false);
+      if (viewModel.state.loading) {
+        cancelReadinessFrame();
+        if (materializedPresentationKey === currentPresentationKey) {
+          materializedPresentationKey = undefined;
+        }
+        if (readyPresentationKey === currentPresentationKey) {
+          readyPresentationKey = undefined;
+        }
+      }
+      if (viewModel.status.type === "blocked") {
+        cancelReadinessFrame();
+        if (materializedPresentationKey === currentPresentationKey) {
+          materializedPresentationKey = undefined;
+        }
+        if (readyPresentationKey === currentPresentationKey) {
+          readyPresentationKey = undefined;
+        }
+        settleDataReady((candidate) => candidate === currentPresentationKey, false);
+      }
       if (
         readySelectionKey !== undefined &&
         readySelectionKey !== layoutSelectionKey(viewModel.state)
@@ -588,6 +694,63 @@ export function createChart(
     while (existing.has(candidate));
     return candidate;
   };
+  const findStudy = (value: ChartIndicatorEntityId): ChartIndicator | undefined => {
+    const id = parseEntityId(value);
+    const entity = entitySnapshot(controller!.getViewModel(), entityScope)
+      .find((candidate) => candidate.id === id && candidate.kind === "indicator");
+    return entity?.kind === "indicator" ? entity.value : undefined;
+  };
+  const requireStudy = (value: ChartIndicatorEntityId): ChartIndicator => {
+    if (destroyed) {
+      throw new DOMException("Chart study API is unavailable", "InvalidStateError");
+    }
+    const study = findStudy(value);
+    if (study === undefined) {
+      throw new DOMException("Chart study was not found", "NotFoundError");
+    }
+    return study;
+  };
+  const updateStudy = (
+    value: ChartIndicatorEntityId,
+    update: (study: Readonly<ChartIndicator>) => ChartIndicator
+  ): void => {
+    const current = requireStudy(value);
+    const next = update(current);
+    const viewModel = controller!.getViewModel();
+    controller!.setIndicators(parseIndicators(viewModel.indicators.map((candidate) =>
+      candidate.instanceId === current.instanceId ? next : candidate
+    )));
+  };
+  const removeStudy = (value: ChartIndicatorEntityId): boolean => {
+    if (destroyed) return false;
+    const current = findStudy(value);
+    if (current === undefined) return false;
+    const viewModel = controller!.getViewModel();
+    controller!.setIndicators(parseIndicators(
+      viewModel.indicators.filter(
+        (candidate) => candidate.instanceId !== current.instanceId
+      )
+    ));
+    return true;
+  };
+  const studyApi = (value: ChartIndicatorEntityId): ChartStudyApi | undefined => {
+    if (destroyed || findStudy(value) === undefined) return undefined;
+    return Object.freeze({
+      entityId: value,
+      getInputs: () => structuredClone(requireStudy(value).params),
+      setInputs: (inputs: Readonly<Record<string, number>>) => {
+        updateStudy(value, (current) => mergeIndicatorInputs(current, inputs));
+      },
+      isVisible: () => requireStudy(value).visible,
+      setVisible: (visible: boolean) => {
+        if (typeof visible !== "boolean") {
+          throw new TypeError("Chart study visibility must be boolean");
+        }
+        updateStudy(value, (current) => ({ ...current, visible }));
+      },
+      remove: () => removeStudy(value)
+    });
+  };
 
   return Object.freeze({
     getState: () => controller!.getState(),
@@ -597,6 +760,19 @@ export function createChart(
     getIndicators: () => structuredClone(controller!.getViewModel().indicators),
     getDrawings: () => fromEngineDrawings(controller!.getViewModel().drawings),
     getMarks: () => structuredClone(controller!.getViewModel().marks),
+    dataReady: () => {
+      if (destroyed) return Promise.resolve(false);
+      const viewModel = controller!.getViewModel();
+      const key = presentationKey(viewModel.state);
+      if (viewModel.status.type === "blocked") {
+        return Promise.resolve(false);
+      }
+      if (unavailablePresentationKey === key) return Promise.resolve(false);
+      if (readyPresentationKey === key) return Promise.resolve(true);
+      return new Promise<boolean>((resolve) => {
+        dataReadyWaiters.add({ key, resolve });
+      });
+    },
     createStudy: (value: ChartIndicatorInput) => {
       if (destroyed) {
         throw new DOMException("Chart study API is unavailable", "InvalidStateError");
@@ -616,26 +792,12 @@ export function createChart(
       return id;
     },
     getStudyById: (value: ChartIndicatorEntityId) => {
-      const id = parseEntityId(value);
-      const entity = entitySnapshot(controller!.getViewModel(), entityScope)
-        .find((candidate) => candidate.id === id && candidate.kind === "indicator");
-      return entity?.kind === "indicator" ? structuredClone(entity.value) : undefined;
+      const study = findStudy(value);
+      return study === undefined ? undefined : structuredClone(study);
     },
+    getStudyApi: (value: ChartIndicatorEntityId) => studyApi(value),
     getAllStudies: () => structuredClone(controller!.getViewModel().indicators),
-    removeStudy: (value: ChartIndicatorEntityId) => {
-      if (destroyed) return false;
-      const id = parseEntityId(value);
-      const viewModel = controller!.getViewModel();
-      const current = entitySnapshot(viewModel, entityScope)
-        .find((candidate) => candidate.id === id && candidate.kind === "indicator");
-      if (current?.kind !== "indicator") return false;
-      controller!.setIndicators(parseIndicators(
-        viewModel.indicators.filter(
-          (candidate) => candidate.instanceId !== current.value.instanceId
-        )
-      ));
-      return true;
-    },
+    removeStudy: (value: ChartIndicatorEntityId) => removeStudy(value),
     createEntity: (value: ChartEntityInput) => {
       if (destroyed) {
         throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
@@ -861,6 +1023,11 @@ export function createChart(
       stateListeners.clear();
       eventListeners.clear();
       crosshairListeners.clear();
+      settleDataReady(() => true, false);
+      cancelReadinessFrame();
+      materializedPresentationKey = undefined;
+      readyPresentationKey = undefined;
+      unavailablePresentationKey = undefined;
       lastEntitySnapshot = undefined;
       checkpointStore.clear();
       shell.destroy();

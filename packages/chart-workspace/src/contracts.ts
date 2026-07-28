@@ -366,6 +366,15 @@ export type ChartCrosshairEvent =
 
 export type ChartCrosshairListener = (event: Readonly<ChartCrosshairEvent>) => void;
 
+export interface ChartStudyApi {
+  readonly entityId: ChartIndicatorEntityId;
+  getInputs(): Readonly<Record<string, number>>;
+  setInputs(inputs: Readonly<Record<string, number>>): void;
+  isVisible(): boolean;
+  setVisible(visible: boolean): void;
+  remove(): boolean;
+}
+
 export interface ChartLayoutV2 {
   readonly schemaVersion: 2;
   readonly seriesType: ChartSeriesType;
@@ -401,8 +410,10 @@ export interface ChartInstance {
   getIndicators(): readonly ChartIndicator[];
   getDrawings(): readonly ChartDrawing[];
   getMarks(): readonly ChartMark[];
+  dataReady(): Promise<boolean>;
   createStudy(indicator: ChartIndicatorInput): ChartIndicatorEntityId;
   getStudyById(entityId: ChartIndicatorEntityId): ChartIndicator | undefined;
+  getStudyApi(entityId: ChartIndicatorEntityId): ChartStudyApi | undefined;
   getAllStudies(): readonly ChartIndicator[];
   removeStudy(entityId: ChartIndicatorEntityId): boolean;
   createEntity(entity: ChartEntityInput): ChartEntityId;

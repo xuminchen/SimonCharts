@@ -90,6 +90,69 @@ describe("data coordinator", () => {
     expect(events.map((event) => event.type)).toEqual(["loadingInitial"]);
   });
 
+  it("publishes loading before retrying the current initial selection", async () => {
+    let attempts = 0;
+    const events: DataCoordinatorEvent[] = [];
+    const coordinator = createDataCoordinator({
+      dataSource: {
+        getCapabilities: unusedCapabilities,
+        async searchSymbols() {
+          return [];
+        },
+        async loadSeries() {
+          if (attempts++ === 0) throw new Error("controlled initial failure");
+          return page(100);
+        }
+      },
+      store: createPagedSeriesStore(),
+      onEvent: (event) => events.push(event)
+    });
+
+    await coordinator.start(stockSelection);
+    events.length = 0;
+    await coordinator.retryInitial();
+
+    expect(events.map((event) => event.type)).toEqual([
+      "loadingInitial",
+      "initialPageAccepted"
+    ]);
+  });
+
+  it("retries reentrantly only after releasing the failed initial request", async () => {
+    let attempts = 0;
+    let retry: Promise<void> | undefined;
+    const events: DataCoordinatorEvent[] = [];
+    let coordinator!: ReturnType<typeof createDataCoordinator>;
+    coordinator = createDataCoordinator({
+      dataSource: {
+        getCapabilities: unusedCapabilities,
+        async searchSymbols() {
+          return [];
+        },
+        async loadSeries() {
+          if (attempts++ === 0) throw new Error("controlled initial failure");
+          return page(100);
+        }
+      },
+      store: createPagedSeriesStore(),
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === "initialRequestFailed") retry = coordinator.retryInitial();
+      }
+    });
+
+    await coordinator.start(stockSelection);
+    await retry;
+
+    expect(attempts).toBe(2);
+    expect(events.map((event) => event.type)).toEqual([
+      "loadingInitial",
+      "initialRequestFailed",
+      "loadingInitial",
+      "initialPageAccepted"
+    ]);
+  });
+
   it("atomically rejects candles after cutoff on initial and cursor pages", async () => {
     const initialEvents: DataCoordinatorEvent[] = [];
     const initialStore = createPagedSeriesStore();

@@ -1,5 +1,19 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.32 - 2026-07-27
+
+- Added `getStudyApi()` with a live `ChartStudyApi` handle for defensive input reads, atomic validated partial input updates, visibility control, and removal through the existing study Entity engine.
+- Added `dataReady()` for imperative host workflows. The Promise is scoped to the exact current symbol, timeframe, adjustment mode, view, and intraday-day selection plus its first scheduled paint, and resolves `false` when that presentation is replaced, cannot be materialized, becomes blocked, or is destroyed.
+- Made recoverable initial-data retries re-enter loading before requesting again, so `retry(); await dataReady()` follows the new attempt without inheriting the failed state.
+- Made range, render, indicator, and stateful-series retries settle only after their real replacement result is materialized and painted; concurrent calculation failures are all retried before readiness returns.
+- Aborted superseded indicator and stateful-series calculations so delayed page reloads cannot write stale checkpoints after a selection or view replacement.
+- Kept recovery ownership on the current calculation across stateful-series replacement and queued Canvas retries, preventing stale types or pending calculations from reporting a false ready state.
+- Added the public `CALCULATION_FAILED` / `calculation` error classification with `context.calculationKind`, instead of reporting indicator or stateful-series failures as Canvas render failures.
+- Strengthened the release gate so the exact packed, non-workspace installation executes its public workflow in both Chrome and Edge, while workspace browser runs always use isolated current-worktree servers.
+- Migration: TypeScript hosts with exhaustive `ChartErrorCode` or `ChartErrorScope` switches must handle the new calculation members.
+- Kept the public surface minimal: no second study store, no duplicate series handle, no speculative style schema, no new dependency, and no layout-version change.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,159 tests`, combined Chrome `116/116`, Charts `14 files / 161 tests`, Charts Chrome/Edge `65/65` per browser, and exact packed Chrome/Edge consumer execution; SHA-256 is `21d7b1565d925fca87e61d3c1ae38bef0bda3391093e14fd38ea749df965e2d7`, SHA-512 is `e7a1b873391f68f989d3149c33a53ca7b4a355fa5ab6e77cfd3d4de2357ebbc5c8b35ae9a83c67394c37a71748eb21f113ff5f91d233c2dfc69be8316b755e24`.
+
 ## @simoncharts/charts 1.0.0-rc.31 - 2026-07-27
 
 - Added public `ChartDrawing.interactive?: boolean` and `ChartDrawing.affectsPriceScale?: boolean` controls without materializing defaults in existing layouts.

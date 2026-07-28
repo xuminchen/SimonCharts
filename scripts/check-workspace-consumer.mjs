@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { access, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.31";
+const expectedVersion = "1.0.0-rc.32";
 let tempRoot;
 
 try {
@@ -47,7 +49,8 @@ try {
   const vite = path.join(projectRoot, "node_modules", "vite", "bin", "vite.js");
   run(process.execPath, [vite, "build", "--outDir", "dist", "--emptyOutDir"], hostRoot);
   await access(path.join(hostRoot, "dist", "index.html"));
-  console.log(`External JavaScript/TypeScript workspace consumer check passed for ${packageName}@${expectedVersion}.`);
+  await checkBrowserConsumer(path.join(hostRoot, "dist"));
+  console.log(`External JavaScript/TypeScript Chrome/Edge workspace consumer check passed for ${packageName}@${expectedVersion}.`);
 } catch (error) {
   if (typeof error?.stdout === "string") process.stdout.write(error.stdout);
   if (typeof error?.stderr === "string") process.stderr.write(error.stderr);
@@ -73,6 +76,59 @@ function expect(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+async function checkBrowserConsumer(distRoot) {
+  const server = createServer(async (request, response) => {
+    const pathname = decodeURIComponent(new URL(request.url ?? "/", "http://127.0.0.1").pathname);
+    const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+    const filePath = path.resolve(distRoot, relativePath);
+    if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) {
+      response.writeHead(403).end();
+      return;
+    }
+    try {
+      const body = await readFile(filePath);
+      response.writeHead(200, {
+        "content-type": filePath.endsWith(".html")
+          ? "text/html; charset=utf-8"
+          : filePath.endsWith(".css")
+            ? "text/css; charset=utf-8"
+            : "text/javascript; charset=utf-8"
+      });
+      response.end(body);
+    } catch {
+      response.writeHead(404).end();
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const address = server.address();
+    expect(address && typeof address === "object", "consumer server did not bind a TCP port");
+    for (const channel of ["chrome", "msedge"]) {
+      const browser = await chromium.launch({ channel, headless: true });
+      try {
+        const page = await browser.newPage();
+        page.setDefaultTimeout(20_000);
+        await page.goto(`http://127.0.0.1:${address.port}`);
+        await page.waitForFunction(() =>
+          ["ready", "failed"].includes(document.documentElement.dataset.simonchartsConsumer ?? "")
+        );
+        const result = await page.evaluate(() => ({
+          status: document.documentElement.dataset.simonchartsConsumer,
+          error: document.documentElement.dataset.simonchartsConsumerError
+        }));
+        expect(result.status === "ready", `${channel} packed consumer failed: ${result.error ?? "unknown error"}`);
+      } finally {
+        await browser.close();
+      }
+    }
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+}
+
 function consumerSource() {
   return `import {
   ChartDatafeedError,
@@ -86,6 +142,7 @@ function consumerSource() {
   type ChartIndicatorEntityId,
   type ChartLayoutV2,
   type ChartMark,
+  type ChartStudyApi,
   type ChartVisibleRange,
   type ChartState
 } from "@simoncharts/charts";
@@ -212,9 +269,14 @@ const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
     void leaveType;
   }
 });
+async function verifyConsumer(): Promise<void> {
+if (!await chart.dataReady()) throw new Error("initial chart presentation was not usable");
 chart.setTimeframe("5m");
+if (!await chart.dataReady()) throw new Error("timeframe presentation was not usable");
 chart.setView("intraday");
+if (!await chart.dataReady()) throw new Error("intraday presentation was not usable");
 chart.setView("timeframe");
+if (!await chart.dataReady()) throw new Error("timeframe view was not usable");
 chart.setExecutions(executions);
 chart.setExecutionsVisible(false);
 chart.setExecutionsVisible(true);
@@ -230,7 +292,14 @@ const ma20Study = chart.getStudyById(ma20StudyId);
 if (ma20Study?.id !== "MA" || chart.getAllStudies().length !== 2) {
   throw new Error("study instance API did not preserve same-definition studies");
 }
-if (!chart.removeStudy(ma20StudyId)) throw new Error("study instance API did not remove its study");
+const ma20StudyApi: ChartStudyApi | undefined = chart.getStudyApi(ma20StudyId);
+if (!ma20StudyApi) throw new Error("study handle API did not return its study");
+ma20StudyApi.setInputs({ period: 30 });
+ma20StudyApi.setVisible(false);
+if (ma20StudyApi.getInputs().period !== 30 || ma20StudyApi.isVisible()) {
+  throw new Error("study handle API did not update live entity state");
+}
+if (!ma20StudyApi.remove()) throw new Error("study handle API did not remove its study");
 chart.setDrawings(drawings);
 chart.setMarks(marks);
 chart.setDrawingTool("trendLine");
@@ -264,6 +333,15 @@ unsubscribeCrosshair();
 unsubscribeEvents();
 unsubscribe();
 chart.destroy();
+}
+void verifyConsumer().then(
+  () => { document.documentElement.dataset.simonchartsConsumer = "ready"; },
+  (error: unknown) => {
+    document.documentElement.dataset.simonchartsConsumer = "failed";
+    document.documentElement.dataset.simonchartsConsumerError = error instanceof Error ? error.message : String(error);
+    throw error;
+  }
+);
 `;
 }
 

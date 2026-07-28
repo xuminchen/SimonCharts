@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.31.tgz
+npm install ./simoncharts-charts-1.0.0-rc.32.tgz
 ```
 
 ## Embed the default chart
@@ -41,8 +41,10 @@ const chart = createChart(container, {
 });
 
 const unsubscribe = chart.subscribe((state) => updateHostState(state));
-unsubscribe();
-chart.destroy();
+function destroyChart() {
+  unsubscribe();
+  chart.destroy();
+}
 ```
 
 ## Control the view and visible range
@@ -65,6 +67,14 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
 chart.resetToLatest();
 const visibleRange = chart.getVisibleRange();
 // On host teardown: unsubscribeEvents();
+```
+
+For imperative host workflows, `dataReady()` waits for the exact current symbol, timeframe, adjustment mode, view, and intraday-day selection to finish materializing and commit its first scheduled paint. It resolves `true` once that presentation is usable, or `false` if the selection is replaced, cannot be materialized, becomes blocked, or the chart is destroyed. Calling `retry()` before `dataReady()` binds the new Promise to that retry instead of the failed attempt.
+
+```ts
+if (await chart.dataReady()) {
+  chart.setVisibleRange({ from: rangeStartEpochMs, to: rangeEndEpochMs });
+}
 ```
 
 ## Subscribe to crosshair data
@@ -167,28 +177,38 @@ chart.getStudyById(ma20Id);
 chart.getAllStudies();
 chart.removeStudy(ma5Id);
 
-const entityId = chart.createEntity({
-  kind: "drawing",
-  value: {
-    id: "review-support",
-    type: "horizontalLine",
-    anchors: [{ time: supportCandleTime, price: supportPrice }]
-  }
-});
+const ma20 = chart.getStudyApi(ma20Id);
+ma20?.setInputs({ period: 30 }); // Partial, validated input update.
+ma20?.setVisible(false);
+ma20?.getInputs();
+ma20?.isVisible();
 
-const entity = chart.getEntity(entityId);
-if (entity?.kind === "drawing") {
-  chart.updateEntity({
-    ...entity,
-    value: { ...entity.value, locked: true }
+if (await chart.dataReady()) {
+  const entityId = chart.createEntity({
+    kind: "drawing",
+    value: {
+      id: "review-support",
+      type: "horizontalLine",
+      anchors: [{ time: supportCandleTime, price: supportPrice }]
+    }
   });
-}
 
-const drawings = chart.getEntities("drawing");
-chart.removeEntity(entityId);
+  const entity = chart.getEntity(entityId);
+  if (entity?.kind === "drawing") {
+    chart.updateEntity({
+      ...entity,
+      value: { ...entity.value, locked: true }
+    });
+  }
+
+  const drawings = chart.getEntities("drawing");
+  chart.removeEntity(entityId);
+}
 ```
 
 `createStudy()` returns an opaque indicator entity ID and generates a non-reused UUID instance ID when the caller does not provide one. The generic Entity API accepts indicators too, but their `instanceId` is required because the host owns that immutable identity and must not reuse it for a different study. Missing indicator inputs are normalized to the built-in defaults before validation and persistence. Same-definition studies calculate, cache, render, hide, edit, remove, persist, and restore independently; a layout accepts at most 32 studies. rc.29 stores these V2 instances in a separate browser namespace and leaves older indicator records untouched instead of guessing an identity or deleting legacy data.
+
+`getStudyApi()` returns a live handle over the existing study entity. It reads current state on every call, returns defensive input snapshots, and routes partial input changes through the same public validator as `createStudy()`. A handle whose study no longer exists throws `NotFoundError` for reads or updates; after chart destruction, reads and updates throw `InvalidStateError` and `remove()` returns `false`.
 
 `entity-created`, `entity-updated`, and `entity-removed` events carry the final defensive entity snapshot. Drawing IDs are isolated by chart, persistence scope, data context, symbol, and adjustment; mark IDs additionally follow the current symbol; indicator IDs follow the chart's persisted indicator scope. A stale or foreign ID cannot mutate the current selection.
 
@@ -280,7 +300,7 @@ Charts intentionally does not create watchlists, news, broker/order/account pane
 - The SDK does not aggregate, adjust, repair, or fill candles.
 - `AbortSignal` cancellation is normal control flow and is not surfaced as an error.
 
-Host adapters may throw `ChartDatafeedError` with a safe code (`NOT_CONFIGURED`, `UNAUTHORIZED`, `FORBIDDEN`, `RATE_LIMITED`, `NO_DATA`, or `UNAVAILABLE`), a user-facing message, and a recoverable flag. `onError` receives a normalized `ChartError`; known datafeed codes are available at `error.context?.datafeedCode`. Unknown upstream details are never exposed.
+Host adapters may throw `ChartDatafeedError` with a safe code (`NOT_CONFIGURED`, `UNAUTHORIZED`, `FORBIDDEN`, `RATE_LIMITED`, `NO_DATA`, or `UNAVAILABLE`), a user-facing message, and a recoverable flag. `onError` receives a normalized `ChartError`; known datafeed codes are available at `error.context?.datafeedCode`. Indicator and stateful-series calculation failures use `CALCULATION_FAILED` with scope `calculation` and `error.context?.calculationKind`; Canvas paint failures remain `RENDER_FAILED` with scope `render`. Both are recoverable through `retry()`, and readiness returns only after the failed calculation or paint is actually replaced. TypeScript hosts with exhaustive `ChartErrorCode` or `ChartErrorScope` switches must add the new calculation cases when upgrading from rc.31. Unknown upstream details are never exposed.
 
 ## Persistence and lifecycle
 
@@ -310,4 +330,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.31 adds independent Drawing interaction and automatic price-scale controls while preserving rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.32 adds a live public study handle and selection-safe `dataReady()` lifecycle promise while preserving rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

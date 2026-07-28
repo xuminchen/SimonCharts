@@ -7,6 +7,7 @@ export type ChartErrorCode =
   | "INVALID_DATA"
   | "STORAGE_READ_FAILED"
   | "STORAGE_WRITE_FAILED"
+  | "CALCULATION_FAILED"
   | "RENDER_FAILED";
 
 export type ChartErrorScope =
@@ -15,6 +16,7 @@ export type ChartErrorScope =
   | "initial-data"
   | "history-data"
   | "storage"
+  | "calculation"
   | "render";
 
 export interface ChartError {

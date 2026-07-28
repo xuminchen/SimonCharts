@@ -32,3 +32,101 @@ test("renders a lazy million-candle source within bounded frame budgets", async 
   const frameDurations = await page.evaluate(() => window.__hostCounters.frameCallbackDurations);
   expect(percentile(frameDurations, 0.95)).toBeLessThanOrEqual(16.7);
 });
+
+test("remembers a terminal unavailable presentation without hanging later callers", async ({ page }) => {
+  await page.goto("/?million=1");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    const origin = Date.UTC(2026, 5, 5, 1, 30);
+    chart.setTimeframe("5m");
+    chart.setVisibleRange({
+      from: origin + 975_000 * 60_000,
+      to: origin + 999_999 * 60_000
+    });
+    const first = await chart.dataReady();
+    const second = await Promise.race([
+      chart.dataReady(),
+      new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), 3_000))
+    ]);
+    chart.setVisibleRange({
+      from: origin + 999_900 * 60_000,
+      to: origin + 999_999 * 60_000
+    });
+    const sameSelectionRecovered = await chart.dataReady();
+    chart.setTimeframe("1d");
+    const recovered = await chart.dataReady();
+    return { first, second, sameSelectionRecovered, recovered };
+  });
+
+  expect(result).toEqual({
+    first: false,
+    second: false,
+    sameSelectionRecovered: true,
+    recovered: true
+  });
+});
+
+test("settles an unavailable queued range and waits for a same-selection recovery attempt", async ({ page }) => {
+  await page.goto("/?million=1&latency=200");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    const origin = Date.UTC(2026, 5, 5, 1, 30);
+    chart.setTimeframe("5m");
+    chart.setVisibleRange({
+      from: origin + 1_000_100 * 60_000,
+      to: origin + 1_000_200 * 60_000
+    });
+    const unavailable = await Promise.race([
+      chart.dataReady(),
+      new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), 3_000))
+    ]);
+
+    chart.setVisibleRange({
+      from: origin + 998_900 * 60_000,
+      to: origin + 998_999 * 60_000
+    });
+    const recovery = chart.dataReady();
+    const immediate = await Promise.race([
+      recovery,
+      new Promise<"pending">((resolve) => window.setTimeout(() => resolve("pending"), 50))
+    ]);
+    return { unavailable, immediate, recovered: await recovery };
+  });
+
+  expect(result).toEqual({ unavailable: false, immediate: "pending", recovered: true });
+});
+
+test("materializes latest after cancelling a same-selection range recovery", async ({ page }) => {
+  await page.goto("/?million=1&latency=200");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    const origin = Date.UTC(2026, 5, 5, 1, 30);
+    chart.setTimeframe("5m");
+    chart.setVisibleRange({
+      from: origin + 1_000_100 * 60_000,
+      to: origin + 1_000_200 * 60_000
+    });
+    const unavailable = await chart.dataReady();
+
+    chart.setVisibleRange({
+      from: origin + 998_900 * 60_000,
+      to: origin + 998_999 * 60_000
+    });
+    const recovery = chart.dataReady();
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    chart.resetToLatest();
+    const reset = await Promise.race([
+      recovery,
+      new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), 3_000))
+    ]);
+    return { unavailable, reset };
+  });
+
+  expect(result).toEqual({ unavailable: false, reset: true });
+});

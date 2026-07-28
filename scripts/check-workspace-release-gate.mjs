@@ -16,12 +16,12 @@ export const workspaceReleaseGateSteps = [
   {
     command: "npm",
     args: ["run", "test:workspace:e2e"],
-    env: { PLAYWRIGHT_CHANNEL: "chrome" }
+    env: { CI: "1", PLAYWRIGHT_CHANNEL: "chrome" }
   },
   {
     command: "npm",
     args: ["run", "test:workspace:e2e"],
-    env: { PLAYWRIGHT_CHANNEL: "msedge" }
+    env: { CI: "1", PLAYWRIGHT_CHANNEL: "msedge" }
   }
 ];
 

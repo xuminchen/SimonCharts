@@ -44,6 +44,7 @@ export type {
   ChartSeriesType,
   ChartState,
   ChartStateListener,
+  ChartStudyApi,
   ChartSymbol,
   ChartTheme,
   ChartView,

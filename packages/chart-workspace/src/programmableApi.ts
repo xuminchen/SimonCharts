@@ -277,6 +277,21 @@ export function parseIndicatorInput(value: unknown): ChartIndicatorInput {
   return parseIndicatorInputValue(value, 0);
 }
 
+export function mergeIndicatorInputs(
+  current: Readonly<ChartIndicator>,
+  value: unknown
+): ChartIndicator {
+  const patch = record(value, "Chart study inputs");
+  const parsed = parseIndicatorInputValue({
+    ...current,
+    params: { ...current.params, ...patch }
+  }, 0);
+  return {
+    ...parsed,
+    instanceId: current.instanceId
+  };
+}
+
 export function parseIndicators(value: unknown): ChartIndicator[] {
   if (!Array.isArray(value)) throw new TypeError("Chart indicators must be an array");
   if (value.length > maxIndicators) {

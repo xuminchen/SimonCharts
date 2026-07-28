@@ -108,6 +108,7 @@ const controls = readFixtureControls(location.search);
 const dataSource = createFixtureDataSource(controls, counters, requests);
 const executionOverflow = params.get("executionOverflow") === "1";
 let chart: ChartInstance | undefined;
+let retriedRenderError = false;
 
 if (params.get("nonElement") === "1") {
   try {
@@ -146,7 +147,18 @@ if (params.get("nonElement") === "1") {
         : { features: executionOverflow ? [...advancedChartFeatures, "executions"] : advancedChartFeatures }),
     theme: (params.get("theme") ?? "dark") as ChartTheme,
     locale: (params.get("locale") ?? "zh-CN") as ChartLocale,
-    onError: () => { counters.errors += 1; }
+    onError: (error) => {
+      counters.errors += 1;
+      if (
+        params.get("retryOnRenderError") === "1" &&
+        error.code === "RENDER_FAILED" &&
+        !retriedRenderError
+      ) {
+        retriedRenderError = true;
+        chart?.retry();
+        window.__reentrantDataReady = chart?.dataReady();
+      }
+    }
   } as ChartOptions;
   chart = createChart(container, options);
   window.__chart = chart;
@@ -166,6 +178,7 @@ destroy.addEventListener("click", () => {
 declare global {
   interface Window {
     __chart?: ChartInstance;
+    __reentrantDataReady?: Promise<boolean>;
     __hostCounters: HostCounters;
   }
 }

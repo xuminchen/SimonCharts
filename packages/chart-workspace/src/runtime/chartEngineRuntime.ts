@@ -165,6 +165,7 @@ export interface ChartEngineRuntime {
   undoDrawing(): void;
   redoDrawing(): void;
   setGridVisible(visible: boolean): void;
+  cancelCalculations(): void;
   retryRender(): void;
   getMetrics(): WorkspaceRuntimeMetrics;
   destroy(): void;
@@ -193,7 +194,9 @@ export interface ChartEngineRuntimeOptions {
   onMarkClicked?: (mark: Readonly<ChartMark>) => void;
   onDrawingsChanged?: (drawings: readonly DrawingObject[], selectedDrawingIds: readonly string[]) => void;
   onDrawingHistoryChanged?: (state: { canUndo: boolean; canRedo: boolean }) => void;
+  onCalculationError?: (kind: "indicator" | "series", error: unknown) => void;
   onRenderError?: (error: unknown) => void;
+  onRenderRecovered?: () => void;
 }
 
 function defaultSeriesTransformOptions(type: StatefulSeriesTransformType): Readonly<Record<string, number>> {
@@ -236,6 +239,14 @@ function summarizeLatestIntradayDay(
 export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): ChartEngineRuntime {
   let destroyed = false;
   let materialized: MaterializedSeries | undefined;
+  let renderRecoveryPending = false;
+  let indicatorCalculationFailed = false;
+  let failedSeriesCalculation: StatefulSeriesTransformType | undefined;
+  let activeIndicatorGeneration: number | undefined;
+  let activeSeriesGeneration: number | undefined;
+  let indicatorCalculationController: AbortController | undefined;
+  let seriesCalculationController: AbortController | undefined;
+  let calculationRecoveryPending = false;
   let viewport = createInitialViewport(0, 1);
   let layout = createChartLayout(1, 1);
   let visualOutputs: IndicatorVisualOutput[] = [];
@@ -939,6 +950,16 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         if (state.settings.gridVisible === false) layers.splice(layers.findIndex((layer) => layer.id === "grid"), 1);
         layers.push(createVisualLayer(visualRegistry), createDrawingLayer(drawingRegistry));
         renderStaticChart({ context, state: renderState }, layers, { clear: true, paintBackground: true });
+        if (
+          renderRecoveryPending &&
+          activeIndicatorGeneration !== indicatorGeneration &&
+          activeSeriesGeneration !== seriesGeneration &&
+          !indicatorCalculationFailed &&
+          failedSeriesCalculation === undefined
+        ) {
+          renderRecoveryPending = false;
+          options.onRenderRecovered?.();
+        }
       }
     } catch (error) {
       if (pass === "overlay") {
@@ -1462,8 +1483,33 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   observer?.observe(options.themeRoot);
   syncLayout();
 
+  function scheduleCalculationRecovery(): void {
+    if (
+      destroyed ||
+      activeIndicatorGeneration === indicatorGeneration ||
+      activeSeriesGeneration === seriesGeneration ||
+      !calculationRecoveryPending ||
+      indicatorCalculationFailed ||
+      failedSeriesCalculation !== undefined
+    ) return;
+    calculationRecoveryPending = false;
+    renderRecoveryPending = true;
+    scheduler.invalidate({
+      layers: ["series", "indicators"],
+      reason: "calculationRecovered"
+    });
+  }
+
   async function calculateIndicators(configs: readonly IndicatorConfig[], generation: number): Promise<void> {
     if (!materialized) return;
+    indicatorCalculationController?.abort();
+    const controller = new AbortController();
+    indicatorCalculationController = controller;
+    if (renderRecoveryPending) {
+      renderRecoveryPending = false;
+      calculationRecoveryPending = true;
+    }
+    activeIndicatorGeneration = generation;
     options.onCalculationStatusChanged?.({
       type: "calculating",
       kind: "indicator",
@@ -1471,8 +1517,12 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       generation
     });
     try {
-      const results = await options.calculationRuntime.calculateIndicators({ selection: materialized.selection, configs, targetTimes: new Set(materialized.series.candles.map((candle) => candle.time)), generation });
+      const results = await options.calculationRuntime.calculateIndicators({ selection: materialized.selection, configs, targetTimes: new Set(materialized.series.candles.map((candle) => candle.time)), generation, signal: controller.signal });
       if (destroyed || generation !== indicatorGeneration) return;
+      if (indicatorCalculationFailed) {
+        indicatorCalculationFailed = false;
+        calculationRecoveryPending = true;
+      }
       visualOutputs = configs.flatMap((config) =>
         config.visible ? results.get(config.instanceId)?.outputs ?? [] : []
       );
@@ -1483,9 +1533,69 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       emitDataWindow(true);
       scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "crosshair"], reason: "indicatorsCalculated" });
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) options.onRenderError?.(error);
+      if (
+        !destroyed &&
+        generation === indicatorGeneration &&
+        !(error instanceof DOMException && error.name === "AbortError")
+      ) {
+        indicatorCalculationFailed = true;
+        options.onCalculationError?.("indicator", error);
+      }
     } finally {
+      if (indicatorCalculationController === controller) indicatorCalculationController = undefined;
+      if (activeIndicatorGeneration === generation) activeIndicatorGeneration = undefined;
       if (!destroyed && generation === indicatorGeneration) options.onCalculationStatusChanged?.({ type: "idle" });
+      scheduleCalculationRecovery();
+    }
+  }
+
+  async function calculateSeries(
+    type: StatefulSeriesTransformType,
+    generation: number
+  ): Promise<void> {
+    if (!materialized) return;
+    seriesCalculationController?.abort();
+    const controller = new AbortController();
+    seriesCalculationController = controller;
+    if (renderRecoveryPending) {
+      renderRecoveryPending = false;
+      calculationRecoveryPending = true;
+    }
+    if (failedSeriesCalculation !== undefined) {
+      failedSeriesCalculation = undefined;
+      calculationRecoveryPending = true;
+    }
+    activeSeriesGeneration = generation;
+    options.onCalculationStatusChanged?.({ type: "calculating", kind: "series", id: type, generation });
+    try {
+      const model = await options.calculationRuntime.calculateSeries({
+        selection: materialized.selection,
+        type,
+        options: defaultSeriesTransformOptions(type),
+        targetTimes: new Set(materialized.series.candles.map((candle) => candle.time)),
+        generation,
+        signal: controller.signal
+      });
+      if (destroyed || generation !== seriesGeneration) return;
+      seriesModel = model;
+      chartEngine.setSeriesType(type);
+      scheduler.invalidate({ layers: ["series"], reason: "seriesCalculated" });
+    } catch (error) {
+      if (
+        !destroyed &&
+        generation === seriesGeneration &&
+        !(error instanceof DOMException && error.name === "AbortError")
+      ) {
+        failedSeriesCalculation = type;
+        options.onCalculationError?.("series", error);
+      }
+    } finally {
+      if (seriesCalculationController === controller) seriesCalculationController = undefined;
+      if (activeSeriesGeneration === generation) activeSeriesGeneration = undefined;
+      if (!destroyed && generation === seriesGeneration) {
+        options.onCalculationStatusChanged?.({ type: "idle" });
+      }
+      scheduleCalculationRecovery();
     }
   }
 
@@ -1629,25 +1739,22 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     },
     setSeriesType(type) {
       if (destroyed) return;
+      seriesCalculationController?.abort();
+      seriesCalculationController = undefined;
       seriesGeneration += 1;
       const generation = seriesGeneration;
       if (!isStatefulSeriesType(type) || !materialized) {
+        if (failedSeriesCalculation !== undefined) {
+          failedSeriesCalculation = undefined;
+          calculationRecoveryPending = true;
+        }
         seriesModel = undefined;
         chartEngine.setSeriesType(type);
         scheduler.invalidate({ layers: ["series"], reason: "seriesTypeChanged" });
+        scheduleCalculationRecovery();
         return;
       }
-      options.onCalculationStatusChanged?.({ type: "calculating", kind: "series", id: type, generation });
-      void options.calculationRuntime.calculateSeries({ selection: materialized.selection, type, options: defaultSeriesTransformOptions(type), targetTimes: new Set(materialized.series.candles.map((candle) => candle.time)), generation }).then((model) => {
-        if (destroyed || generation !== seriesGeneration) return;
-        seriesModel = model;
-        chartEngine.setSeriesType(type);
-        scheduler.invalidate({ layers: ["series"], reason: "seriesCalculated" });
-        options.onCalculationStatusChanged?.({ type: "idle" });
-      }, (error) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) options.onRenderError?.(error);
-        if (!destroyed && generation === seriesGeneration) options.onCalculationStatusChanged?.({ type: "idle" });
-      });
+      void calculateSeries(type, generation);
     },
     setIndicators(configs) {
       if (destroyed) return;
@@ -1675,12 +1782,48 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     undoDrawing() { if (destroyed) return; drawingEditor.undo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
     redoDrawing() { if (destroyed) return; drawingEditor.redo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
     setGridVisible(visible) { if (destroyed) return; if (chartEngine.getState().settings.gridVisible !== visible) { chartEngine.dispatch({ type: "toggleGrid" }); scheduler.invalidate({ layers: ["grid"], reason: "gridVisibilityChanged" }); } },
-    retryRender() { if (destroyed) return; scheduler.invalidate({ layers: ["grid", "axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"], reason: "retryRender", layoutRequired: true }); },
+    cancelCalculations() {
+      if (destroyed) return;
+      indicatorCalculationController?.abort();
+      seriesCalculationController?.abort();
+      indicatorCalculationController = undefined;
+      seriesCalculationController = undefined;
+      indicatorGeneration += 1;
+      seriesGeneration += 1;
+      indicatorCalculationFailed = false;
+      failedSeriesCalculation = undefined;
+      calculationRecoveryPending = false;
+      renderRecoveryPending = false;
+    },
+    retryRender() {
+      if (destroyed) return;
+      let retriedCalculation = false;
+      if (indicatorCalculationFailed) {
+        void calculateIndicators(indicatorConfigs, ++indicatorGeneration);
+        retriedCalculation = true;
+      }
+      if (failedSeriesCalculation !== undefined) {
+        const type = failedSeriesCalculation;
+        void calculateSeries(type, ++seriesGeneration);
+        retriedCalculation = true;
+      }
+      if (retriedCalculation || calculationRecoveryPending) return;
+      renderRecoveryPending = true;
+      scheduler.invalidate({ layers: ["grid", "axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"], reason: "retryRender", layoutRequired: true });
+    },
     getMetrics() { return { ...scheduler.getState().metrics, maxMaterializedCandleCount }; },
     destroy() {
       if (destroyed) return;
       options.onExecutionTooltipChanged?.(undefined);
+      indicatorCalculationController?.abort();
+      seriesCalculationController?.abort();
+      indicatorCalculationController = undefined;
+      seriesCalculationController = undefined;
       destroyed = true;
+      renderRecoveryPending = false;
+      indicatorCalculationFailed = false;
+      failedSeriesCalculation = undefined;
+      calculationRecoveryPending = false;
       pendingCrosshairEvent = undefined;
       crosshairPoint = undefined;
       indicatorGeneration += 1;

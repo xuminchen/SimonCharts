@@ -877,6 +877,296 @@ test("creates and restores independent same-type study instances", async ({ page
     .toHaveAttribute("data-visible", "false");
 });
 
+test("provides live study handles without duplicating entity state", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart;
+    if (!chart) throw new Error("public chart handle missing");
+    const ready = await chart.dataReady();
+    const events: string[] = [];
+    const stop = chart.subscribeEvents((event) => {
+      if (event.type.startsWith("entity-")) events.push(event.type);
+    });
+    const firstId = chart.createStudy({
+      instanceId: "study-handle-first",
+      id: "MA",
+      params: { period: 5 },
+      visible: true
+    });
+    const secondId = chart.createStudy({
+      instanceId: "study-handle-second",
+      id: "MA",
+      params: { period: 20 },
+      visible: true
+    });
+    const handle = chart.getStudyApi(firstId);
+    if (!handle) throw new Error("study handle missing");
+    const leakedInputs = handle.getInputs() as { period: number };
+    leakedInputs.period = 999;
+    handle.setInputs({ period: 10 });
+    handle.setVisible(false);
+    const legend = document.querySelector<HTMLElement>(
+      '[data-testid="indicator-legend-study-handle-first"]'
+    );
+    const renderedLegend = legend?.textContent;
+    const renderedVisible = legend?.dataset.visible;
+    const appliedEvents = [...events];
+    const beforeInvalid = structuredClone(chart.getStudyById(firstId));
+    const eventsBeforeInvalid = events.length;
+    let invalidError = "";
+    try {
+      handle.setInputs({ period: Number.NaN });
+    } catch (error) {
+      invalidError = error instanceof Error ? error.message : String(error);
+    }
+    const afterInvalid = structuredClone(chart.getStudyById(firstId));
+    let invalidVisibilityError = "";
+    try {
+      handle.setVisible("false" as unknown as boolean);
+    } catch (error) {
+      invalidVisibilityError = error instanceof Error ? error.message : String(error);
+    }
+    const invalidEventCount = events.length - eventsBeforeInvalid;
+    const second = structuredClone(chart.getStudyById(secondId));
+    const layout = chart.exportLayout();
+    const removed = handle.remove();
+    let staleError = "";
+    try {
+      handle.getInputs();
+    } catch (error) {
+      staleError = error instanceof DOMException ? error.name : String(error);
+    }
+    const removedAgain = handle.remove();
+    chart.importLayout(layout);
+    const restoredInputs = handle.getInputs();
+    const restoredRemove = handle.remove();
+    const destroyId = chart.createStudy({
+      instanceId: "study-handle-destroy",
+      id: "RSI",
+      params: { period: 6 },
+      visible: true
+    });
+    const destroyHandle = chart.getStudyApi(destroyId);
+    if (!destroyHandle) throw new Error("destroy handle missing");
+    const missingHandle = chart.getStudyApi(
+      "indicator:[\"foreign\"]" as import("@simoncharts/charts").ChartIndicatorEntityId
+    );
+    chart.destroy();
+    let destroyedError = "";
+    try {
+      destroyHandle.getInputs();
+    } catch (error) {
+      destroyedError = error instanceof DOMException ? error.name : String(error);
+    }
+    const removeAfterDestroy = destroyHandle.remove();
+    stop();
+    return {
+      ready,
+      entityId: handle.entityId,
+      beforeInvalid,
+      afterInvalid,
+      second,
+      layoutStudy: layout.indicators.find(
+        (indicator) => indicator.instanceId === "study-handle-first"
+      ),
+      invalidError,
+      invalidVisibilityError,
+      invalidEventCount,
+      renderedLegend,
+      renderedVisible,
+      appliedEvents,
+      removed,
+      removedAgain,
+      staleError,
+      restoredInputs,
+      restoredRemove,
+      missingHandle: missingHandle === undefined,
+      destroyedError,
+      removeAfterDestroy
+    };
+  });
+
+  expect(result).toEqual({
+    ready: true,
+    entityId: expect.stringMatching(/^indicator:/),
+    beforeInvalid: expect.objectContaining({
+      instanceId: "study-handle-first",
+      params: { period: 10 },
+      visible: false
+    }),
+    afterInvalid: expect.objectContaining({
+      instanceId: "study-handle-first",
+      params: { period: 10 },
+      visible: false
+    }),
+    second: expect.objectContaining({
+      instanceId: "study-handle-second",
+      params: { period: 20 },
+      visible: true
+    }),
+    layoutStudy: expect.objectContaining({
+      instanceId: "study-handle-first",
+      params: { period: 10 },
+      visible: false
+    }),
+    invalidError: expect.stringContaining("finite"),
+    invalidVisibilityError: expect.stringContaining("boolean"),
+    invalidEventCount: 0,
+    renderedLegend: expect.stringContaining("MA 10 (隐藏)"),
+    renderedVisible: "false",
+    appliedEvents: [
+      "entity-created",
+      "entity-created",
+      "entity-updated",
+      "entity-updated"
+    ],
+    removed: true,
+    removedAgain: false,
+    staleError: "NotFoundError",
+    restoredInputs: { period: 10 },
+    restoredRemove: true,
+    missingHandle: true,
+    destroyedError: "InvalidStateError",
+    removeAfterDestroy: false
+  });
+});
+
+test("dataReady resolves only for the presentation that became usable", async ({ page }) => {
+  await page.goto("/?latency=1000");
+  const probe = await page.evaluate(() => {
+    const chart = window.__chart;
+    if (!chart) throw new Error("public chart handle missing");
+    const state = {
+      settled: false,
+      value: undefined as boolean | undefined,
+      paintedCandlePixels: undefined as number | undefined
+    };
+    void chart.dataReady().then((value) => {
+      const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-static-canvas")!;
+      const pixels = canvas.getContext("2d")!
+        .getImageData(0, 0, canvas.width, canvas.height).data;
+      let paintedCandlePixels = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        const red = pixels[index];
+        const green = pixels[index + 1];
+        const blue = pixels[index + 2];
+        if (
+          (Math.abs(red - 240) <= 3 && Math.abs(green - 68) <= 3 && Math.abs(blue - 85) <= 3) ||
+          (Math.abs(red) <= 3 && Math.abs(green - 170) <= 3 && Math.abs(blue - 145) <= 3)
+        ) paintedCandlePixels += 1;
+      }
+      state.settled = true;
+      state.value = value;
+      state.paintedCandlePixels = paintedCandlePixels;
+    });
+    (window as typeof window & { __dataReadyProbe?: typeof state }).__dataReadyProbe = state;
+    return { loading: chart.getState().loading, settled: state.settled };
+  });
+  expect(probe).toEqual({ loading: true, settled: false });
+  await expect.poll(() => page.evaluate(() =>
+    (window as typeof window & {
+      __dataReadyProbe?: {
+        settled: boolean;
+        value?: boolean;
+        paintedCandlePixels?: number;
+      };
+    }).__dataReadyProbe
+  ), { timeout: 5_000 }).toEqual({
+    settled: true,
+    value: true,
+    paintedCandlePixels: expect.any(Number)
+  });
+  expect(await page.evaluate(() =>
+    (window as typeof window & {
+      __dataReadyProbe?: { paintedCandlePixels?: number };
+    }).__dataReadyProbe?.paintedCandlePixels
+  )).toBeGreaterThan(0);
+
+  const stale = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    chart.setSymbol({
+      id: "stock:SSE:slow",
+      code: "600001",
+      name: "慢速股票",
+      exchange: "SSE",
+      kind: "stock"
+    });
+    const replaced = chart.dataReady();
+    chart.setSymbol({
+      id: "stock:SSE:fast",
+      code: "600002",
+      name: "快速股票",
+      exchange: "SSE",
+      kind: "stock"
+    });
+    return replaced;
+  });
+  expect(stale).toBe(false);
+  await expect.poll(() => page.evaluate(() => window.__chart?.getState().symbol.id))
+    .toBe("stock:SSE:fast");
+  expect(await page.evaluate(() => window.__chart!.dataReady())).toBe(true);
+});
+
+test("dataReady tracks timeframe, adjustment, view, and intraday-day changes", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    chart.setTimeframe("5m");
+    const timeframe = await chart.dataReady();
+    chart.setAdjustMode("backward");
+    const adjustment = await chart.dataReady();
+    chart.setView("intraday");
+    const replacedView = chart.dataReady();
+    chart.setIntradayDays(5);
+    const staleView = await replacedView;
+    const intradayDays = await chart.dataReady();
+    chart.setView("timeframe");
+    const view = await chart.dataReady();
+    return {
+      timeframe,
+      adjustment,
+      staleView,
+      intradayDays,
+      view,
+      state: chart.getState()
+    };
+  });
+
+  expect(result).toEqual({
+    timeframe: true,
+    adjustment: true,
+    staleView: false,
+    intradayDays: true,
+    view: true,
+    state: expect.objectContaining({
+      timeframe: "1m",
+      adjustMode: "backward",
+      view: "timeframe",
+      intradayDays: 5,
+      loading: false
+    })
+  });
+});
+
+test("dataReady returns false for blocked and destroyed presentations", async ({ page }) => {
+  await page.goto("/?initialFailure=always&latency=10");
+  await expect(page.locator('.sc-workspace[data-state="blocked"]')).toBeVisible();
+  expect(await page.evaluate(() => window.__chart!.dataReady())).toBe(false);
+
+  await page.goto("/?latency=1000");
+  const destroyed = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    const pending = chart.dataReady();
+    chart.destroy();
+    return pending;
+  });
+  expect(destroyed).toBe(false);
+});
+
 test("never publishes stale state or layout after a reentrant listener", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();

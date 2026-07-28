@@ -121,6 +121,8 @@ export function createDataCoordinator(options: DataCoordinatorOptions): DataCoor
   ): Promise<void> => {
     if (destroyed || pendingRequests.has(undefined)) return;
     const controller = new AbortController();
+    let failed = false;
+    let failure: unknown;
     pendingRequests.set(undefined, { generation: requestGeneration, controller });
     activeControllers.add(controller);
     try {
@@ -172,7 +174,8 @@ export function createDataCoordinator(options: DataCoordinatorOptions): DataCoor
       });
     } catch (error) {
       if (isCurrent(requestGeneration, controller) && !isAbortError(error)) {
-        options.onEvent({ type: "initialRequestFailed", error });
+        failed = true;
+        failure = error;
       }
     } finally {
       const owner = pendingRequests.get(undefined);
@@ -181,6 +184,7 @@ export function createDataCoordinator(options: DataCoordinatorOptions): DataCoor
       }
       activeControllers.delete(controller);
     }
+    if (failed) options.onEvent({ type: "initialRequestFailed", error: failure });
   };
 
   const requestHistory = async (requestCursor: string | undefined, reload = false): Promise<void> => {
@@ -338,7 +342,9 @@ export function createDataCoordinator(options: DataCoordinatorOptions): DataCoor
     },
 
     async retryInitial() {
-      if (!destroyed && selection !== undefined) await requestInitial(selection, generation);
+      if (destroyed || selection === undefined) return;
+      options.onEvent({ type: "loadingInitial", selection, generation });
+      await requestInitial(selection, generation);
     },
 
     getGeneration() {

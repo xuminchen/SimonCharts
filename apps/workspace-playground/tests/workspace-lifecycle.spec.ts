@@ -23,6 +23,29 @@ test("aborts in-flight work before removing the shell", async ({ page }) => {
   expect(await page.evaluate(() => window.__hostCounters.activeEventListeners)).toBe(0);
 });
 
+test("cancels readiness frames when data-loaded synchronously destroys the chart", async ({ page }) => {
+  await page.goto("/?latency=1000");
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    const pending = chart.dataReady();
+    await new Promise<void>((resolve) => {
+      const stop = chart.subscribeEvents((event) => {
+        if (event.type !== "data-loaded" || event.phase !== "initial") return;
+        stop();
+        chart.destroy();
+        resolve();
+      });
+    });
+    return {
+      ready: await pending,
+      frames: window.__hostCounters.activeAnimationFrames,
+      workspaces: document.querySelectorAll(".sc-workspace").length
+    };
+  });
+
+  expect(result).toEqual({ ready: false, frames: 0, workspaces: 0 });
+});
+
 test("aborts a stale slow symbol and only publishes the latest selection", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
@@ -38,7 +61,12 @@ test("aborts a stale slow symbol and only publishes the latest selection", async
 test("retries a recoverable initial failure and blocks invalid data without retry", async ({ page }) => {
   await page.goto("/?initialFailure=once");
   await expect(page.locator('[data-error-code="INITIAL_DATA_FAILED"]')).toBeVisible();
-  await page.getByRole("button", { name: "重试", exact: true }).click();
+  const retried = page.evaluate(async () => {
+    const chart = window.__chart!;
+    chart.retry();
+    return chart.dataReady();
+  });
+  expect(await retried).toBe(true);
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
 
   await page.goto("/?invalidPage=initial");

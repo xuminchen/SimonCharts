@@ -185,4 +185,56 @@ describe("checkpointed calculation runtime", () => {
       })
     ).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  it.each(["indicator", "series"] as const)(
+    "writes no %s checkpoint when cancellation happens during page reload",
+    async (kind) => {
+      const full = createSeries(80);
+      const newest = validatedPage(full, 40, 80, "older");
+      const oldest = validatedPage(full, 0, 40);
+      const store = createPagedSeriesStore({ maxPages: 1 });
+      store.reset(selection, full.dataVersion);
+      store.mergePage(undefined, newest);
+      store.mergePage("older", oldest);
+      store.mergePage(undefined, newest);
+      const checkpointStore = createCalculationCheckpointStore();
+      let notifyReload!: () => void;
+      let releaseReload!: () => void;
+      const reloadStarted = new Promise<void>((resolve) => { notifyReload = resolve; });
+      const reloadGate = new Promise<void>((resolve) => { releaseReload = resolve; });
+      const runtime = createCheckpointedCalculationRuntime({
+        store,
+        checkpointStore,
+        reloadPage: async (cursor) => {
+          notifyReload();
+          await reloadGate;
+          const merged = store.mergePage(cursor, oldest);
+          if (!merged.ok) throw new Error(merged.message);
+        }
+      });
+      const controller = new AbortController();
+      const targetTimes = new Set(full.candles.map((item) => item.time));
+      const pending = kind === "indicator"
+        ? runtime.calculateIndicators({
+            selection,
+            configs: [{ instanceId: "ma-5", id: "MA", params: { period: 5 }, visible: true }],
+            targetTimes,
+            signal: controller.signal
+          })
+        : runtime.calculateSeries({
+            selection,
+            type: "renko",
+            options: { brickSize: 1 },
+            targetTimes,
+            signal: controller.signal
+          });
+
+      await reloadStarted;
+      const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      controller.abort();
+      releaseReload();
+      await rejected;
+      expect(checkpointStore.getDiagnostics().entryCount).toBe(0);
+    }
+  );
 });

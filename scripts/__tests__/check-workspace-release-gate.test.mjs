@@ -20,12 +20,12 @@ describe("workspace release gate", () => {
     expect(workspaceReleaseGateSteps.at(-2)).toMatchObject({
       command: "npm",
       args: ["run", "test:workspace:e2e"],
-      env: { PLAYWRIGHT_CHANNEL: "chrome" }
+      env: { CI: "1", PLAYWRIGHT_CHANNEL: "chrome" }
     });
     expect(workspaceReleaseGateSteps.at(-1)).toMatchObject({
       command: "npm",
       args: ["run", "test:workspace:e2e"],
-      env: { PLAYWRIGHT_CHANNEL: "msedge" }
+      env: { CI: "1", PLAYWRIGHT_CHANNEL: "msedge" }
     });
   });
 });

@@ -30,6 +30,7 @@ import type {
   ChartMark,
   ChartOptions,
   ChartStateListener,
+  ChartStudyApi,
   ChartTheme,
   ChartView,
   IntradayDayCount,
@@ -39,6 +40,7 @@ import type {
 import {
   fromEngineDrawings,
   parseDrawings,
+  mergeIndicatorInputs,
   parseIndicatorInput,
   parseLayout,
   toEngineDrawings,
@@ -83,8 +85,21 @@ describe("charts public contract", () => {
       .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => ChartIndicator | undefined>();
     expectTypeOf<ChartInstance["getAllStudies"]>()
       .toEqualTypeOf<() => readonly ChartIndicator[]>();
+    expectTypeOf<ChartInstance["getStudyApi"]>()
+      .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => ChartStudyApi | undefined>();
     expectTypeOf<ChartInstance["removeStudy"]>()
       .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => boolean>();
+    expectTypeOf<ChartInstance["dataReady"]>()
+      .toEqualTypeOf<() => Promise<boolean>>();
+    expectTypeOf<ChartStudyApi["entityId"]>().toEqualTypeOf<ChartIndicatorEntityId>();
+    expectTypeOf<ChartStudyApi["getInputs"]>()
+      .toEqualTypeOf<() => Readonly<Record<string, number>>>();
+    expectTypeOf<ChartStudyApi["setInputs"]>()
+      .toEqualTypeOf<(inputs: Readonly<Record<string, number>>) => void>();
+    expectTypeOf<ChartStudyApi["isVisible"]>().toEqualTypeOf<() => boolean>();
+    expectTypeOf<ChartStudyApi["setVisible"]>()
+      .toEqualTypeOf<(visible: boolean) => void>();
+    expectTypeOf<ChartStudyApi["remove"]>().toEqualTypeOf<() => boolean>();
     expectTypeOf<ChartInstance["setDrawingTool"]>()
       .toEqualTypeOf<(tool: ChartDrawingTool) => void>();
     expectTypeOf<ChartInstance["createEntity"]>()
@@ -372,6 +387,36 @@ describe("charts public contract", () => {
       params: { fast: 30 },
       visible: true
     })).toThrow("fast must be less than slow");
+  });
+
+  it("merges partial study inputs through the approved indicator validator", () => {
+    const current = {
+      instanceId: "macd-primary",
+      id: "MACD",
+      params: { fast: 12, slow: 26, signal: 9 },
+      visible: true
+    } as const;
+
+    expect(mergeIndicatorInputs(current, { fast: 10 })).toEqual({
+      ...current,
+      params: { fast: 10, slow: 26, signal: 9 }
+    });
+    expect(() => mergeIndicatorInputs(current, { fast: 30 })).toThrow(
+      "fast must be less than slow"
+    );
+    expect(() => mergeIndicatorInputs(current, null)).toThrow("must be an object");
+
+    let getterCalls = 0;
+    const accessor = {};
+    Object.defineProperty(accessor, "fast", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return 10;
+      }
+    });
+    expect(() => mergeIndicatorInputs(current, accessor)).toThrow("only data properties");
+    expect(getterCalls).toBe(0);
   });
 
   it("scopes opaque entity ids to their owning chart data context", () => {

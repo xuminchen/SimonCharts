@@ -147,7 +147,8 @@ export interface ChartController extends WorkspaceUiActions {
   handleDataWindow(snapshot: DataWindowSnapshot | undefined): void;
   handleDrawingsChanged(drawings: readonly DrawingObject[], selectedDrawingIds?: readonly string[]): void;
   handleDrawingHistoryChanged(state: { canUndo: boolean; canRedo: boolean }): void;
-  handleRenderError(error: unknown): void;
+  handleRenderError(error: unknown, calculationKind?: "indicator" | "series"): void;
+  handleRenderRecovered(): void;
   destroy(): void;
 }
 
@@ -171,6 +172,9 @@ export interface ChartControllerDependencies {
     readonly dataVersion: string;
     readonly phase: "initial" | "history";
   }) => void;
+  onPresentationPending?: (state: Readonly<ChartState>) => void;
+  onPresentationReady?: (state: Readonly<ChartState>) => void;
+  onPresentationUnavailable?: (state: Readonly<ChartState>) => void;
   onViewModelChanged?: (viewModel: Readonly<WorkspaceViewModel>, revision: number) => void;
 }
 
@@ -259,6 +263,7 @@ export function createChartController(
   let active = true;
   let runtimeDestroyed = false;
   let retryTarget: "capabilities" | "initial-data" | "render" | undefined;
+  let statusBeforeRenderFailure: WorkspaceStatus | undefined;
   let failedHistoryCursor: string | null | undefined;
   let materializedAnchorTime: number | undefined;
   let currentMaterialized: MaterializedSeries | undefined;
@@ -375,6 +380,7 @@ export function createChartController(
     const expectedSelectionRevision = selectionRevision;
     const expectedDataGeneration = dependencies.dataCoordinator.getGeneration();
     if (!sameSelection(dependencies.store.getSnapshot().selection, expectedSelection)) return false;
+    dependencies.onPresentationPending?.(structuredClone(state));
     const materializationIntent = ++materializationIntentGeneration;
     const demand = dependencies.runtime.getMaterializationDemand();
     const requestedCandleCount = requestedVisibleRange === undefined
@@ -391,6 +397,7 @@ export function createChartController(
       ? visibleCount + demand.overscanCount * 2
       : intradayCandleLimit + 1;
     if (targetCandleCount > maxContinuousMaterializedCandleCount) {
+      dependencies.onPresentationUnavailable?.(structuredClone(state));
       report(
         createChartError(
           "INVALID_DATA",
@@ -469,6 +476,7 @@ export function createChartController(
     const reportIntradayOverflow = (candleCount: number): false => {
       transientCandles.clear();
       transientReferenceCandle = undefined;
+      dependencies.onPresentationUnavailable?.(structuredClone(state));
       report(
         createChartError(
           "INVALID_DATA",
@@ -569,6 +577,7 @@ export function createChartController(
       if (!reloaded) {
         transientCandles.clear();
         transientReferenceCandle = undefined;
+        dependencies.onPresentationUnavailable?.(structuredClone(state));
         return false;
       }
     }
@@ -595,8 +604,10 @@ export function createChartController(
     if (result.series.candles.length === 0) {
       transientCandles.clear();
       transientReferenceCandle = undefined;
+      dependencies.onPresentationUnavailable?.(structuredClone(state));
       return false;
     }
+    dependencies.onPresentationReady?.(structuredClone(state));
     emitPendingDataLoads(expectedSelection, expectedDataGeneration);
     transientCandles.clear();
     transientReferenceCandle = undefined;
@@ -631,6 +642,7 @@ export function createChartController(
   };
 
   const invalidateSelectionMaterialization = (preserveQueuedRange = false): void => {
+    dependencies.runtime.cancelCalculations();
     selectionRevision += 1;
     materializationIntentGeneration += 1;
     if (!preserveQueuedRange) cancelVisibleRangeCommand();
@@ -638,15 +650,18 @@ export function createChartController(
     materializedAnchorTime = undefined;
     boundaryMaterializing = undefined;
     pendingDataLoads = [];
+    viewModel = { ...viewModel, calculationStatus: { type: "idle" } };
   };
 
   const invalidateViewMaterialization = (): void => {
     dependencies.runtime.clearCrosshair();
+    dependencies.runtime.cancelCalculations();
     selectionRevision += 1;
     materializationIntentGeneration += 1;
     currentMaterialized = undefined;
     materializedAnchorTime = undefined;
     boundaryMaterializing = undefined;
+    viewModel = { ...viewModel, calculationStatus: { type: "idle" } };
   };
 
   const materializePartialIntradayAfterHistoryFailure = (): void => {
@@ -663,6 +678,7 @@ export function createChartController(
     if (!active || command !== rangeCommandGeneration) return;
     requestedVisibleRange = undefined;
     activeRangeCommand = undefined;
+    dependencies.onPresentationUnavailable?.(structuredClone(state));
     report(
       createChartError(
         "NO_VALID_DATA",
@@ -764,6 +780,7 @@ export function createChartController(
     const requestedSelectionRevision = selectionRevision;
     const expectedSelection = selectionOf(state);
     activeRangeCommand = command;
+    dependencies.onPresentationPending?.(structuredClone(state));
     void fulfillVisibleRange(range, command, requestedSelectionRevision, expectedSelection).finally(() => {
       if (activeRangeCommand === command) activeRangeCommand = undefined;
     });
@@ -1114,7 +1131,12 @@ export function createChartController(
       activeRangeCommand = undefined;
       requestedLatestCommand = command;
       materializedAnchorTime = undefined;
-      if (state.loading || currentMaterialized === undefined) return;
+      const snapshot = dependencies.store.getSnapshot();
+      if (
+        state.loading ||
+        !sameSelection(snapshot.selection, selectionOf(state)) ||
+        snapshot.descriptors.length === 0
+      ) return;
       void materialize().then((committed) => {
         if (committed) applyRequestedLatest();
       });
@@ -1125,7 +1147,12 @@ export function createChartController(
         void beginCapabilities(state.symbol, state.timeframe, state.adjustMode);
       }
       if (retryTarget === "initial-data") void dependencies.dataCoordinator.retryInitial();
-      if (retryTarget === "render") dependencies.runtime.retryRender();
+      if (retryTarget === "render") {
+        state = { ...state, loading: true };
+        viewModel = { ...viewModel, state, status: { type: "loading" } };
+        publish();
+        dependencies.runtime.retryRender();
+      }
     },
     handleDataEvent(event) {
       if (!active) return;
@@ -1325,17 +1352,50 @@ export function createChartController(
       viewModel = { ...viewModel, canUndoDrawing: history.canUndo, canRedoDrawing: history.canRedo };
       publish();
     },
-    handleRenderError(error) {
+    handleRenderError(error, calculationKind) {
       if (!active || isAbortError(error)) return;
-      const workspaceError = createChartError(
-        "RENDER_FAILED",
-        "render",
-        true,
-        "The chart could not be rendered",
-        { symbolId: state.symbol.id, timeframe: state.timeframe, adjustMode: state.adjustMode }
-      );
+      if (viewModel.status.type === "blocked" && retryTarget !== "render") return;
+      const workspaceError = calculationKind === undefined
+        ? createChartError(
+            "RENDER_FAILED",
+            "render",
+            true,
+            "The chart could not be rendered",
+            { symbolId: state.symbol.id, timeframe: state.timeframe, adjustMode: state.adjustMode }
+          )
+        : createChartError(
+            "CALCULATION_FAILED",
+            "calculation",
+            true,
+            "The chart calculation could not be completed",
+            {
+              symbolId: state.symbol.id,
+              timeframe: state.timeframe,
+              adjustMode: state.adjustMode,
+              calculationKind
+            }
+          );
+      if (retryTarget !== "render" && viewModel.status.type !== "blocked") {
+        statusBeforeRenderFailure = viewModel.status;
+      }
       retryTarget = "render";
       report(workspaceError, true);
+    },
+    handleRenderRecovered() {
+      if (!active || retryTarget !== "render") return;
+      retryTarget = undefined;
+      const status = statusBeforeRenderFailure?.type === "blocked"
+        ? { type: "ready" as const }
+        : statusBeforeRenderFailure ?? { type: "ready" as const };
+      statusBeforeRenderFailure = undefined;
+      state = { ...state, loading: status.type === "loading" };
+      viewModel = { ...viewModel, state, status };
+      publish();
+      if (
+        !state.loading &&
+        currentMaterialized !== undefined &&
+        currentMaterialized.series.candles.length > 0
+      ) dependencies.onPresentationReady?.(structuredClone(state));
     },
     searchSymbols(query) {
       if (!active) return;
