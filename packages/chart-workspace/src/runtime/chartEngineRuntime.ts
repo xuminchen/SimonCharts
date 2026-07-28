@@ -66,6 +66,7 @@ import type {
   ChartExecution,
   ChartIndicator,
   ChartMark,
+  ChartSeriesProperties,
   ChartVisibleRange,
   Timeframe
 } from "../contracts";
@@ -153,7 +154,7 @@ export interface ChartEngineRuntime {
   setVisibleRange(range: ChartVisibleRange): boolean;
   resetToLatest(): void;
   clearCrosshair(): void;
-  setSeriesType(type: SeriesType): void;
+  setSeriesType(type: SeriesType, properties?: ChartSeriesProperties): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
   setMarks(marks: readonly ChartMark[]): void;
   setExecutions(executions: readonly ChartExecution[]): void;
@@ -200,11 +201,18 @@ export interface ChartEngineRuntimeOptions {
   onRenderRecovered?: () => void;
 }
 
-function defaultSeriesTransformOptions(type: StatefulSeriesTransformType): Readonly<Record<string, number>> {
-  if (type === "renko") return { brickSize: 1 };
-  if (type === "lineBreak") return { lineCount: 3 };
-  if (type === "kagi") return { reversalAmount: 2 };
-  if (type === "pointAndFigure") return { boxSize: 1, reversalBoxes: 3 };
+function seriesTransformOptions(
+  type: StatefulSeriesTransformType,
+  properties: ChartSeriesProperties | undefined
+): Readonly<Record<string, number>> {
+  if (type === "renko") return { brickSize: properties?.type === type ? properties.brickSize : 1 };
+  if (type === "lineBreak") return { lineCount: properties?.type === type ? properties.lineCount : 3 };
+  if (type === "kagi") return {
+    reversalAmount: properties?.type === type ? properties.reversalAmount : 2
+  };
+  if (type === "pointAndFigure") return properties?.type === type
+    ? { boxSize: properties.boxSize, reversalBoxes: properties.reversalBoxes }
+    : { boxSize: 1, reversalBoxes: 3 };
   return {};
 }
 
@@ -260,6 +268,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let executionTooltipPinned = false;
   let indicatorConfigs: readonly IndicatorConfig[] = [];
   let seriesModel: SeriesRenderModel | undefined;
+  let activeSeriesProperties: ChartSeriesProperties | undefined;
   let crosshair: ChartCrosshairState | undefined;
   let crosshairPoint: { x: number; y: number } | undefined;
   let crosshairEventsSuspended = false;
@@ -1600,7 +1609,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       const model = await options.calculationRuntime.calculateSeries({
         selection: materialized.selection,
         type,
-        options: defaultSeriesTransformOptions(type),
+        options: seriesTransformOptions(type, activeSeriesProperties),
         targetTimes: new Set(materialized.series.candles.map((candle) => candle.time)),
         generation,
         signal: controller.signal
@@ -1764,8 +1773,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       rebuildInteraction();
       scheduler.invalidate({ layers: ["crosshair", "tooltip"], reason: "crosshairCleared" });
     },
-    setSeriesType(type) {
+    setSeriesType(type, properties) {
       if (destroyed) return;
+      if (properties !== undefined && properties.type !== type) {
+        throw new TypeError("Series properties must match the series type");
+      }
+      if (properties !== undefined) activeSeriesProperties = structuredClone(properties);
+      else if (activeSeriesProperties?.type !== type) activeSeriesProperties = undefined;
       seriesCalculationController?.abort();
       seriesCalculationController = undefined;
       seriesGeneration += 1;

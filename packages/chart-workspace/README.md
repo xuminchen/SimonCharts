@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.34.tgz
+npm install ./simoncharts-charts-1.0.0-rc.35.tgz
 ```
 
 ## Embed the default chart
@@ -116,7 +116,8 @@ const marks: readonly ChartMark[] = [
 const unsubscribeEvents = chart.subscribeEvents((event) => {
   if (event.type === "data-loaded" && event.phase === "initial") {
     chart.importLayout(savedLayout);
-    chart.setSeriesType("candles");
+    chart.setSeriesProperties({ type: "renko", brickSize: 2 });
+    chart.setSeriesType("renko");
     chart.setPriceScaleMode("percentage");
     chart.setIndicators([{
       instanceId: "review-ma-5",
@@ -352,6 +353,8 @@ const chart = createChart(container, {
 });
 ```
 
+`getSeriesProperties(type)` returns a defensive, normalized full object. `setSeriesProperties(properties)` replaces one configurable type without switching the current series. Defaults are Renko `brickSize: 1`, Line Break `lineCount: 3`, Kagi `reversalAmount: 2`, and Point & Figure `boxSize: 1, reversalBoxes: 3`. Amounts must be positive finite numbers; `lineCount` is an integer from 1 to 500 and `reversalBoxes` from 1 to 10,000. Non-default values are stored sparsely in `ChartLayoutV2.seriesProperties` and browser preferences; explicit `ChartOptions.seriesProperties` wins for matching types. Importing a legacy layout without the field restores defaults. Intraday stays a fixed line, though properties may be prepared for the next timeframe view.
+
 `ChartFeature` is a stable union of `symbol-search`, `timeframes`, `adjustment`, `series-type`, `price-scale`, `indicators`, `drawing-tools`, `drawing-history`, `settings`, and `bottom-panel`. Passing a feature controls construction: disabled controls are not mounted and do not bind listeners. `advancedChartFeatures` explicitly enables the complete 17-series, 16-indicator, 63-drawing, three-scale workbench.
 
 The advanced shell is chart-first: a 40 px market toolbar, fixed 44 px drawing rail, uninterrupted chart and native axes, collapsed 40 px object/property/data inspector, and 26 px status bar. The crosshair updates OHLC, volume, indicator rows, and price/time axis badges directly. Wheel/keyboard zoom, captured drag pan, price-axis and time-axis drag, double-click reset, drawing body/handle editing, chart/axis context menus, and native fullscreen are included. The inspector expands only on demand and reuses the existing versioned layout namespace.
@@ -398,4 +401,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.34 adds chart-scoped, exact-version Custom Study definitions and routes their bounded synchronous outputs through the existing checkpoint, native renderer, pane, crosshair, Study/Entity, Layout, retry, and `dataReady()` systems. Definition code remains host-owned and never enters JSON or browser persistence. It preserves rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.35 adds programmable, bounded build properties for Renko, Line Break, Kagi, and Point & Figure through the existing checkpoint, generation, Layout V2, browser preference, and `dataReady()` paths. It preserves rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

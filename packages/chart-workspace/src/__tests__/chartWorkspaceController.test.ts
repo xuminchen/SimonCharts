@@ -184,6 +184,115 @@ describe("chart workspace controller", () => {
     });
   });
 
+  it("retains per-type series properties and recalculates only the active synthetic type", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    vi.mocked(deps.runtime.setSeriesType).mockClear();
+    vi.mocked(deps.persistence.savePreferences).mockClear();
+
+    controller.setSeriesProperties({ type: "renko", brickSize: 4 });
+    expect(controller.getViewModel().seriesProperties).toEqual([
+      { type: "renko", brickSize: 4 }
+    ]);
+    expect(deps.runtime.setSeriesType).not.toHaveBeenCalled();
+    expect(deps.persistence.savePreferences).toHaveBeenLastCalledWith({
+      ...defaultPreferences,
+      seriesProperties: [{ type: "renko", brickSize: 4 }]
+    });
+
+    controller.setSeriesType("renko");
+    expect(deps.runtime.setSeriesType).toHaveBeenLastCalledWith(
+      "renko",
+      { type: "renko", brickSize: 4 }
+    );
+    vi.mocked(deps.runtime.setSeriesType).mockClear();
+    controller.setSeriesProperties({ type: "renko", brickSize: 5 });
+    expect(deps.runtime.setSeriesType).toHaveBeenCalledTimes(1);
+    expect(deps.runtime.setSeriesType).toHaveBeenLastCalledWith(
+      "renko",
+      { type: "renko", brickSize: 5 }
+    );
+
+    expect(() => controller.setSeriesProperties({
+      type: "lineBreak",
+      lineCount: 0
+    })).toThrow();
+    expect(controller.getViewModel().seriesProperties).toEqual([
+      { type: "renko", brickSize: 5 }
+    ]);
+  });
+
+  it("treats identical series properties as a no-op and omits restored defaults", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    controller.setSeriesProperties({ type: "lineBreak", lineCount: 4 });
+    controller.setSeriesProperties({ type: "renko", brickSize: 2 });
+    vi.mocked(deps.persistence.savePreferences).mockClear();
+
+    controller.setSeriesProperties({ type: "lineBreak", lineCount: 4 });
+    expect(deps.persistence.savePreferences).not.toHaveBeenCalled();
+
+    controller.setSeriesProperties({ type: "renko", brickSize: 1 });
+    expect(controller.getViewModel().seriesProperties).toEqual([
+      { type: "lineBreak", lineCount: 4 }
+    ]);
+    expect(deps.persistence.savePreferences).toHaveBeenLastCalledWith({
+      ...defaultPreferences,
+      seriesProperties: [{ type: "lineBreak", lineCount: 4 }]
+    });
+  });
+
+  it("stores synthetic properties during intraday without changing its fixed line series", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    controller.setView("intraday");
+    vi.mocked(deps.runtime.setSeriesType).mockClear();
+
+    controller.setSeriesProperties({ type: "renko", brickSize: 6 });
+
+    expect(controller.getViewModel()).toMatchObject({
+      intradayView: true,
+      seriesType: "line",
+      seriesProperties: [{ type: "renko", brickSize: 6 }]
+    });
+    expect(deps.runtime.setSeriesType).not.toHaveBeenCalled();
+  });
+
+  it("gives explicit chart series properties precedence over saved preferences", () => {
+    const deps = dependencies();
+    deps.persistence.loadPreferences = vi.fn(() => ({
+      ...structuredClone(defaultPreferences),
+      seriesProperties: [
+        { type: "renko", brickSize: 2 },
+        { type: "lineBreak", lineCount: 4 }
+      ]
+    }));
+    deps.initialSeriesProperties = [{ type: "renko", brickSize: 5 }];
+
+    const controller = createChartController(deps);
+    expect(controller.getViewModel().seriesProperties).toEqual([
+      { type: "lineBreak", lineCount: 4 },
+      { type: "renko", brickSize: 5 }
+    ]);
+  });
+
+  it("normalizes default-valued initial series properties out of sparse state", () => {
+    const deps = dependencies();
+    deps.persistence.loadPreferences = vi.fn(() => ({
+      ...structuredClone(defaultPreferences),
+      seriesProperties: [
+        { type: "renko", brickSize: 1 },
+        { type: "lineBreak", lineCount: 4 }
+      ]
+    }));
+    deps.initialSeriesProperties = [{ type: "kagi", reversalAmount: 2 }];
+
+    const controller = createChartController(deps);
+    expect(controller.getViewModel().seriesProperties).toEqual([
+      { type: "lineBreak", lineCount: 4 }
+    ]);
+  });
+
   it("caps timeframe favorites at four without changing the active market selection", () => {
     const deps = dependencies();
     const controller = createChartController(deps);

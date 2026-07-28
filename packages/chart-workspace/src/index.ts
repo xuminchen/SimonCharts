@@ -52,6 +52,8 @@ export type {
   ChartMark,
   ChartOptions,
   ChartPriceScaleMode,
+  ChartConfigurableSeriesType,
+  ChartSeriesProperties,
   ChartSeriesType,
   ChartState,
   ChartStateListener,

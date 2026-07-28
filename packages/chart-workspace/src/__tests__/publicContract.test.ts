@@ -31,6 +31,7 @@ import type {
   ChartLocale,
   ChartMark,
   ChartOptions,
+  ChartSeriesProperties,
   ChartStateListener,
   ChartStudyApi,
   ChartStudyDefinitionId,
@@ -48,6 +49,8 @@ import {
   parseIndicatorInput,
   parseIndicators,
   parseLayout,
+  parseSeriesProperties,
+  resolveSeriesProperties,
   toEngineDrawings,
   toEntityId
 } from "../programmableApi";
@@ -93,6 +96,67 @@ describe("charts public contract", () => {
       request: SeriesRequest,
       signal: AbortSignal
     ) => Promise<SeriesPage>>();
+  });
+
+  it("exposes strict configurable series properties without widening ordinary series", () => {
+    expectTypeOf<ChartSeriesProperties>().toEqualTypeOf<
+      | { readonly type: "renko"; readonly brickSize: number }
+      | { readonly type: "lineBreak"; readonly lineCount: number }
+      | { readonly type: "kagi"; readonly reversalAmount: number }
+      | {
+          readonly type: "pointAndFigure";
+          readonly boxSize: number;
+          readonly reversalBoxes: number;
+        }
+    >();
+    expectTypeOf<ChartOptions["seriesProperties"]>()
+      .toEqualTypeOf<readonly ChartSeriesProperties[] | undefined>();
+    expectTypeOf<ChartInstance["setSeriesProperties"]>()
+      .toEqualTypeOf<(properties: ChartSeriesProperties) => void>();
+  });
+
+  it("parses series properties atomically and resolves rc.34 defaults", () => {
+    const source = [
+      { type: "renko", brickSize: 2 },
+      { type: "lineBreak", lineCount: 4 },
+      { type: "kagi", reversalAmount: 3 },
+      { type: "pointAndFigure", boxSize: 0.5, reversalBoxes: 2 }
+    ] as const;
+    const parsed = parseSeriesProperties(source);
+    expect(parsed).toEqual(source);
+    expect(parsed).not.toBe(source);
+    expect(resolveSeriesProperties("renko", [])).toEqual({ type: "renko", brickSize: 1 });
+    expect(resolveSeriesProperties("lineBreak", [])).toEqual({ type: "lineBreak", lineCount: 3 });
+    expect(resolveSeriesProperties("kagi", [])).toEqual({ type: "kagi", reversalAmount: 2 });
+    expect(resolveSeriesProperties("pointAndFigure", [])).toEqual({
+      type: "pointAndFigure",
+      boxSize: 1,
+      reversalBoxes: 3
+    });
+    expect(resolveSeriesProperties("renko", parsed)).toEqual(source[0]);
+    expect(() => resolveSeriesProperties("candles" as never, [])).toThrow("unsupported");
+
+    for (const invalid of [
+      [{ type: "renko", brickSize: 1 }, { type: "renko", brickSize: 2 }],
+      [{ type: "renko", brickSize: 0 }],
+      [{ type: "renko", brickSize: Number.NaN }],
+      [{ type: "renko", brickSize: Number.POSITIVE_INFINITY }],
+      [{ type: "lineBreak", lineCount: 1.5 }],
+      [{ type: "lineBreak", lineCount: 501 }],
+      [{ type: "lineBreak", lineCount: 10_001 }],
+      [{ type: "pointAndFigure", boxSize: 1, reversalBoxes: 10_001 }],
+      [{ type: "kagi", reversalAmount: 2, brickSize: 1 }],
+      [{ type: "candles" }]
+    ]) {
+      expect(() => parseSeriesProperties(invalid)).toThrow();
+    }
+    expect(() => parseSeriesProperties(Array(1))).toThrow("dense");
+    const accessor = { type: "renko" };
+    Object.defineProperty(accessor, "brickSize", {
+      enumerable: true,
+      get: () => 1
+    });
+    expect(() => parseSeriesProperties([accessor])).toThrow("only data properties");
   });
 
   it("keeps the legacy study interfaces extendable", () => {
@@ -380,6 +444,33 @@ describe("charts public contract", () => {
     }).drawings[0]?.metadata;
     expect(Object.hasOwn(prototypeKey ?? {}, "__proto__")).toBe(true);
     expect(Object.getPrototypeOf(prototypeKey)).toBe(Object.prototype);
+  });
+
+  it("round-trips optional Series Properties 2.0 fields while accepting legacy V2 layouts", () => {
+    const legacy = {
+      schemaVersion: 2,
+      seriesType: "renko",
+      priceScaleMode: "linear",
+      indicators: [],
+      drawings: [],
+      gridVisible: true
+    } as const;
+    expect(parseLayout(legacy)).toEqual(legacy);
+
+    const configured = {
+      ...legacy,
+      seriesProperties: [
+        { type: "renko", brickSize: 2 },
+        { type: "pointAndFigure", boxSize: 0.5, reversalBoxes: 2 }
+      ]
+    } as const;
+    const parsed = parseLayout(configured);
+    expect(parsed).toEqual(configured);
+    expect(parsed.seriesProperties).not.toBe(configured.seriesProperties);
+    expect(() => parseLayout({
+      ...configured,
+      seriesProperties: [{ type: "renko", brickSize: 0 }]
+    })).toThrow();
   });
 
   it("validates and defensively converts drawing interaction and scale flags", () => {

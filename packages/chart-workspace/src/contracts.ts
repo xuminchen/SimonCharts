@@ -110,6 +110,16 @@ export type ChartSeriesType =
   | "lineBreak"
   | "kagi"
   | "pointAndFigure";
+export type ChartSeriesProperties =
+  | { readonly type: "renko"; readonly brickSize: number }
+  | { readonly type: "lineBreak"; readonly lineCount: number }
+  | { readonly type: "kagi"; readonly reversalAmount: number }
+  | {
+      readonly type: "pointAndFigure";
+      readonly boxSize: number;
+      readonly reversalBoxes: number;
+    };
+export type ChartConfigurableSeriesType = ChartSeriesProperties["type"];
 export type ChartPriceScaleMode = "linear" | "log" | "percentage";
 export type ChartIndicatorId =
   | "MA"
@@ -400,6 +410,7 @@ export interface ChartOptions {
   locale?: ChartLocale;
   executions?: readonly ChartExecution[];
   marks?: readonly ChartMark[];
+  seriesProperties?: readonly ChartSeriesProperties[];
   studyDefinitions?: readonly ChartCustomStudyDefinition[];
   onError?: (error: ChartError) => void;
 }
@@ -477,6 +488,7 @@ export interface ChartStudyApi {
 export interface ChartLayoutV2 {
   readonly schemaVersion: 2;
   readonly seriesType: ChartSeriesType;
+  readonly seriesProperties?: readonly ChartSeriesProperties[];
   readonly priceScaleMode: ChartPriceScaleMode;
   readonly indicators: readonly ChartIndicator[];
   readonly drawings: readonly ChartDrawing[];
@@ -505,6 +517,9 @@ export interface ChartInstance {
   getState(): Readonly<ChartState>;
   getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
   getSeriesType(): ChartSeriesType;
+  getSeriesProperties<T extends ChartConfigurableSeriesType>(
+    type: T
+  ): Readonly<Extract<ChartSeriesProperties, { readonly type: T }>>;
   getPriceScaleMode(): ChartPriceScaleMode;
   getIndicators(): readonly ChartIndicator[];
   getDrawings(): readonly ChartDrawing[];
@@ -527,6 +542,7 @@ export interface ChartInstance {
   setIntradayDays(days: IntradayDayCount): void;
   setAdjustMode(adjustMode: AdjustMode): void;
   setSeriesType(type: ChartSeriesType): void;
+  setSeriesProperties(properties: ChartSeriesProperties): void;
   setPriceScaleMode(mode: ChartPriceScaleMode): void;
   setIndicators(indicators: readonly ChartIndicator[]): void;
   setDrawings(drawings: readonly ChartDrawing[]): void;

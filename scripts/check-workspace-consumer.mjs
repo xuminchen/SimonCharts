@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.34";
+const expectedVersion = "1.0.0-rc.35";
 let tempRoot;
 
 try {
@@ -143,6 +143,7 @@ function consumerSource() {
   type ChartIndicatorEntityId,
   type ChartLayoutV2,
   type ChartMark,
+  type ChartSeriesProperties,
   type ChartStudyApi,
   type ChartVisibleRange,
   type ChartState
@@ -297,6 +298,26 @@ if (!await chart.dataReady()) throw new Error("timeframe view was not usable");
 chart.setExecutions(executions);
 chart.setExecutionsVisible(false);
 chart.setExecutionsVisible(true);
+const renkoProperties: ChartSeriesProperties = { type: "renko", brickSize: 2 };
+chart.setSeriesProperties(renkoProperties);
+chart.setSeriesType("renko");
+if (!await chart.dataReady()) throw new Error("configured Renko presentation was not usable");
+const seriesLayout = chart.exportLayout();
+if (
+  chart.getSeriesProperties("renko").brickSize !== 2 ||
+  seriesLayout.seriesProperties?.[0]?.type !== "renko"
+) {
+  throw new Error("series properties were not exported from the packed package");
+}
+chart.setSeriesType("area");
+chart.importLayout(seriesLayout);
+if (
+  !await chart.dataReady() ||
+  chart.getSeriesType() !== "renko" ||
+  chart.getSeriesProperties("renko").brickSize !== 2
+) {
+  throw new Error("series properties did not round-trip through the packed package");
+}
 chart.setSeriesType("area");
 chart.setPriceScaleMode("percentage");
 chart.setIndicators(layout.indicators);

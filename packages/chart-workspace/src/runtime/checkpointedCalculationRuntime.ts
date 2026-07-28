@@ -118,6 +118,7 @@ function appendResult(target: IndicatorResult | undefined, incoming: IndicatorRe
 }
 
 const duplicateIndicatorColors = ["#f59e0b", "#2563eb", "#dc2626", "#16a34a", "#9333ea", "#0891b2"];
+const maxSeriesRenderPoints = 50_000;
 
 function scopeIndicatorResult(
   config: IndicatorConfig,
@@ -390,7 +391,12 @@ export function createCheckpointedCalculationRuntime(
         }
         for (const point of transformed.model.points) {
           lastLogicalPoint = point;
-          if (input.targetTimes.has(point.time)) selectedPoints.push(point);
+          if (input.targetTimes.has(point.time)) {
+            if (selectedPoints.length >= maxSeriesRenderPoints) {
+              throw new RangeError("Series render point limit exceeded");
+            }
+            selectedPoints.push(point);
+          }
         }
         chunk.candles.forEach((candle, localIndex) => {
           if (!input.targetTimes.has(candle.time)) return;

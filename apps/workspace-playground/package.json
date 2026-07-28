@@ -9,6 +9,6 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@simoncharts/charts": "1.0.0-rc.34"
+    "@simoncharts/charts": "1.0.0-rc.35"
   }
 }

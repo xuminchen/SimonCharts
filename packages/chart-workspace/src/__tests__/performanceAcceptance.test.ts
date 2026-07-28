@@ -304,6 +304,113 @@ describe("workspace engine runtime", () => {
     runtime.destroy();
   });
 
+  it("uses the latest public series properties for calculation and rematerialization", async () => {
+    const calculateSeries = vi.fn(async (input: Parameters<CheckpointedCalculationRuntime["calculateSeries"]>[0]) => ({
+      type: input.type,
+      source: materialized().series,
+      sourceIndexOffset: 0,
+      points: []
+    }) satisfies SeriesRenderModel);
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: { async calculateIndicators() { return new Map(); }, calculateSeries },
+      requestFrame: () => 1,
+      cancelFrame: () => undefined
+    });
+    runtime.setMaterializedSeries(materialized());
+    runtime.setSeriesType("renko", { type: "renko", brickSize: 4 });
+    await vi.waitFor(() => expect(calculateSeries).toHaveBeenCalledWith(expect.objectContaining({
+      type: "renko",
+      options: { brickSize: 4 }
+    })));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    calculateSeries.mockClear();
+    runtime.setMaterializedSeries(materialized(100, 220));
+    await vi.waitFor(() => expect(calculateSeries).toHaveBeenCalledWith(expect.objectContaining({
+      type: "renko",
+      options: { brickSize: 4 }
+    })));
+    runtime.destroy();
+  });
+
+  it("aborts stale same-type property calculations and commits only the latest generation", async () => {
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    const pending: Array<{
+      input: Parameters<CheckpointedCalculationRuntime["calculateSeries"]>[0];
+      resolve: (model: SeriesRenderModel) => void;
+    }> = [];
+    const statuses: Array<{ type: string; kind?: string; generation?: number }> = [];
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        async calculateIndicators() { return new Map(); },
+        calculateSeries(input) {
+          return new Promise<SeriesRenderModel>((resolve) => pending.push({ input, resolve }));
+        }
+      },
+      requestFrame(callback) {
+        const id = nextFrame++;
+        frames.set(id, callback);
+        return id;
+      },
+      cancelFrame: (id) => { frames.delete(id); },
+      onCalculationStatusChanged: (status) => statuses.push(status)
+    });
+    const source = materialized();
+    const model = (): SeriesRenderModel => ({
+      type: "renko",
+      source: source.series,
+      sourceIndexOffset: 0,
+      points: []
+    });
+
+    runtime.setMaterializedSeries(source);
+    while (frames.size > 0) {
+      const current = [...frames.values()];
+      frames.clear();
+      for (const callback of current) callback();
+    }
+    runtime.setSeriesType("renko", { type: "renko", brickSize: 2 });
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    runtime.setSeriesType("renko", { type: "renko", brickSize: 4 });
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    runtime.setSeriesType("renko", { type: "renko", brickSize: 6 });
+    await vi.waitFor(() => expect(pending).toHaveLength(3));
+
+    expect(pending.map(({ input }) => input.options)).toEqual([
+      { brickSize: 2 },
+      { brickSize: 4 },
+      { brickSize: 6 }
+    ]);
+    expect(pending[0]!.input.signal.aborted).toBe(true);
+    expect(pending[1]!.input.signal.aborted).toBe(true);
+    expect(pending[2]!.input.signal.aborted).toBe(false);
+
+    pending[0]!.resolve(model());
+    pending[1]!.resolve(model());
+    await Promise.resolve();
+    expect(frames.size).toBe(0);
+    expect(statuses.some((status) => status.type === "idle")).toBe(false);
+
+    pending[2]!.resolve(model());
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    expect(new Set(statuses
+      .filter((status) => status.kind === "series")
+      .map((status) => status.generation))).toEqual(
+        new Set([1, 2, 3])
+      );
+    expect(statuses.at(-1)?.type).toBe("idle");
+    runtime.destroy();
+  });
+
   it("keeps one drag session across multiple viewport updates and captured pointer up", () => {
     const overlayCanvas = new FakeCanvas();
     const viewports: ViewportState[] = [];

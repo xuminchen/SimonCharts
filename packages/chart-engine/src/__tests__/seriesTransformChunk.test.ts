@@ -352,6 +352,22 @@ describe("stateful series transform chunks", () => {
     expect(hit?.sourceCandle?.time).toBe(full.candles[101].time);
     expect(hit?.sourceCandle?.time).toBe(fullSourceHit?.sourceCandle?.time);
   });
+
+  it("fails closed before one Renko chunk can emit an unbounded point set", () => {
+    expect(() => transformSeriesChunk(
+      "renko",
+      createCloseSeries([1, 2]),
+      { brickSize: 1 / 100_001 }
+    )).toThrow("output limit");
+  });
+
+  it("fails closed when a Point & Figure box count exceeds safe arithmetic", () => {
+    expect(() => transformSeriesChunk(
+      "pointAndFigure",
+      createCloseSeries([1, 2]),
+      { boxSize: Number.MIN_VALUE, reversalBoxes: 3 }
+    )).toThrow("box count");
+  });
 });
 
 function deepFreeze<T>(value: T): T {

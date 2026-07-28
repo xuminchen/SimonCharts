@@ -50,8 +50,16 @@ export function getVisibleBounds(context: SeriesRendererContext): VisibleRenderB
   }
 
   const lastIndex = model.points.length - 1;
-  const from = Math.max(0, state.viewport.visibleRange.from);
-  const to = Math.min(lastIndex, state.viewport.visibleRange.to);
+  let from = 0;
+  while (
+    from <= lastIndex &&
+    sourceIndexForPoint(model, from) < state.viewport.visibleRange.from
+  ) from += 1;
+  let to = lastIndex;
+  while (
+    to >= from &&
+    sourceIndexForPoint(model, to) > state.viewport.visibleRange.to
+  ) to -= 1;
 
   return from <= to ? { from, to } : undefined;
 }
@@ -87,11 +95,16 @@ export function getVisiblePriceRange(
 
 export function xForIndex(context: SeriesRendererContext, index: number): number {
   return indexToX(
-    index,
+    sourceIndexForPoint(context.model, index),
     context.state.viewport,
     context.layout.plotArea.x,
     context.state.timeCoordinates
   );
+}
+
+function sourceIndexForPoint(model: SeriesRenderModel, index: number): number {
+  return (model.points[index]?.sourceIndex ?? model.sourceIndexOffset + index) -
+    model.sourceIndexOffset;
 }
 
 export function yForPrice(

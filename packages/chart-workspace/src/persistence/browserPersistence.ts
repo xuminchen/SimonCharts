@@ -7,11 +7,17 @@ import {
   type PriceScaleMode,
   type SeriesType
 } from "@simoncharts/chart-engine";
-import type { AdjustMode, ChartSymbol, Timeframe } from "../contracts";
+import type {
+  AdjustMode,
+  ChartSeriesProperties,
+  ChartSymbol,
+  Timeframe
+} from "../contracts";
 import { createChartError, type ChartError } from "../errors";
 import {
   fromEngineDrawings,
   parseIndicators,
+  parseSeriesProperties,
   toEngineDrawings
 } from "../programmableApi";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
@@ -44,6 +50,7 @@ export interface WorkspacePreferences {
   readonly priceScaleMode: PriceScaleMode;
   readonly gridVisible: boolean;
   readonly favoriteTimeframes: readonly FavoriteTimeframe[];
+  readonly seriesProperties?: readonly ChartSeriesProperties[];
 }
 
 type StoredWorkspacePreferences = Omit<WorkspacePreferences, "favoriteTimeframes"> & {
@@ -108,6 +115,7 @@ function isLayout(value: unknown): value is WorkspaceLayoutState {
 
 function isPreferences(value: unknown): value is StoredWorkspacePreferences {
   const favoriteTimeframes = isRecord(value) ? value.favoriteTimeframes : undefined;
+  const seriesProperties = isRecord(value) ? value.seriesProperties : undefined;
   return (
     isRecord(value) &&
     supportedSeriesTypes.includes(value.seriesType as SeriesType) &&
@@ -119,7 +127,15 @@ function isPreferences(value: unknown): value is StoredWorkspacePreferences {
         favoriteTimeframeValues.includes(timeframe as FavoriteTimeframe)
       ) &&
       new Set(favoriteTimeframes).size === favoriteTimeframes.length
-    ))
+    )) &&
+    (() => {
+      try {
+        parseSeriesProperties(seriesProperties);
+        return true;
+      } catch {
+        return false;
+      }
+    })()
   );
 }
 
@@ -211,7 +227,10 @@ export function createBrowserPersistence(
       return {
         ...stored,
         favoriteTimeframes: (stored.favoriteTimeframes ?? defaultPreferences.favoriteTimeframes)
-          .slice(0, maxFavoriteTimeframes)
+          .slice(0, maxFavoriteTimeframes),
+        ...(stored.seriesProperties === undefined
+          ? {}
+          : { seriesProperties: parseSeriesProperties(stored.seriesProperties) })
       };
     },
     savePreferences: (value) => write(preferencesKey, value),

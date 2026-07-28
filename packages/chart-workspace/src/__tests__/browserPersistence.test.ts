@@ -37,9 +37,13 @@ describe("browser persistence", () => {
     const persistence = createBrowserPersistence("trs", "user-1", "current", storage, vi.fn());
     persistence.savePreferences({
       ...defaultPreferences,
-      favoriteTimeframes: ["5m", "1d", "intraday"]
+      favoriteTimeframes: ["5m", "1d", "intraday"],
+      seriesProperties: [{ type: "renko", brickSize: 2 }]
     });
     expect(persistence.loadPreferences().favoriteTimeframes).toEqual(["5m", "1d", "intraday"]);
+    expect(persistence.loadPreferences().seriesProperties).toEqual([
+      { type: "renko", brickSize: 2 }
+    ]);
 
     storage.setItem("simoncharts:workspace:v1:trs:user-1:preferences", JSON.stringify({
       schemaVersion: 1,
@@ -72,6 +76,26 @@ describe("browser persistence", () => {
       favoriteTimeframes: ["1m", "5m", "15m", "30m"]
     });
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on invalid persisted series properties", () => {
+    const storage = new MemoryStorage();
+    const onError = vi.fn<BrowserPersistenceErrorHandler>();
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, onError);
+    const key = "simoncharts:workspace:v1:trs:user-1:preferences";
+    storage.setItem(key, JSON.stringify({
+      schemaVersion: 1,
+      value: {
+        ...defaultPreferences,
+        seriesProperties: [{ type: "renko", brickSize: 0 }]
+      }
+    }));
+
+    expect(persistence.loadPreferences()).toEqual(defaultPreferences);
+    expect(storage.getItem(key)).toBeNull();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "STORAGE_READ_FAILED" })
+    );
   });
 
   it("isolates drawings by workspace, persistence scope, data context, symbol, and adjustment but not timeframe", () => {

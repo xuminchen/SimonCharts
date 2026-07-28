@@ -1,5 +1,15 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.35 - 2026-07-28
+
+- Added public `ChartSeriesProperties`, `getSeriesProperties()`, `setSeriesProperties()`, and optional `ChartOptions.seriesProperties` for Renko brick size, Line Break count, Kagi reversal amount, and Point & Figure box/reversal settings.
+- Kept property state independent from the active series type: inactive updates persist without calculation, while active synthetic updates abort stale generations and keep `dataReady()` pending until the latest result paints.
+- Preserved sparse non-default properties through `ChartLayoutV2` and browser preferences with strict plain-object validation, defensive clones, atomic replacement, option-over-preference precedence, and rc.34 defaults for legacy layouts.
+- Bounded Line Break counts and total synthetic output, rejected non-finite Point & Figure expansion, and included normalized properties in checkpoint keys without adding a second transform or cache.
+- Fixed sparse synthetic models to render at their source Candle indices, so configured Renko, Line Break, Kagi, and Point & Figure results remain visible in a source-indexed viewport.
+- Kept intraday fixed to the real close line and added no style schema, ATR/percentage sizing, new dependency, layout version, or synthetic market data.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,191 tests`, combined Chrome `124/124`, Charts `14 files / 190 tests`, Charts Chrome/Edge `73/73` per browser, and exact packed Chrome/Edge consumer execution; SHA-256 is `7ad247707677deb2a3c55bcc7a331c95af21d6c0946fd5f0d89203c8cc3b70a1`, SHA-512 is `f947301b1bb2d37fc31be0cacc42c4663f08a6778c7283d111626223c3645448f749745819b9237f427105e3f7bcf7aad029eea0c21c06fca52538f5a994c796`.
+
 ## @simoncharts/charts 1.0.0-rc.34 - 2026-07-28
 
 - Added chart-scoped, versioned `ChartCustomStudyDefinition` contracts with bounded numeric input schemas and fixed line, histogram, band, and marker outputs.

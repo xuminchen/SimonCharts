@@ -11,6 +11,7 @@ import type {
   Candle,
   ChartDataCapabilities,
   ChartMark,
+  ChartSeriesProperties,
   ChartState,
   ChartSymbol,
   ChartView,
@@ -18,7 +19,11 @@ import type {
   IntradayDayCount,
   Timeframe
 } from "../contracts";
-import { parseIndicators } from "../programmableApi";
+import {
+  parseIndicators,
+  parseSeriesProperties,
+  resolveSeriesProperties
+} from "../programmableApi";
 import {
   adjustModesForTimeframe,
   normalizeDataCapabilities,
@@ -78,6 +83,7 @@ export interface WorkspaceViewModel {
   status: WorkspaceStatus;
   intradayView: boolean;
   seriesType: SeriesType;
+  seriesProperties: readonly ChartSeriesProperties[];
   favoriteTimeframes: readonly FavoriteTimeframe[];
   priceScaleMode: PriceScaleMode;
   indicators: readonly IndicatorConfig[];
@@ -108,6 +114,9 @@ export interface WorkspaceUiActions {
   loadMoreBefore(): void;
   retryHistory(): void;
   setSeriesType(type: SeriesType): void;
+  setSeriesProperties(
+    properties: ChartSeriesProperties | readonly ChartSeriesProperties[]
+  ): void;
   setFavoriteTimeframe(timeframe: FavoriteTimeframe, favorite: boolean): boolean;
   setPriceScaleMode(mode: PriceScaleMode): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
@@ -134,6 +143,10 @@ export interface ChartController extends WorkspaceUiActions {
   setTimeframe(timeframe: Timeframe): void;
   setView(view: ChartView): void;
   setAdjustMode(adjustMode: AdjustMode): void;
+  setSeriesConfiguration(
+    type: SeriesType,
+    properties: readonly ChartSeriesProperties[]
+  ): void;
   setVisibleRange(range: ChartVisibleRange): void;
   resetToLatest(): void;
   retry(): void;
@@ -160,6 +173,7 @@ export interface ChartControllerDependencies {
   initialSymbol: ChartSymbol;
   initialTimeframe?: Timeframe;
   initialAdjustMode?: AdjustMode;
+  initialSeriesProperties?: readonly ChartSeriesProperties[];
   getCapabilities(symbol: ChartSymbol, signal: AbortSignal): Promise<ChartDataCapabilities>;
   store: PagedSeriesStore;
   dataCoordinator: DataCoordinator;
@@ -213,6 +227,14 @@ function sameSelection(left: Readonly<SeriesSelection> | undefined, right: Reado
   );
 }
 
+function withoutDefaultSeriesProperties(
+  properties: readonly ChartSeriesProperties[]
+): ChartSeriesProperties[] {
+  return properties.filter((property) =>
+    JSON.stringify(property) !== JSON.stringify(resolveSeriesProperties(property.type, []))
+  );
+}
+
 export function createChartController(
   dependencies: ChartControllerDependencies
 ): ChartController {
@@ -223,6 +245,15 @@ export function createChartController(
       : [];
   const preferences = dependencies.persistence.loadPreferences();
   const persistedSeriesType = preferences.seriesType;
+  const persistedSeriesProperties = parseSeriesProperties(preferences.seriesProperties);
+  const optionSeriesProperties = parseSeriesProperties(dependencies.initialSeriesProperties);
+  const optionSeriesTypes = new Set(optionSeriesProperties.map((property) => property.type));
+  const initialSeriesProperties = withoutDefaultSeriesProperties([
+    ...(dependencies.seriesTypePersistenceEnabled
+      ? persistedSeriesProperties.filter((property) => !optionSeriesTypes.has(property.type))
+      : []),
+    ...optionSeriesProperties
+  ]);
   const layout = dependencies.persistence.loadLayout();
   let state: ChartState = {
     symbol: cloneSymbol(dependencies.initialSymbol),
@@ -240,6 +271,7 @@ export function createChartController(
     status: { type: "loading" },
     intradayView: false,
     seriesType: dependencies.seriesTypePersistenceEnabled ? persistedSeriesType : "candles",
+    seriesProperties: initialSeriesProperties,
     favoriteTimeframes: [...preferences.favoriteTimeframes.slice(0, maxFavoriteTimeframes)],
     priceScaleMode: preferences.priceScaleMode,
     indicators: dependencies.persistence.loadIndicators(),
@@ -256,12 +288,50 @@ export function createChartController(
     search: { query: "", loading: false, results: [] }
   };
   let timeframeSeriesType = viewModel.seriesType;
-  const savePreferences = (): void => dependencies.persistence.savePreferences({
-    seriesType: dependencies.seriesTypePersistenceEnabled ? timeframeSeriesType : persistedSeriesType,
-    favoriteTimeframes: viewModel.favoriteTimeframes,
-    priceScaleMode: viewModel.priceScaleMode,
-    gridVisible: viewModel.gridVisible
-  });
+  const savePreferences = (): void => {
+    const seriesProperties = dependencies.seriesTypePersistenceEnabled
+      ? viewModel.seriesProperties
+      : persistedSeriesProperties;
+    dependencies.persistence.savePreferences({
+      seriesType: dependencies.seriesTypePersistenceEnabled ? timeframeSeriesType : persistedSeriesType,
+      favoriteTimeframes: viewModel.favoriteTimeframes,
+      priceScaleMode: viewModel.priceScaleMode,
+      gridVisible: viewModel.gridVisible,
+      ...(seriesProperties.length === 0
+        ? {}
+        : { seriesProperties: structuredClone(seriesProperties) })
+    });
+  };
+  const activeSeriesProperties = (type: SeriesType): ChartSeriesProperties | undefined =>
+    type === "renko" || type === "lineBreak" || type === "kagi" || type === "pointAndFigure"
+      ? resolveSeriesProperties(type, viewModel.seriesProperties)
+      : undefined;
+  const applySeriesConfiguration = (
+    type: SeriesType,
+    properties: readonly ChartSeriesProperties[]
+  ): void => {
+    const parsed = withoutDefaultSeriesProperties(parseSeriesProperties(properties));
+    const previousType = viewModel.seriesType;
+    const previousActive = activeSeriesProperties(previousType);
+    const nextActive =
+      type === "renko" || type === "lineBreak" || type === "kagi" || type === "pointAndFigure"
+        ? resolveSeriesProperties(type, parsed)
+        : undefined;
+    if (
+      type === previousType &&
+      JSON.stringify(parsed) === JSON.stringify(viewModel.seriesProperties)
+    ) return;
+    if (state.view !== "intraday") timeframeSeriesType = type;
+    viewModel = { ...viewModel, seriesType: type, seriesProperties: parsed };
+    if (
+      state.view !== "intraday" &&
+      (type !== previousType || JSON.stringify(previousActive) !== JSON.stringify(nextActive))
+    ) {
+      dependencies.runtime.setSeriesType(type, nextActive);
+    }
+    if (dependencies.seriesTypePersistenceEnabled) savePreferences();
+    publish();
+  };
   let active = true;
   let runtimeDestroyed = false;
   let retryTarget: "capabilities" | "initial-data" | "render" | undefined;
@@ -598,7 +668,10 @@ export function createChartController(
     }
     currentMaterialized = result;
     dependencies.runtime.setMaterializedSeries(result, anchorTime);
-    dependencies.runtime.setSeriesType(viewModel.seriesType);
+    dependencies.runtime.setSeriesType(
+      viewModel.seriesType,
+      activeSeriesProperties(viewModel.seriesType)
+    );
     dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
     dependencies.runtime.setIndicators(viewModel.indicators);
     dependencies.runtime.setDrawings(viewModel.drawings);
@@ -1419,11 +1492,30 @@ export function createChartController(
     },
     setSeriesType(type) {
       if (!active || state.view === "intraday" || type === viewModel.seriesType) return;
-      timeframeSeriesType = type;
-      viewModel = { ...viewModel, seriesType: type };
-      dependencies.runtime.setSeriesType(type);
-      if (dependencies.seriesTypePersistenceEnabled) savePreferences();
-      publish();
+      applySeriesConfiguration(type, viewModel.seriesProperties);
+    },
+    setSeriesProperties(properties) {
+      if (!active) return;
+      if (Array.isArray(properties)) {
+        applySeriesConfiguration(viewModel.seriesType, properties);
+        return;
+      }
+      const parsed = parseSeriesProperties([properties])[0]!;
+      const existingIndex = viewModel.seriesProperties.findIndex(
+        (candidate) => candidate.type === parsed.type
+      );
+      applySeriesConfiguration(
+        viewModel.seriesType,
+        existingIndex < 0
+          ? [...viewModel.seriesProperties, parsed]
+          : viewModel.seriesProperties.map((candidate, index) =>
+              index === existingIndex ? parsed : candidate
+            )
+      );
+    },
+    setSeriesConfiguration(type, properties) {
+      if (!active || (state.view === "intraday" && type !== "line")) return;
+      applySeriesConfiguration(type, properties);
     },
     setFavoriteTimeframe(timeframe, favorite) {
       if (!active) return false;
@@ -1509,7 +1601,10 @@ export function createChartController(
     }
   };
 
-  dependencies.runtime.setSeriesType(viewModel.seriesType);
+  dependencies.runtime.setSeriesType(
+    viewModel.seriesType,
+    activeSeriesProperties(viewModel.seriesType)
+  );
   dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
   dependencies.runtime.setIndicators(viewModel.indicators);
   dependencies.runtime.setDrawings(viewModel.drawings);

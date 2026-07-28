@@ -133,6 +133,40 @@ describe("checkpointed calculation runtime", () => {
     expect(checkpointStore.getDiagnostics().estimatedBytes).toBeLessThanOrEqual(4 * 1024 * 1024);
   });
 
+  it("fails closed when multiple valid chunks exceed the total series render budget", async () => {
+    const full: CandleSeries = {
+      symbol: selection.symbol.id,
+      timeframe: selection.timeframe,
+      adjustMode: selection.adjustMode,
+      dataVersion: "v1",
+      candles: [1, 1.4, 1.4, 1.8].map((close, index) => ({
+        time: index + 1,
+        open: close,
+        high: close,
+        low: close,
+        close,
+        volume: 1,
+        turnover: close
+      }))
+    };
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 2, 4, "older"));
+    store.mergePage("older", validatedPage(full, 0, 2));
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore: createCalculationCheckpointStore(),
+      reloadPage: async () => undefined
+    });
+
+    await expect(runtime.calculateSeries({
+      selection,
+      type: "renko",
+      options: { brickSize: 0.00001 },
+      targetTimes: new Set(full.candles.map((candle) => candle.time))
+    })).rejects.toThrow("render point limit");
+  });
+
   it("keeps same-type indicator checkpoints and outputs isolated by instance", async () => {
     const full = createSeries(80);
     const store = createPagedSeriesStore();

@@ -434,6 +434,39 @@ describe("series renderers", () => {
     }
   });
 
+  it("renders sparse synthetic points at their source candle index", () => {
+    const registry = createDefaultSeriesRendererRegistry();
+    const context = createRenderContext("renko");
+    context.state.viewport = {
+      ...context.state.viewport,
+      visibleRange: { from: 0, to: 2 }
+    };
+    context.state.priceScale = { mode: "linear", min: 0, max: 20 };
+    context.state.seriesModel = {
+      type: "renko",
+      source: context.state.series,
+      sourceIndexOffset: 100,
+      points: [{
+        time: context.state.series.candles[1]!.time,
+        open: 10,
+        high: 12,
+        low: 10,
+        close: 12,
+        sourceIndex: 101
+      }]
+    };
+
+    createSeriesLayer(registry).render(context);
+
+    const fill = (context.context as unknown as FakeCanvasContext).calls.find(
+      (call) => call.name === "fillRect"
+    );
+    expect(fill).toBeDefined();
+    expect(fill!.args[0]).toEqual(expect.any(Number));
+    expect(fill!.args[0] as number).toBeGreaterThanOrEqual(0);
+    expect(fill!.args[0] as number).toBeLessThan(context.state.layout.plotArea.width);
+  });
+
   it("uses a matching precomputed exact synthetic model", () => {
     const registry = createSeriesRendererRegistry();
     let capturedModel: SeriesRenderModel | undefined;

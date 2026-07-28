@@ -23,6 +23,8 @@ import type {
   ChartMark,
   ChartOptions,
   ChartPriceScaleMode,
+  ChartConfigurableSeriesType,
+  ChartSeriesProperties,
   ChartSeriesType,
   ChartState,
   ChartStateListener,
@@ -56,9 +58,11 @@ import {
   parseLayout,
   parseMarks,
   parsePriceScaleMode,
+  parseSeriesProperties,
   parseSeriesType,
   parseStudyDefinitions,
   parseVisibleRange,
+  resolveSeriesProperties,
   studyDefinitionKey,
   toEntityId,
   toEngineDrawings,
@@ -154,6 +158,15 @@ function validMarks(marks: unknown): marks is readonly ChartMark[] {
   }
 }
 
+function validSeriesProperties(properties: unknown): boolean {
+  try {
+    parseSeriesProperties(properties);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validSymbol(symbol: unknown): symbol is ChartSymbol {
   return (
     typeof symbol === "object" &&
@@ -190,6 +203,7 @@ function validOptions(options: ChartOptions): boolean {
     (options.locale === undefined || (["zh-CN", "en-US"] as const).includes(options.locale)) &&
     (options.executions === undefined || validExecutions(options.executions)) &&
     (options.marks === undefined || validMarks(options.marks)) &&
+    validSeriesProperties(options.seriesProperties) &&
     typeof options?.datafeed?.getCapabilities === "function" &&
     typeof options?.datafeed?.searchSymbols === "function" &&
     typeof options?.datafeed?.loadSeries === "function"
@@ -202,6 +216,7 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     status: { type: "blocked", error },
     intradayView: false,
     seriesType: defaultPreferences.seriesType,
+    seriesProperties: [],
     favoriteTimeframes: defaultPreferences.favoriteTimeframes,
     priceScaleMode: defaultPreferences.priceScaleMode,
     indicators: [],
@@ -223,6 +238,9 @@ function layoutSnapshot(viewModel: Readonly<WorkspaceViewModel>): ChartLayoutV2 
   return {
     schemaVersion: 2,
     seriesType: viewModel.seriesType,
+    ...(viewModel.seriesProperties.length === 0
+      ? {}
+      : { seriesProperties: structuredClone(viewModel.seriesProperties) }),
     priceScaleMode: viewModel.priceScaleMode,
     indicators: structuredClone(viewModel.indicators),
     drawings: fromEngineDrawings(viewModel.drawings),
@@ -493,6 +511,8 @@ export function createChart(
       getState: () => structuredClone(state),
       getVisibleRange: () => undefined,
       getSeriesType: () => layout.seriesType,
+      getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
+        resolveSeriesProperties(type, []),
       getPriceScaleMode: () => layout.priceScaleMode,
       getIndicators: () => [],
       getDrawings: () => [],
@@ -521,6 +541,7 @@ export function createChart(
       setIntradayDays: () => undefined,
       setAdjustMode: () => undefined,
       setSeriesType: () => undefined,
+      setSeriesProperties: () => undefined,
       setPriceScaleMode: () => undefined,
       setIndicators: () => undefined,
       setDrawings: () => undefined,
@@ -636,6 +657,7 @@ export function createChart(
     initialSymbol: options.initialSymbol,
     initialTimeframe: options.initialTimeframe,
     initialAdjustMode: options.initialAdjustMode,
+    initialSeriesProperties: parseSeriesProperties(options.seriesProperties),
     getCapabilities: (symbol, signal) => options.datafeed.getCapabilities(symbol, signal),
     store,
     dataCoordinator,
@@ -826,6 +848,8 @@ export function createChart(
     getState: () => controller!.getState(),
     getVisibleRange: () => controller!.getVisibleRange(),
     getSeriesType: () => controller!.getViewModel().seriesType,
+    getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
+      resolveSeriesProperties(type, controller!.getViewModel().seriesProperties),
     getPriceScaleMode: () => controller!.getViewModel().priceScaleMode,
     getIndicators: () => structuredClone(controller!.getViewModel().indicators),
     getDrawings: () => fromEngineDrawings(controller!.getViewModel().drawings),
@@ -1003,6 +1027,10 @@ export function createChart(
       }
       controller!.setSeriesType(parsed);
     },
+    setSeriesProperties: (properties: ChartSeriesProperties) => {
+      const parsed = parseSeriesProperties([properties])[0]!;
+      controller!.setSeriesProperties(parsed);
+    },
     setPriceScaleMode: (mode: ChartPriceScaleMode) =>
       controller!.setPriceScaleMode(parsePriceScaleMode(mode)),
     setIndicators: (indicators: readonly ChartIndicator[]) =>
@@ -1028,7 +1056,10 @@ export function createChart(
       }
       applyingLayout = true;
       try {
-        controller!.setSeriesType(layout.seriesType);
+        controller!.setSeriesConfiguration(
+          layout.seriesType,
+          layout.seriesProperties ?? []
+        );
         controller!.setPriceScaleMode(layout.priceScaleMode);
         controller!.setIndicators(layout.indicators);
         controller!.setDrawings(toEngineDrawings(layout.drawings));

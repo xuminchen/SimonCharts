@@ -25,6 +25,8 @@ import type {
   ChartLayoutV2,
   ChartMark,
   ChartPriceScaleMode,
+  ChartConfigurableSeriesType,
+  ChartSeriesProperties,
   ChartSeriesType,
   ChartState,
   ChartVisibleRange
@@ -58,6 +60,18 @@ const maxIdentifierLength = 256;
 const maxStudyDefinitions = 32;
 const maxStudyInputs = 16;
 const maxStudyOutputs = 16;
+const maxSeriesCountProperty = 10_000;
+const maxLineBreakCount = 500;
+const defaultSeriesProperties = Object.freeze({
+  renko: Object.freeze({ type: "renko", brickSize: 1 }),
+  lineBreak: Object.freeze({ type: "lineBreak", lineCount: 3 }),
+  kagi: Object.freeze({ type: "kagi", reversalAmount: 2 }),
+  pointAndFigure: Object.freeze({
+    type: "pointAndFigure",
+    boxSize: 1,
+    reversalBoxes: 3
+  })
+}) satisfies Readonly<Record<ChartConfigurableSeriesType, ChartSeriesProperties>>;
 
 export type StudyDefinitionCatalog = ReadonlyMap<string, Readonly<ChartCustomStudyDefinition>>;
 const emptyStudyDefinitions: StudyDefinitionCatalog = new Map();
@@ -532,6 +546,83 @@ export function parseSeriesType(value: unknown): ChartSeriesType {
   return value as ChartSeriesType;
 }
 
+function positiveSeriesNumber(value: unknown, label: string): number {
+  const parsed = finite(value, label);
+  if (parsed <= 0) throw new RangeError(`${label} must be positive`);
+  return parsed;
+}
+
+function seriesCount(value: unknown, label: string, maximum = maxSeriesCountProperty): number {
+  const parsed = finite(value, label);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed <= 0 ||
+    parsed > maximum
+  ) {
+    throw new RangeError(`${label} must be an integer from 1 to ${maximum}`);
+  }
+  return parsed;
+}
+
+function parseSeriesProperty(value: unknown, index: number): ChartSeriesProperties {
+  const label = `Chart series properties ${index}`;
+  const property = record(value, label);
+  if (property.type === "renko") {
+    onlyKeys(property, ["type", "brickSize"], label);
+    return { type: "renko", brickSize: positiveSeriesNumber(property.brickSize, `${label} brickSize`) };
+  }
+  if (property.type === "lineBreak") {
+    onlyKeys(property, ["type", "lineCount"], label);
+    return {
+      type: "lineBreak",
+      lineCount: seriesCount(property.lineCount, `${label} lineCount`, maxLineBreakCount)
+    };
+  }
+  if (property.type === "kagi") {
+    onlyKeys(property, ["type", "reversalAmount"], label);
+    return {
+      type: "kagi",
+      reversalAmount: positiveSeriesNumber(property.reversalAmount, `${label} reversalAmount`)
+    };
+  }
+  if (property.type === "pointAndFigure") {
+    onlyKeys(property, ["type", "boxSize", "reversalBoxes"], label);
+    const boxSize = positiveSeriesNumber(property.boxSize, `${label} boxSize`);
+    const reversalBoxes = seriesCount(property.reversalBoxes, `${label} reversalBoxes`);
+    if (!Number.isFinite(boxSize * reversalBoxes)) {
+      throw new RangeError(`${label} reversal distance must be finite`);
+    }
+    return { type: "pointAndFigure", boxSize, reversalBoxes };
+  }
+  throw new TypeError(`${label} type is unsupported`);
+}
+
+export function parseSeriesProperties(value: unknown): ChartSeriesProperties[] {
+  if (value === undefined) return [];
+  const candidates = denseDataArray(value, "Chart series properties", 4);
+  const seen = new Set<ChartConfigurableSeriesType>();
+  return candidates.map((candidate, index) => {
+    const parsed = parseSeriesProperty(candidate, index);
+    if (seen.has(parsed.type)) {
+      throw new TypeError(`Chart series properties contains duplicate ${parsed.type}`);
+    }
+    seen.add(parsed.type);
+    return parsed;
+  });
+}
+
+export function resolveSeriesProperties<T extends ChartConfigurableSeriesType>(
+  type: T,
+  properties: unknown
+): Extract<ChartSeriesProperties, { readonly type: T }> {
+  if (!Object.hasOwn(defaultSeriesProperties, type)) {
+    throw new TypeError("Chart series properties type is unsupported");
+  }
+  const resolved = parseSeriesProperties(properties).find((property) => property.type === type)
+    ?? defaultSeriesProperties[type];
+  return structuredClone(resolved) as Extract<ChartSeriesProperties, { readonly type: T }>;
+}
+
 export function parsePriceScaleMode(value: unknown): ChartPriceScaleMode {
   if (!priceScaleModes.includes(value as ChartPriceScaleMode)) {
     throw new TypeError("Chart price scale mode is unsupported");
@@ -945,7 +1036,15 @@ export function parseLayout(
   const layout = record(value, "Chart layout");
   onlyKeys(
     layout,
-    ["schemaVersion", "seriesType", "priceScaleMode", "indicators", "drawings", "gridVisible"],
+    [
+      "schemaVersion",
+      "seriesType",
+      "seriesProperties",
+      "priceScaleMode",
+      "indicators",
+      "drawings",
+      "gridVisible"
+    ],
     "Chart layout"
   );
   if (layout.schemaVersion !== 2) throw new TypeError("Chart layout schema version is unsupported");
@@ -953,6 +1052,9 @@ export function parseLayout(
   return {
     schemaVersion: 2,
     seriesType: parseSeriesType(layout.seriesType),
+    ...(layout.seriesProperties === undefined
+      ? {}
+      : { seriesProperties: parseSeriesProperties(layout.seriesProperties) }),
     priceScaleMode: parsePriceScaleMode(layout.priceScaleMode),
     indicators: parseIndicators(layout.indicators, studyDefinitions),
     drawings: parseDrawings(layout.drawings),

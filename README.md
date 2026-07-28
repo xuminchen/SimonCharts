@@ -42,13 +42,15 @@ The engine does not import TradingReviewSystem, host APIs, stores, schemas, rout
 
 ## Charts RC
 
-`@simoncharts/charts@1.0.0-rc.34` exposes `createChart(container, options)`. Its default embedded mode creates only timeframe, adjustment, and indicator controls and does not touch drawing persistence; hosts explicitly pass `advancedChartFeatures` for the professional chart-first shell and the full 17-series, 16-indicator, 63-drawing workbench. Both modes negotiate the host's exact timeframe and adjustment matrix through `ChartDatafeed.getCapabilities`.
+`@simoncharts/charts@1.0.0-rc.35` exposes `createChart(container, options)`. Its default embedded mode creates only timeframe, adjustment, and indicator controls and does not touch drawing persistence; hosts explicitly pass `advancedChartFeatures` for the professional chart-first shell and the full 17-series, 16-indicator, 63-drawing workbench. Both modes negotiate the host's exact timeframe and adjustment matrix through `ChartDatafeed.getCapabilities`.
 
 The production SDK neither provides nor constructs market data. It renders only candles returned by the host datafeed; when the host has no real rows, the result stays empty. Deterministic fixtures live only in tests, scripts, and the private playground harness and are excluded from the production package and runtime path.
 
 rc.33 adds optional paired `ChartExecution.firstTime` and `lastTime` fields for host-confirmed aggregated execution ranges. The existing native execution tooltip displays the original single `time`, one non-repeated endpoint, or a compact localized range; hover and mouse/touch pinned details share the same safe-text rows. The range never changes marker placement, grouping, coordinates, shape, persistence, or host ownership.
 
 rc.34 adds chart-scoped, versioned Custom Study definitions with bounded numeric inputs and fixed line, histogram, band, or marker outputs. Synchronous causal calculations reuse the existing checkpoint, pane, crosshair, Study/Entity, Layout, failure/retry, and readiness paths; no new dependency, global mutable registry, second renderer, or browser code persistence was added. Definitions and callbacks remain host-owned, while layouts preserve only exact-version custom instances and their normalized inputs.
+
+rc.35 adds strict programmable build properties for Renko, Line Break, Kagi, and Point & Figure. Non-default values round-trip through the existing Layout V2 and browser preference paths, active changes reuse the checkpointed generation lifecycle, stale calculations are aborted, and intraday remains the fixed real-data close line.
 
 rc.32 adds `getStudyApi()` for live, validated study input and visibility control without replacing the existing Entity engine. It also adds `dataReady()`, a Promise bound to the exact current symbol, timeframe, adjustment, view, and intraday-day selection and its first scheduled paint; it resolves `false` instead of leaking readiness across replacement, terminal materialization failure, blocked data, or destruction. Calculation failures are now distinct from Canvas failures, and retries do not report ready until every failed indicator or stateful-series calculation has been recomputed and painted.
 
@@ -60,7 +62,7 @@ Advanced mode exposes the complete period menu and at most four persistent starr
 
 The optional `executions` feature renders only host-supplied real executions as read-only B/S/T marks. Buys use the rising color with an upward arrow below price; sells use the falling color with a downward arrow above price. The SDK groups matching same-candle marks, preserves every execution in hover or pinned details, and never constructs trades or infers T classifications.
 
-The accepted immutable package artifact is `dist/packages/simoncharts-charts-1.0.0-rc.34.tgz` (8 files), SHA-256 `1f6fe992c8f147eae17612e4123061b05b6b2bb2b932383d5202ebc805875665`, SHA-512 `7b9c4dae591076c62a6b247af3849ff2f3e83de8e53dc6bf2bc4549c1eab6b0a6f96014b80f1db08933828a6bd829adc1dd6546cba42a86aeda4fed8e000a1af`. Its package-only commercial gate passed `69 files / 1,176 tests`, combined Chrome `121/121`, Charts `14 files / 178 tests`, Charts Chrome/Edge `70/70` per browser, and exact packed Chrome/Edge consumer execution; authenticated reference-host acceptance remains the separate final commercial gate described below.
+The accepted immutable package artifact is `dist/packages/simoncharts-charts-1.0.0-rc.35.tgz` (8 files), SHA-256 `7ad247707677deb2a3c55bcc7a331c95af21d6c0946fd5f0d89203c8cc3b70a1`, SHA-512 `f947301b1bb2d37fc31be0cacc42c4663f08a6778c7283d111626223c3645448f749745819b9237f427105e3f7bcf7aad029eea0c21c06fca52538f5a994c796`. Its package-only commercial gate passed `69 files / 1,191 tests`, combined Chrome `124/124`, Charts `14 files / 190 tests`, Charts Chrome/Edge `73/73` per browser, and exact packed Chrome/Edge consumer execution; authenticated reference-host acceptance remains the separate final commercial gate described below.
 
 ## Validation
 

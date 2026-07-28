@@ -87,6 +87,8 @@ interface TransformDelta {
   replaceTailCount: number;
 }
 
+const maxTransformPointsPerChunk = 50_000;
+
 export function transformSeriesChunk(
   type: StatefulSeriesTransformType,
   chunk: CandleSeries,
@@ -217,6 +219,9 @@ function transformRenkoChunk(
     let move = candle.close - state.lastBrickClose;
 
     while (Math.abs(move) >= brickSize) {
+      if (points.length >= maxTransformPointsPerChunk) {
+        throw new RangeError("Series transform output limit exceeded");
+      }
       const direction = Math.sign(move);
       const open = state.lastBrickClose;
       const close = state.lastBrickClose + direction * brickSize;
@@ -572,7 +577,11 @@ function appendBounded<T>(values: T[], value: T, limit: number): void {
 }
 
 function wholeBoxes(move: number, boxSize: number): number {
-  return Math.floor(move / boxSize);
+  const count = Math.floor(move / boxSize);
+  if (!Number.isSafeInteger(count)) {
+    throw new RangeError("Point & Figure box count is out of range");
+  }
+  return count;
 }
 
 function positiveNumber(value: unknown, name: string): number {
