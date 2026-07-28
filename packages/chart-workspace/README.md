@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.32.tgz
+npm install ./simoncharts-charts-1.0.0-rc.33.tgz
 ```
 
 ## Embed the default chart
@@ -221,7 +221,9 @@ import { advancedChartFeatures, type ChartExecution } from "@simoncharts/charts"
 
 const executions: readonly ChartExecution[] = [{
   id: brokerExecutionId,
-  time: executionEpochMilliseconds,
+  time: lastExecutionEpochMilliseconds,
+  firstTime: firstExecutionEpochMilliseconds,
+  lastTime: lastExecutionEpochMilliseconds,
   side: "buy",
   price: executionPrice,
   quantity: executionQuantity,
@@ -241,7 +243,9 @@ chart.setExecutions(nextSymbolExecutions);
 chart.setExecutionsVisible(false);
 ```
 
-Buys use the host theme's rising color and an upward arrow below price; sells use the falling color and a downward arrow above price. Minute views map by the real execution time and place a grouped marker at its latest real execution price. Daily, weekly, and monthly views attach to the containing real candle while details retain the unadjusted execution price. Same-candle executions of the same side and label are grouped without dropping their individual details; different labels on the same side are stacked. Changing the symbol clears the previous symbol's executions immediately, so the host must provide the new symbol's rows. Hover shows details on desktop, click or touch pins them, and clicking chart blank space closes them.
+`firstTime` and `lastTime` are optional, but must be supplied together in the same epoch-millisecond basis as `time`, with `firstTime <= time <= lastTime`. They describe the trusted first and last trade represented by one aggregated execution and never move its marker away from `time`. Omitted fields retain the legacy single-time detail; equal endpoints display once; distinct endpoints display one compact localized range.
+
+Buys use the host theme's rising color and an upward arrow below price; sells use the falling color and a downward arrow above price. Minute views map by the real execution time and place a grouped marker at its latest real execution price. Daily, weekly, and monthly views attach to the containing real candle while details retain the unadjusted execution price. Same-candle executions of the same side and label are grouped without dropping their individual details or recomputing their time ranges; different labels on the same side are stacked. Changing the symbol clears the previous symbol's executions immediately, so the host must provide the new symbol's rows. Hover shows details on desktop, click or touch pins the same rows, and clicking chart blank space closes them.
 
 Older pages are requested as the viewport demands them. Accepted history is prepended without moving the candle that was under the user's cursor, while the in-memory materialization remains bounded. `data-loaded` is emitted only after an accepted initial or history page has been materialized for the current symbol, timeframe, adjustment, cutoff, and `dataVersion`.
 
@@ -330,4 +334,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.32 adds a live public study handle and selection-safe `dataReady()` lifecycle promise while preserving rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.33 adds optional validated first/last times to each host-owned execution and displays them through the existing native hover and pinned tooltip without changing marker placement, grouping, persistence, or interaction. It preserves rc.32's live study handle and selection-safe `dataReady()`, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

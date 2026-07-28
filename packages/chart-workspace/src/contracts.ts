@@ -44,6 +44,8 @@ export type ChartExecutionSide = "buy" | "sell";
 export interface ChartExecution {
   readonly id: string;
   readonly time: number;
+  readonly firstTime?: number;
+  readonly lastTime?: number;
   readonly side: ChartExecutionSide;
   readonly price: number;
   readonly quantity: number;

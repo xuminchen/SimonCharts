@@ -142,6 +142,8 @@ describe("charts public contract", () => {
     expectTypeOf<ChartExecution>().toEqualTypeOf<{
       readonly id: string;
       readonly time: number;
+      readonly firstTime?: number;
+      readonly lastTime?: number;
       readonly side: "buy" | "sell";
       readonly price: number;
       readonly quantity: number;

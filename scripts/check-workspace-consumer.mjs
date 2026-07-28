@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.32";
+const expectedVersion = "1.0.0-rc.33";
 let tempRoot;
 
 try {
@@ -171,6 +171,8 @@ if (!container) throw new Error("consumer mount missing");
 const executions: readonly ChartExecution[] = [{
   id: "consumer-buy",
   time: 1_784_192_400_000,
+  firstTime: 1_784_192_340_000,
+  lastTime: 1_784_192_400_000,
   side: "buy",
   price: 10,
   quantity: 100,

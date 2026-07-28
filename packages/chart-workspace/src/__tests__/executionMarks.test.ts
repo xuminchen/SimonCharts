@@ -120,6 +120,56 @@ describe("execution marks", () => {
     expect(executionsFromMark(output.marks[0]!).map((row) => row.id)).toEqual(["10", "2"]);
   });
 
+  it("formats legacy, single, and per-execution time ranges without changing marker grouping", () => {
+    const candleTime = at("2026-07-17T01:30:00Z");
+    const ranged = [
+      execution({
+        id: "legacy",
+        time: at("2026-07-17T01:33:10Z"),
+        side: "buy",
+        label: "B"
+      }),
+      execution({
+        id: "single",
+        time: at("2026-07-17T01:32:00Z"),
+        firstTime: at("2026-07-17T01:32:00Z"),
+        lastTime: at("2026-07-17T01:32:00Z"),
+        side: "buy",
+        label: "B"
+      }),
+      execution({
+        id: "range",
+        time: at("2026-07-17T01:33:30Z"),
+        firstTime: at("2026-07-17T01:31:00Z"),
+        lastTime: at("2026-07-17T01:33:30Z"),
+        side: "buy",
+        label: "B"
+      })
+    ];
+    const candles = [candle(candleTime)];
+    const output = createExecutionMarkerOutput(ranged, candles, "5m")!;
+    const control = createExecutionMarkerOutput(
+      ranged.map(({ firstTime: _firstTime, lastTime: _lastTime, ...row }) => row),
+      candles,
+      "5m"
+    )!;
+
+    expect(output.marks).toHaveLength(1);
+    expect(output.marks.map(({ metadata: _metadata, ...mark }) => mark))
+      .toEqual(control.marks.map(({ metadata: _metadata, ...mark }) => mark));
+    expect(output.marks[0]!.time).toBe(candleTime);
+
+    const timeRows = executionTooltipRows(output.marks[0]!, "zh-CN")
+      .filter((row) => row.label.includes("时间"))
+      .map((row) => row.value);
+    expect(timeRows).toHaveLength(3);
+    expect(timeRows.some((value) => value.includes("09:33:10"))).toBe(true);
+    expect(timeRows.find((value) => value.includes("09:32:00"))?.match(/09:32:00/g)).toHaveLength(1);
+    const range = timeRows.find((value) => value.includes("09:31:00"));
+    expect(range).toContain("09:31:00");
+    expect(range).toContain("09:33:30");
+  });
+
   it("anchors adjusted daily markers to candle low/high while keeping real prices in metadata", () => {
     const candles = [candle(at("2026-07-17T01:30:00Z"), 8.5, 11.5)];
     const output = createExecutionMarkerOutput([

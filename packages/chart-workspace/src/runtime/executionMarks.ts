@@ -4,6 +4,7 @@ import type {
   VisualTooltipRow
 } from "@simoncharts/chart-engine";
 import type { Candle, ChartExecution, ChartLocale, Timeframe } from "../contracts";
+import { formatShanghaiExecutionTime } from "./shanghaiTimeFormatter";
 
 export const executionVisualOutputId = "__executions";
 
@@ -153,20 +154,18 @@ export function executionTooltipRows(mark: ChartMark, locale: ChartLocale): Visu
   const executions = executionsFromMark(mark);
   const zh = locale === "zh-CN";
   const number = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 4 });
-  const time = (value: number) => new Intl.DateTimeFormat(locale, {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23"
-  }).format(new Date(value));
   return executions.flatMap((execution, index) => {
     const prefix = executions.length > 1 ? `#${index + 1} ` : "";
+    const firstTime = execution.firstTime;
+    const lastTime = execution.lastTime;
+    const hasTimeRange = firstTime !== undefined && lastTime !== undefined;
+    const formattedTime = formatShanghaiExecutionTime(
+      hasTimeRange ? firstTime : execution.time,
+      hasTimeRange ? lastTime : undefined,
+      locale
+    );
     const rows: VisualTooltipRow[] = [
-      { label: `${prefix}${zh ? "时间" : "Time"}`, value: time(execution.time) },
+      { label: `${prefix}${zh ? "时间" : "Time"}`, value: formattedTime },
       { label: zh ? "价格" : "Price", value: number(execution.price) },
       { label: zh ? "数量" : "Quantity", value: number(execution.quantity) }
     ];

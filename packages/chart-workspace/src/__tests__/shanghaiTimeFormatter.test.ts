@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { formatShanghaiTime } from "../runtime/shanghaiTimeFormatter";
+import {
+  formatShanghaiExecutionTime,
+  formatShanghaiTime
+} from "../runtime/shanghaiTimeFormatter";
 
 describe("Shanghai time formatter", () => {
   it("formats intraday timestamps with Shanghai date and time", () => {
@@ -14,5 +17,9 @@ describe("Shanghai time formatter", () => {
     for (const timeframe of ["1d", "1w", "1mo"] as const) {
       expect(formatShanghaiTime(epoch, timeframe)).toBe("2026-06-06");
     }
+  });
+
+  it("keeps a visible range when distinct epochs fall in the same displayed second", () => {
+    expect(formatShanghaiExecutionTime(49, 52, "zh-CN")).toContain("–");
   });
 });

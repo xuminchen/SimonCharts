@@ -42,9 +42,11 @@ The engine does not import TradingReviewSystem, host APIs, stores, schemas, rout
 
 ## Charts RC
 
-`@simoncharts/charts@1.0.0-rc.32` exposes `createChart(container, options)`. Its default embedded mode creates only timeframe, adjustment, and indicator controls and does not touch drawing persistence; hosts explicitly pass `advancedChartFeatures` for the professional chart-first shell and the full 17-series, 16-indicator, 63-drawing workbench. Both modes negotiate the host's exact timeframe and adjustment matrix through `ChartDatafeed.getCapabilities`.
+`@simoncharts/charts@1.0.0-rc.33` exposes `createChart(container, options)`. Its default embedded mode creates only timeframe, adjustment, and indicator controls and does not touch drawing persistence; hosts explicitly pass `advancedChartFeatures` for the professional chart-first shell and the full 17-series, 16-indicator, 63-drawing workbench. Both modes negotiate the host's exact timeframe and adjustment matrix through `ChartDatafeed.getCapabilities`.
 
 The production SDK neither provides nor constructs market data. It renders only candles returned by the host datafeed; when the host has no real rows, the result stays empty. Deterministic fixtures live only in tests, scripts, and the private playground harness and are excluded from the production package and runtime path.
+
+rc.33 adds optional paired `ChartExecution.firstTime` and `lastTime` fields for host-confirmed aggregated execution ranges. The existing native execution tooltip displays the original single `time`, one non-repeated endpoint, or a compact localized range; hover and mouse/touch pinned details share the same safe-text rows. The range never changes marker placement, grouping, coordinates, shape, persistence, or host ownership.
 
 rc.32 adds `getStudyApi()` for live, validated study input and visibility control without replacing the existing Entity engine. It also adds `dataReady()`, a Promise bound to the exact current symbol, timeframe, adjustment, view, and intraday-day selection and its first scheduled paint; it resolves `false` instead of leaking readiness across replacement, terminal materialization failure, blocked data, or destruction. Calculation failures are now distinct from Canvas failures, and retries do not report ready until every failed indicator or stateful-series calculation has been recomputed and painted.
 
@@ -56,7 +58,7 @@ Advanced mode exposes the complete period menu and at most four persistent starr
 
 The optional `executions` feature renders only host-supplied real executions as read-only B/S/T marks. Buys use the rising color with an upward arrow below price; sells use the falling color with a downward arrow above price. The SDK groups matching same-candle marks, preserves every execution in hover or pinned details, and never constructs trades or infers T classifications.
 
-The accepted immutable package artifact is `dist/packages/simoncharts-charts-1.0.0-rc.32.tgz` (8 files), SHA-256 `21d7b1565d925fca87e61d3c1ae38bef0bda3391093e14fd38ea749df965e2d7`, SHA-512 `e7a1b873391f68f989d3149c33a53ca7b4a355fa5ab6e77cfd3d4de2357ebbc5c8b35ae9a83c67394c37a71748eb21f113ff5f91d233c2dfc69be8316b755e24`. Its package-only commercial gate passed `69 files / 1,159 tests`, combined Chrome `116/116`, Charts `14 files / 161 tests`, Charts Chrome/Edge `65/65` per browser, and exact packed Chrome/Edge consumer execution; authenticated reference-host acceptance remains the separate final commercial gate described below.
+The accepted immutable package artifact is `dist/packages/simoncharts-charts-1.0.0-rc.33.tgz` (8 files), SHA-256 `f622e5fd1e8554ec0c47579012d17651ffd52b568c1003865987f59721e8efa0`, SHA-512 `2e88fe783c8f6e86e2e01d0b0cdaf75d855ce44743782ebcf631813b1cf71808d758d2c9f24dea93425daa75c3c6637cf1a5574a4928caed6b6edcf24bd044b7`. Its package-only commercial gate passed `69 files / 1,161 tests`, combined Chrome `118/118`, Charts `14 files / 163 tests`, Charts Chrome/Edge `67/67` per browser, and exact packed Chrome/Edge consumer execution; authenticated reference-host acceptance remains the separate final commercial gate described below.
 
 ## Validation
 

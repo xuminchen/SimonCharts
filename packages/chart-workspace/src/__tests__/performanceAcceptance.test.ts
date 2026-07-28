@@ -129,6 +129,8 @@ describe("workspace engine runtime", () => {
     const rows = [{
       id: "execution",
       time: 51,
+      firstTime: 49,
+      lastTime: 1_051,
       side: "buy" as const,
       price: 150,
       quantity: 300,
@@ -139,6 +141,8 @@ describe("workspace engine runtime", () => {
     }];
     runtime.setExecutions(rows);
     rows[0]!.label = "changed";
+    rows[0]!.firstTime = 50;
+    rows[0]!.lastTime = 52;
     runtime.setMaterializedSeries(source);
     flushFrames();
     expect(onRenderError).not.toHaveBeenCalled();
@@ -151,10 +155,14 @@ describe("workspace engine runtime", () => {
     const y = priceToY(150, scale, layout.plotArea.y, layout.plotArea.height) + 9;
     overlayCanvas.dispatch("pointermove", { clientX: x, clientY: y, pointerType: "mouse" });
     flushFrames();
-    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(expect.objectContaining({
+    const hoverTooltip = onExecutionTooltipChanged.mock.lastCall?.[0];
+    expect(hoverTooltip).toEqual(expect.objectContaining({
       pinned: false,
+      title: "T买",
       rows: expect.arrayContaining([{ label: "金额", value: "45,000" }])
     }));
+    const hoverTime = hoverTooltip?.rows.find((row) => row.label === "时间")?.value;
+    expect(hoverTime).toContain("08:00:01");
     expect(overlayCanvas.texts.some((text) => text.includes("金额:"))).toBe(false);
 
     overlayCanvas.dispatch("pointerleave", {});
@@ -163,15 +171,41 @@ describe("workspace engine runtime", () => {
 
     overlayCanvas.dispatch("pointerdown", { pointerId: 1, clientX: x, clientY: y });
     flushFrames();
-    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(expect.objectContaining({ pinned: true }));
+    const pinnedTooltip = onExecutionTooltipChanged.mock.lastCall?.[0];
+    expect(pinnedTooltip).toEqual({ ...hoverTooltip, pinned: true });
     overlayCanvas.dispatch("pointerdown", { pointerId: 2, clientX: 700, clientY: 100 });
     flushFrames();
     expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
 
+    rows[0]!.label = "T买";
+    rows[0]!.firstTime = 49;
+    rows[0]!.lastTime = 1_051;
+    runtime.setExecutions(rows);
+    flushFrames();
+    overlayCanvas.dispatch("pointerdown", { pointerId: 3, clientX: x, clientY: y, pointerType: "touch" });
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith({ ...hoverTooltip, pinned: true });
+    runtime.setExecutions(rows);
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 4, clientX: x, clientY: y, pointerType: "touch" });
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(expect.objectContaining({ pinned: true }));
+    runtime.setExecutions([]);
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
+
+    runtime.setExecutions(rows);
+    flushFrames();
+    overlayCanvas.dispatch("pointerdown", { pointerId: 5, clientX: x, clientY: y });
+    flushFrames();
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(expect.objectContaining({ pinned: true }));
     staticCanvas.texts.splice(0);
     runtime.setExecutionsVisible(false);
     flushFrames();
     expect(staticCanvas.texts).not.toContain("T买");
+    expect(onExecutionTooltipChanged).toHaveBeenLastCalledWith(undefined);
     runtime.destroy();
   });
 

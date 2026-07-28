@@ -1,5 +1,14 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.33 - 2026-07-28
+
+- Added optional paired `ChartExecution.firstTime` and `ChartExecution.lastTime` fields for host-confirmed aggregated execution ranges without changing the existing marker anchor `time`.
+- Reused the existing execution validation boundary for initial options and `setExecutions()`: both endpoints must be supplied together, must be finite valid times, and must satisfy `firstTime <= time <= lastTime`; invalid batches remain atomic.
+- Reused the native execution tooltip rows for hover and mouse/touch pinned details. Legacy data shows `time`, equal endpoints show one time, and distinct endpoints show a compact localized range; each grouped execution retains its own range.
+- Preserved marker grouping, coordinates, price, shape, color, hit testing, lifecycle clearing, defensive cloning, layout exclusion, and host-owned execution semantics.
+- Added the same-second formatter fallback so distinct millisecond endpoints cannot collapse to one displayed value after locale formatting.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,161 tests`, combined Chrome `118/118`, Charts `14 files / 163 tests`, Charts Chrome/Edge `67/67` per browser, and exact packed Chrome/Edge consumer execution; SHA-256 is `f622e5fd1e8554ec0c47579012d17651ffd52b568c1003865987f59721e8efa0`, SHA-512 is `2e88fe783c8f6e86e2e01d0b0cdaf75d855ce44743782ebcf631813b1cf71808d758d2c9f24dea93425daa75c3c6637cf1a5574a4928caed6b6edcf24bd044b7`.
+
 ## @simoncharts/charts 1.0.0-rc.32 - 2026-07-27
 
 - Added `getStudyApi()` with a live `ChartStudyApi` handle for defensive input reads, atomic validated partial input updates, visibility control, and removal through the existing study Entity engine.

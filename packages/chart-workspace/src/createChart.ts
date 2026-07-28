@@ -102,13 +102,30 @@ function resolvedLocale(locale: unknown): ChartLocale {
   return locale === "en-US" || locale === "zh-CN" ? locale : "zh-CN";
 }
 
+function validExecutionTime(value: unknown): value is number {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    Number.isFinite(new Date(value).getTime());
+}
+
 function validExecutions(executions: unknown): executions is readonly ChartExecution[] {
   return Array.isArray(executions) && executions.every((execution) => (
     typeof execution === "object" &&
     execution !== null &&
     typeof execution.id === "string" &&
     execution.id.trim().length > 0 &&
-    typeof execution.time === "number" && Number.isFinite(execution.time) && execution.time > 0 &&
+    validExecutionTime(execution.time) &&
+    (
+      (execution.firstTime === undefined && execution.lastTime === undefined) ||
+      (
+        validExecutionTime(execution.firstTime) &&
+        validExecutionTime(execution.lastTime) &&
+        execution.firstTime <= execution.lastTime &&
+        execution.firstTime <= execution.time &&
+        execution.time <= execution.lastTime
+      )
+    ) &&
     (execution.side === "buy" || execution.side === "sell") &&
     typeof execution.price === "number" && Number.isFinite(execution.price) && execution.price > 0 &&
     typeof execution.quantity === "number" && Number.isFinite(execution.quantity) && execution.quantity > 0 &&

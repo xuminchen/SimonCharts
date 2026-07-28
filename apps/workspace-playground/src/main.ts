@@ -107,6 +107,9 @@ const params = new URLSearchParams(location.search);
 const controls = readFixtureControls(location.search);
 const dataSource = createFixtureDataSource(controls, counters, requests);
 const executionOverflow = params.get("executionOverflow") === "1";
+const executionTimeRange = params.get("executionTimeRange") === "1";
+const invalidExecutionRange = params.get("invalidExecutionRange") === "1";
+const executionAnchorTime = Date.UTC(2026, 5, 5, 1, 33);
 let chart: ChartInstance | undefined;
 let retriedRenderError = false;
 
@@ -123,7 +126,34 @@ if (params.get("nonElement") === "1") {
     persistenceScopeId: "fixture-user",
     dataContextId: invalid === "context" ? "" : "fixture-current",
     initialSymbol: invalid === "symbol" ? { ...stock, id: "" } : stock,
-    ...(executionOverflow
+    ...(executionTimeRange
+      ? {
+          initialTimeframe: "1m",
+          executions: [{
+            id: "broker-split-summary",
+            firstTime: Date.UTC(2026, 5, 5, 1, 31),
+            lastTime: executionAnchorTime,
+            time: executionAnchorTime,
+            side: "buy" as const,
+            price: 100,
+            quantity: 300,
+            label: "B"
+          }]
+        }
+      : invalidExecutionRange
+        ? {
+            initialTimeframe: "1m",
+            executions: [{
+              id: "invalid-broker-split-summary",
+              firstTime: Date.UTC(2026, 5, 5, 1, 31),
+              time: executionAnchorTime,
+              side: "buy" as const,
+              price: 100,
+              quantity: 300,
+              label: "B"
+            }]
+          }
+        : executionOverflow
       ? {
           initialTimeframe: "1m",
           executions: Array.from({ length: 30 }, (_, index) => ({
@@ -144,7 +174,11 @@ if (params.get("nonElement") === "1") {
       ? { features: ["not-a-feature"] }
       : params.get("minimal") === "1"
         ? {}
-        : { features: executionOverflow ? [...advancedChartFeatures, "executions"] : advancedChartFeatures }),
+        : {
+            features: executionOverflow || executionTimeRange || invalidExecutionRange
+              ? [...advancedChartFeatures, "executions"]
+              : advancedChartFeatures
+          }),
     theme: (params.get("theme") ?? "dark") as ChartTheme,
     locale: (params.get("locale") ?? "zh-CN") as ChartLocale,
     onError: (error) => {
