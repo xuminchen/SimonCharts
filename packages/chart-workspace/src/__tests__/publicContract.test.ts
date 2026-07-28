@@ -36,6 +36,7 @@ import type {
   ChartStudyApi,
   ChartStudyDefinitionId,
   ChartTheme,
+  ChartThemeOverrides,
   ChartView,
   IntradayDayCount,
   SeriesPage,
@@ -51,6 +52,7 @@ import {
   parseLayout,
   parseSeriesProperties,
   resolveSeriesProperties,
+  parseThemeOverrides,
   toEngineDrawings,
   toEntityId
 } from "../programmableApi";
@@ -113,6 +115,84 @@ describe("charts public contract", () => {
       .toEqualTypeOf<readonly ChartSeriesProperties[] | undefined>();
     expectTypeOf<ChartInstance["setSeriesProperties"]>()
       .toEqualTypeOf<(properties: ChartSeriesProperties) => void>();
+  });
+
+  it("exposes strict host-owned theme overrides", () => {
+    expectTypeOf<ChartThemeOverrides>().toEqualTypeOf<{
+      readonly backgroundColor?: string;
+      readonly surfaceColor?: string;
+      readonly surfaceHoverColor?: string;
+      readonly borderColor?: string;
+      readonly gridColor?: string;
+      readonly textColor?: string;
+      readonly mutedTextColor?: string;
+      readonly accentColor?: string;
+      readonly upColor?: string;
+      readonly downColor?: string;
+      readonly intradayAverageColor?: string;
+    }>();
+    expectTypeOf<ChartOptions["themeOverrides"]>()
+      .toEqualTypeOf<ChartThemeOverrides | undefined>();
+    expectTypeOf<ChartInstance["getTheme"]>()
+      .toEqualTypeOf<() => ChartTheme>();
+    expectTypeOf<ChartInstance["setTheme"]>()
+      .toEqualTypeOf<(theme: ChartTheme) => void>();
+    expectTypeOf<ChartInstance["getThemeOverrides"]>()
+      .toEqualTypeOf<() => Readonly<ChartThemeOverrides>>();
+    expectTypeOf<ChartInstance["setThemeOverrides"]>()
+      .toEqualTypeOf<(overrides: ChartThemeOverrides) => void>();
+  });
+
+  it("parses theme overrides as one strict defensive replacement", () => {
+    const source = {
+      backgroundColor: "#123456",
+      surfaceColor: "rgb(1 2 3)",
+      surfaceHoverColor: "hsl(120 50% 50%)",
+      borderColor: "#abcdef",
+      gridColor: "rgba(4, 5, 6, 0.2)",
+      textColor: "white",
+      mutedTextColor: "#8899aa",
+      accentColor: "#5566ff",
+      upColor: "#ff3355",
+      downColor: "#00aa88",
+      intradayAverageColor: "#d6a700"
+    } satisfies ChartThemeOverrides;
+    const parsed = parseThemeOverrides(source);
+    expect(parsed).toEqual(source);
+    expect(parsed).not.toBe(source);
+    source.backgroundColor = "#000000";
+    expect(parsed.backgroundColor).toBe("#123456");
+
+    for (const invalid of [
+      [],
+      { backgroundColor: "" },
+      { backgroundColor: 1 },
+      { backgroundColor: "var(--host-color)" },
+      { backgroundColor: "currentColor" },
+      { backgroundColor: "definitely-not-a-color" },
+      { backgroundColor: "url(theme.png)" },
+      { backgroundColor: "rgb(///)" },
+      { backgroundColor: "hsl(1)" },
+      { unsupportedColor: "#ffffff" }
+    ]) {
+      expect(() => parseThemeOverrides(invalid)).toThrow();
+    }
+    const accessor = {};
+    Object.defineProperty(accessor, "backgroundColor", {
+      enumerable: true,
+      get: () => "#ffffff"
+    });
+    expect(() => parseThemeOverrides(accessor)).toThrow("only data properties");
+
+    Object.defineProperty(Object.prototype, "backgroundColor", {
+      configurable: true,
+      value: "#ffffff"
+    });
+    try {
+      expect(parseThemeOverrides({})).toEqual({});
+    } finally {
+      delete (Object.prototype as { backgroundColor?: string }).backgroundColor;
+    }
   });
 
   it("parses series properties atomically and resolves rc.34 defaults", () => {
@@ -255,6 +335,7 @@ describe("charts public contract", () => {
     expectTypeOf<ChartOptions>().toHaveProperty("datafeed");
     expectTypeOf<ChartOptions>().toHaveProperty("features");
     expectTypeOf<ChartOptions>().toHaveProperty("theme");
+    expectTypeOf<ChartOptions>().toHaveProperty("themeOverrides");
     expectTypeOf<ChartOptions>().toHaveProperty("locale");
     expectTypeOf<ChartOptions>().toHaveProperty("executions");
     expectTypeOf<ChartOptions>().toHaveProperty("marks");

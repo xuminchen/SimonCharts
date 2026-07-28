@@ -1760,6 +1760,47 @@ describe("workspace engine runtime", () => {
     expect(theme.lineDashes.grid).toEqual([1, 3]);
   });
 
+  it("repaints every visual layer after a theme change without recalculating data", () => {
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    const calculateIndicators = vi.fn(async () => new Map<string, IndicatorResult>());
+    const calculateSeries = vi.fn(async (input) => ({
+      type: input.type,
+      source: materialized().series,
+      sourceIndexOffset: 0,
+      points: []
+    } satisfies SeriesRenderModel));
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: { calculateIndicators, calculateSeries },
+      requestFrame(callback) {
+        const id = nextFrame++;
+        frames.set(id, callback);
+        return id;
+      },
+      cancelFrame: (id) => frames.delete(id)
+    });
+    runtime.setMaterializedSeries(materialized());
+    for (const callback of [...frames.values()]) callback();
+    frames.clear();
+    const before = runtime.getMetrics();
+
+    runtime.refreshTheme();
+    expect(frames.size).toBe(1);
+    for (const callback of [...frames.values()]) callback();
+    frames.clear();
+
+    const after = runtime.getMetrics();
+    expect(after.renderCountByPass.static).toBe(before.renderCountByPass.static + 1);
+    expect(after.renderCountByPass.overlay).toBe(before.renderCountByPass.overlay + 1);
+    expect(calculateIndicators).not.toHaveBeenCalled();
+    expect(calculateSeries).not.toHaveBeenCalled();
+    runtime.destroy();
+  });
+
   it("preserves candle width and the anchor screen slot when history is prepended", () => {
     const staticCanvas = new FakeCanvas();
     const overlayCanvas = new FakeCanvas();

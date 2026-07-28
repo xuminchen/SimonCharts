@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.35";
+const expectedVersion = "1.0.0-rc.36";
 let tempRoot;
 
 try {
@@ -145,6 +145,7 @@ function consumerSource() {
   type ChartMark,
   type ChartSeriesProperties,
   type ChartStudyApi,
+  type ChartThemeOverrides,
   type ChartVisibleRange,
   type ChartState
 } from "@simoncharts/charts";
@@ -194,6 +195,10 @@ const executions: readonly ChartExecution[] = [{
   label: "B",
   tQuantity: 0
 }];
+const themeOverrides: ChartThemeOverrides = {
+  backgroundColor: "#102030",
+  upColor: "#ff00ff"
+};
 const chart = createChart(container, {
   chartId: "external-consumer",
   persistenceScopeId: "consumer-user",
@@ -202,6 +207,7 @@ const chart = createChart(container, {
   dataCutoffTime: 1_784_192_400_000,
   datafeed,
   executions,
+  themeOverrides,
   studyDefinitions,
   features: [...advancedChartFeatures, "executions"]
 });
@@ -289,6 +295,29 @@ const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
 });
 async function verifyConsumer(): Promise<void> {
 if (!await chart.dataReady()) throw new Error("initial chart presentation was not usable");
+const layoutBeforeTheme = chart.exportLayout();
+if (
+  chart.getTheme() !== "dark" ||
+  chart.getThemeOverrides().backgroundColor !== "#102030"
+) {
+  throw new Error("initial theme overrides were not exposed by the packed package");
+}
+chart.setThemeOverrides({ downColor: "#00ffff" });
+chart.setTheme("light");
+const themeRoot = document.querySelector<HTMLElement>("#app .sc-workspace");
+if (
+  !themeRoot ||
+  chart.getTheme() !== "light" ||
+  chart.getThemeOverrides().downColor !== "#00ffff" ||
+  chart.getThemeOverrides().backgroundColor !== undefined ||
+  getComputedStyle(themeRoot).getPropertyValue("--sc-bg").trim() !== "#ffffff" ||
+  getComputedStyle(themeRoot).getPropertyValue("--sc-down").trim() !== "#00ffff" ||
+  JSON.stringify(chart.exportLayout()) !== JSON.stringify(layoutBeforeTheme)
+) {
+  throw new Error("runtime theme replacement changed layout or failed to repaint the packed package");
+}
+chart.setThemeOverrides({});
+chart.setTheme("dark");
 chart.setTimeframe("5m");
 if (!await chart.dataReady()) throw new Error("timeframe presentation was not usable");
 chart.setView("intraday");

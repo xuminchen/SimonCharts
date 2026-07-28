@@ -19,7 +19,7 @@ export const releaseGateSteps = [
   { command: "npm", args: ["pack", "--dry-run", "-w", "@simoncharts/chart-engine"] },
   {
     command: "npm",
-    args: ["run", "test:e2e"],
+    args: ["run", "test:e2e", "--", "--workers=1"],
     env: { PLAYWRIGHT_CHANNEL: "chrome" }
   }
 ];

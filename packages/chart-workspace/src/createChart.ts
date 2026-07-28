@@ -31,6 +31,7 @@ import type {
   ChartStudyApi,
   ChartSymbol,
   ChartTheme,
+  ChartThemeOverrides,
   ChartView,
   ChartVisibleRange,
   IntradayDayCount,
@@ -61,6 +62,7 @@ import {
   parseSeriesProperties,
   parseSeriesType,
   parseStudyDefinitions,
+  parseThemeOverrides,
   parseVisibleRange,
   resolveSeriesProperties,
   studyDefinitionKey,
@@ -73,6 +75,7 @@ import {
   type RuntimeCrosshairSnapshot
 } from "./runtime/chartEngineRuntime";
 import { createCheckpointedCalculationRuntime } from "./runtime/checkpointedCalculationRuntime";
+import { applyWorkspaceThemeOverrides } from "./runtime/workspaceTheme";
 import { createWorkspaceShell } from "./ui/workspaceShell";
 
 const validFeatures = new Set<ChartFeature>([
@@ -303,12 +306,17 @@ export function createChart(
   }
 
   let parsedStudyDefinitions: StudyDefinitionCatalog | undefined;
+  let parsedThemeOverrides: ChartThemeOverrides | undefined;
   try {
     parsedStudyDefinitions = parseStudyDefinitions(options?.studyDefinitions);
+    parsedThemeOverrides = parseThemeOverrides(options?.themeOverrides);
   } catch {
     parsedStudyDefinitions = undefined;
+    parsedThemeOverrides = undefined;
   }
   const studyDefinitions = parsedStudyDefinitions ?? new Map();
+  let theme = resolvedTheme(options?.theme);
+  let themeOverrides = parsedThemeOverrides ?? {};
   const parseChartIndicators = (value: unknown) => parseIndicators(value, studyDefinitions);
   const parseChartIndicatorInput = (value: unknown) =>
     parseIndicatorInput(value, studyDefinitions);
@@ -331,10 +339,11 @@ export function createChart(
   const features = resolvedFeatures(options?.features);
   const shell = createWorkspaceShell({
     features,
-    theme: resolvedTheme(options?.theme),
+    theme,
     locale: resolvedLocale(options?.locale),
     studyTitleFor
   });
+  applyWorkspaceThemeOverrides(shell.root, themeOverrides);
   container.append(shell.root);
   let destroyed = false;
   const stateListeners = new Set<ChartStateListener>();
@@ -483,7 +492,11 @@ export function createChart(
     emitEvent({ type: "layout-changed", layout });
   };
 
-  if (!validOptions(options) || parsedStudyDefinitions === undefined) {
+  if (
+    !validOptions(options) ||
+    parsedStudyDefinitions === undefined ||
+    parsedThemeOverrides === undefined
+  ) {
     const error = createChartError(
       "INVALID_CONFIGURATION",
       "configuration",
@@ -509,6 +522,8 @@ export function createChart(
     const layout = layoutSnapshot(blockedViewModel(state, error));
     return Object.freeze({
       getState: () => structuredClone(state),
+      getTheme: () => theme,
+      getThemeOverrides: () => structuredClone(themeOverrides),
       getVisibleRange: () => undefined,
       getSeriesType: () => layout.seriesType,
       getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
@@ -535,6 +550,8 @@ export function createChart(
       },
       removeEntity: () => false,
       exportLayout: () => structuredClone(layout),
+      setTheme: () => undefined,
+      setThemeOverrides: () => undefined,
       setSymbol: () => undefined,
       setTimeframe: () => undefined,
       setView: () => undefined,
@@ -846,6 +863,8 @@ export function createChart(
 
   return Object.freeze({
     getState: () => controller!.getState(),
+    getTheme: () => theme,
+    getThemeOverrides: () => structuredClone(themeOverrides),
     getVisibleRange: () => controller!.getVisibleRange(),
     getSeriesType: () => controller!.getViewModel().seriesType,
     getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
@@ -1001,6 +1020,23 @@ export function createChart(
       const viewModel = controller!.getViewModel();
       requireReadyLayout(viewModel, readySelectionKey);
       return layoutSnapshot(viewModel);
+    },
+    setTheme: (value: ChartTheme) => {
+      if (value !== "dark" && value !== "light") {
+        throw new TypeError("Chart theme must be dark or light");
+      }
+      if (destroyed || value === theme) return;
+      theme = value;
+      shell.root.dataset.theme = value;
+      runtime.refreshTheme();
+    },
+    setThemeOverrides: (value: ChartThemeOverrides) => {
+      if (value === undefined) throw new TypeError("Chart theme overrides must be an object");
+      const parsed = parseThemeOverrides(value);
+      if (destroyed) return;
+      themeOverrides = parsed;
+      applyWorkspaceThemeOverrides(shell.root, parsed);
+      runtime.refreshTheme();
     },
     setSymbol: (symbol: ChartSymbol) => {
       if (!validSymbol(symbol)) throw new TypeError("Chart symbol is invalid");

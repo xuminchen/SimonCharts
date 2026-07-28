@@ -1,4 +1,19 @@
 import { defaultChartTheme, type ChartTheme } from "@simoncharts/chart-engine";
+import type { ChartThemeOverrides } from "../contracts";
+
+const themeVariables = {
+  backgroundColor: "--sc-bg",
+  surfaceColor: "--sc-surface",
+  surfaceHoverColor: "--sc-surface-hover",
+  borderColor: "--sc-border",
+  gridColor: "--sc-grid",
+  textColor: "--sc-text",
+  mutedTextColor: "--sc-muted",
+  accentColor: "--sc-accent",
+  upColor: "--sc-up",
+  downColor: "--sc-down",
+  intradayAverageColor: "--sc-intraday-average"
+} as const satisfies Record<keyof ChartThemeOverrides, `--sc-${string}`>;
 
 function variable(style: Pick<CSSStyleDeclaration, "getPropertyValue">, name: string, fallback: string): string {
   const value = style.getPropertyValue(name).trim();
@@ -33,4 +48,15 @@ export function readWorkspaceChartTheme(
     },
     lineDashes: { grid: [1, 3] }
   };
+}
+
+export function applyWorkspaceThemeOverrides(
+  root: HTMLElement,
+  overrides: Readonly<ChartThemeOverrides>
+): void {
+  for (const [field, variableName] of Object.entries(themeVariables)) {
+    const value = overrides[field as keyof ChartThemeOverrides];
+    if (value === undefined) root.style.removeProperty(variableName);
+    else root.style.setProperty(variableName, value);
+  }
 }

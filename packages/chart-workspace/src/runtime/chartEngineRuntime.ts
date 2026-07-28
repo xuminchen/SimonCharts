@@ -166,6 +166,7 @@ export interface ChartEngineRuntime {
   undoDrawing(): void;
   redoDrawing(): void;
   setGridVisible(visible: boolean): void;
+  refreshTheme(): void;
   cancelCalculations(): void;
   retryRender(): void;
   getMetrics(): WorkspaceRuntimeMetrics;
@@ -1823,6 +1824,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     undoDrawing() { if (destroyed) return; drawingEditor.undo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
     redoDrawing() { if (destroyed) return; drawingEditor.redo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
     setGridVisible(visible) { if (destroyed) return; if (chartEngine.getState().settings.gridVisible !== visible) { chartEngine.dispatch({ type: "toggleGrid" }); scheduler.invalidate({ layers: ["grid"], reason: "gridVisibilityChanged" }); } },
+    refreshTheme() {
+      if (destroyed) return;
+      scheduler.invalidate({
+        layers: ["grid", "axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"],
+        reason: "themeChanged"
+      });
+    },
     cancelCalculations() {
       if (destroyed) return;
       indicatorCalculationController?.abort();

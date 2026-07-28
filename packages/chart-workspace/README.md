@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.35.tgz
+npm install ./simoncharts-charts-1.0.0-rc.36.tgz
 ```
 
 ## Embed the default chart
@@ -46,6 +46,36 @@ function destroyChart() {
   chart.destroy();
 }
 ```
+
+## Override the chart theme
+
+`theme` selects the built-in `dark` or `light` base. `themeOverrides` replaces selected public color tokens without changing data, layout, readiness, or browser persistence. Runtime calls use whole-object replacement; pass `{}` to return to the active base theme.
+
+```ts
+const chart = createChart(container, {
+  // ...required host-owned options
+  theme: "dark",
+  themeOverrides: {
+    backgroundColor: "#111827",
+    surfaceColor: "#1f2937",
+    gridColor: "rgba(148, 163, 184, 0.16)",
+    textColor: "#f8fafc",
+    mutedTextColor: "#94a3b8",
+    accentColor: "#6366f1",
+    upColor: "#ef4444",
+    downColor: "#10b981",
+    intradayAverageColor: "#eab308"
+  }
+});
+
+chart.setTheme("light"); // keeps the current overrides
+chart.setThemeOverrides({ upColor: "#f04455", downColor: "#00aa91" });
+chart.getTheme();
+chart.getThemeOverrides(); // defensive snapshot
+chart.setThemeOverrides({}); // reset to the active base theme
+```
+
+The public override keys are `backgroundColor`, `surfaceColor`, `surfaceHoverColor`, `borderColor`, `gridColor`, `textColor`, `mutedTextColor`, `accentColor`, `upColor`, `downColor`, and `intradayAverageColor`. Values must be bounded concrete CSS colors; indirect `var(...)`, `currentColor`, CSS-wide keywords, accessors, unknown fields, and invalid colors are rejected before any token changes.
 
 ## Control the view and visible range
 
@@ -401,4 +431,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.35 adds programmable, bounded build properties for Renko, Line Break, Kagi, and Point & Figure through the existing checkpoint, generation, Layout V2, browser preference, and `dataReady()` paths. It preserves rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.36 adds strict host-owned Theme Overrides and runtime dark/light switching over the existing Workspace color tokens. Overrides replace atomically, survive base-theme changes, repaint DOM and Canvas without recalculation, and stay outside Layout V2 and browser persistence. It preserves rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

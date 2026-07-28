@@ -18,7 +18,7 @@ describe("check-release-gate", () => {
       "npm run check:release-readiness",
       "npm run check:package-artifact",
       "npm pack --dry-run -w @simoncharts/chart-engine",
-      "PLAYWRIGHT_CHANNEL=chrome npm run test:e2e"
+      "PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- --workers=1"
     ]);
   });
 
@@ -40,7 +40,7 @@ describe("check-release-gate", () => {
   it("runs e2e against Chrome", () => {
     expect(releaseGateSteps.at(-1)).toMatchObject({
       command: "npm",
-      args: ["run", "test:e2e"],
+      args: ["run", "test:e2e", "--", "--workers=1"],
       env: { PLAYWRIGHT_CHANNEL: "chrome" }
     });
   });

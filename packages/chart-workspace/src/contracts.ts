@@ -90,6 +90,19 @@ export type ChartFeature =
   | "executions";
 
 export type ChartTheme = "dark" | "light";
+export interface ChartThemeOverrides {
+  readonly backgroundColor?: string;
+  readonly surfaceColor?: string;
+  readonly surfaceHoverColor?: string;
+  readonly borderColor?: string;
+  readonly gridColor?: string;
+  readonly textColor?: string;
+  readonly mutedTextColor?: string;
+  readonly accentColor?: string;
+  readonly upColor?: string;
+  readonly downColor?: string;
+  readonly intradayAverageColor?: string;
+}
 export type ChartLocale = "zh-CN" | "en-US";
 export type ChartView = "intraday" | "timeframe";
 export type ChartSeriesType =
@@ -407,6 +420,7 @@ export interface ChartOptions {
   dataCutoffTime?: number;
   features?: readonly ChartFeature[];
   theme?: ChartTheme;
+  themeOverrides?: ChartThemeOverrides;
   locale?: ChartLocale;
   executions?: readonly ChartExecution[];
   marks?: readonly ChartMark[];
@@ -515,6 +529,8 @@ export type ChartEventListener = (event: Readonly<ChartEvent>) => void;
 
 export interface ChartInstance {
   getState(): Readonly<ChartState>;
+  getTheme(): ChartTheme;
+  getThemeOverrides(): Readonly<ChartThemeOverrides>;
   getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
   getSeriesType(): ChartSeriesType;
   getSeriesProperties<T extends ChartConfigurableSeriesType>(
@@ -536,6 +552,8 @@ export interface ChartInstance {
   updateEntity(entity: ChartEntity): void;
   removeEntity(entityId: ChartEntityId): boolean;
   exportLayout(): ChartLayoutV2;
+  setTheme(theme: ChartTheme): void;
+  setThemeOverrides(overrides: ChartThemeOverrides): void;
   setSymbol(symbol: ChartSymbol): void;
   setTimeframe(timeframe: Timeframe): void;
   setView(view: ChartView): void;

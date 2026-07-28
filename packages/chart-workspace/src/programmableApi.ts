@@ -29,6 +29,7 @@ import type {
   ChartSeriesProperties,
   ChartSeriesType,
   ChartState,
+  ChartThemeOverrides,
   ChartVisibleRange
 } from "./contracts";
 
@@ -62,6 +63,32 @@ const maxStudyInputs = 16;
 const maxStudyOutputs = 16;
 const maxSeriesCountProperty = 10_000;
 const maxLineBreakCount = 500;
+const maxThemeColorLength = 128;
+const cssNumber = String.raw`[-+]?(?:\d+(?:\.\d*)?|\.\d+)`;
+const rgbComponent = `${cssNumber}%?`;
+const alphaComponent = `${cssNumber}%?`;
+const hueComponent = `${cssNumber}(?:deg|grad|rad|turn)?`;
+const percentageComponent = `${cssNumber}%`;
+const fallbackThemeColors = [
+  /^(?:#[0-9a-f]{3,4}|#[0-9a-f]{6}|#[0-9a-f]{8}|transparent|black|silver|gray|white|maroon|red|purple|fuchsia|green|lime|olive|yellow|navy|blue|teal|aqua)$/i,
+  new RegExp(`^rgba?\\(\\s*${rgbComponent}\\s*,\\s*${rgbComponent}\\s*,\\s*${rgbComponent}(?:\\s*,\\s*${alphaComponent})?\\s*\\)$`, "i"),
+  new RegExp(`^rgba?\\(\\s*${rgbComponent}\\s+${rgbComponent}\\s+${rgbComponent}(?:\\s*\\/\\s*${alphaComponent})?\\s*\\)$`, "i"),
+  new RegExp(`^hsla?\\(\\s*${hueComponent}\\s*,\\s*${percentageComponent}\\s*,\\s*${percentageComponent}(?:\\s*,\\s*${alphaComponent})?\\s*\\)$`, "i"),
+  new RegExp(`^hsla?\\(\\s*${hueComponent}\\s+${percentageComponent}\\s+${percentageComponent}(?:\\s*\\/\\s*${alphaComponent})?\\s*\\)$`, "i")
+];
+const themeOverrideFields = [
+  "backgroundColor",
+  "surfaceColor",
+  "surfaceHoverColor",
+  "borderColor",
+  "gridColor",
+  "textColor",
+  "mutedTextColor",
+  "accentColor",
+  "upColor",
+  "downColor",
+  "intradayAverageColor"
+] as const satisfies readonly (keyof ChartThemeOverrides)[];
 const defaultSeriesProperties = Object.freeze({
   renko: Object.freeze({ type: "renko", brickSize: 1 }),
   lineBreak: Object.freeze({ type: "lineBreak", lineCount: 3 }),
@@ -142,6 +169,41 @@ function optionalIdentifier(value: unknown, label: string): string | undefined {
 
 function optionalFinite(value: unknown, label: string): number | undefined {
   return value === undefined ? undefined : finite(value, label);
+}
+
+function themeColor(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new TypeError(`${label} must be a concrete CSS color`);
+  }
+  const trimmed = value.trim();
+  const cssSupportsColor = typeof CSS !== "undefined" && typeof CSS.supports === "function"
+    ? CSS.supports("color", value)
+    : fallbackThemeColors.some((pattern) => pattern.test(trimmed));
+  if (
+    trimmed.length === 0 ||
+    value.length > maxThemeColorLength ||
+    /\bcurrentColor\b/i.test(value) ||
+    /^(?:inherit|initial|unset|revert|revert-layer)$/i.test(trimmed) ||
+    /\bvar\s*\(/i.test(value) ||
+    !cssSupportsColor
+  ) {
+    throw new TypeError(`${label} must be a concrete CSS color`);
+  }
+  return value;
+}
+
+export function parseThemeOverrides(value: unknown): ChartThemeOverrides {
+  if (value === undefined) return {};
+  const source = record(value, "Chart theme overrides");
+  onlyKeys(source, themeOverrideFields, "Chart theme overrides");
+  return Object.freeze(Object.fromEntries(
+    themeOverrideFields
+      .filter((field) => Object.hasOwn(source, field) && source[field] !== undefined)
+      .map((field) => [
+        field,
+        themeColor(source[field], `Chart theme override ${field}`)
+      ])
+  ));
 }
 
 function denseDataArray(

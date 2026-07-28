@@ -61,6 +61,7 @@ export type {
   ChartStudyDefinitionId,
   ChartSymbol,
   ChartTheme,
+  ChartThemeOverrides,
   ChartView,
   ChartVisibleRange,
   Exchange,

@@ -5,7 +5,8 @@ import {
   type ChartInstance,
   type ChartLocale,
   type ChartOptions,
-  type ChartTheme
+  type ChartTheme,
+  type ChartThemeOverrides
 } from "@simoncharts/charts";
 import "@simoncharts/charts/styles.css";
 import "./styles.css";
@@ -225,6 +226,23 @@ if (params.get("nonElement") === "1") {
               : advancedChartFeatures
           }),
     theme: (params.get("theme") ?? "dark") as ChartTheme,
+    ...(params.get("themeOverrides") === "1"
+      ? {
+          themeOverrides: {
+            backgroundColor: "#123456",
+            surfaceColor: "#234567",
+            surfaceHoverColor: "#345678",
+            borderColor: "#456789",
+            gridColor: "#56789a",
+            textColor: "#6789ab",
+            mutedTextColor: "#789abc",
+            accentColor: "#89abcd",
+            upColor: "#ff00ff",
+            downColor: "#00ffff",
+            intradayAverageColor: "#abcdef"
+          } satisfies ChartThemeOverrides
+        }
+      : {}),
     locale: (params.get("locale") ?? "zh-CN") as ChartLocale,
     ...(studyDefinitions === undefined ? {} : { studyDefinitions }),
     onError: (error) => {

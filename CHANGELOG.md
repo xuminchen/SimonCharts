@@ -1,5 +1,14 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.36 - 2026-07-28
+
+- Added public `ChartThemeOverrides`, optional `ChartOptions.themeOverrides`, and runtime `getTheme()`, `setTheme()`, `getThemeOverrides()`, and `setThemeOverrides()` APIs over the existing Workspace color tokens.
+- Added strict plain-object validation for 11 bounded concrete CSS colors. Unknown fields, accessors, indirect `var(...)`/`currentColor`, CSS-wide keywords, invalid browser colors, and partial invalid replacements are rejected atomically.
+- Made runtime overrides whole-object replacements with `{}` reset, defensive reads, and preservation across dark/light base-theme switches.
+- Reused the existing CSS variables and render scheduler so DOM and every Canvas layer repaint together without recalculating data, studies, or synthetic series.
+- Kept theme mode and overrides host-owned and outside `ChartLayoutV2`, layout events, browser persistence, data requests, and `dataReady()` selection lifecycle.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,194 tests`, combined Chrome `126/126`, Charts `14 files / 193 tests`, Charts Chrome/Edge `75/75` per browser, and exact packed Chrome/Edge consumer execution; SHA-256 is `a03f26f4b2fa5fd9833cedfbeec191485daf78b9e005990a956d9332f72b333f`, SHA-512 is `9c9cf25b29f26c376c4ba004c1fdc9d93d15f01e2138341e36c587ec83b7f6d859704bb9757ac7947f69fda6e0c64d6fb66aa0bbb34176abea72586903eff273`.
+
 ## @simoncharts/charts 1.0.0-rc.35 - 2026-07-28
 
 - Added public `ChartSeriesProperties`, `getSeriesProperties()`, `setSeriesProperties()`, and optional `ChartOptions.seriesProperties` for Renko brick size, Line Break count, Kagi reversal amount, and Point & Figure box/reversal settings.
