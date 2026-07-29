@@ -273,6 +273,33 @@ describe("static renderer", () => {
     ).not.toThrow();
   });
 
+  it("merges percentage-space comparison values without treating them as prices", () => {
+    const scale = createMainPanelPriceScale(
+      createSeries(),
+      { from: 1, to: 3 },
+      "percentage",
+      [{
+        id: "comparison",
+        label: "Comparison",
+        type: "line",
+        panelId: "main",
+        coordinateSpace: "percentage",
+        values: [
+          { time: 2, value: -25 },
+          { time: 3, value: 40 }
+        ]
+      }],
+      []
+    );
+
+    expect(scale.min).toBeLessThanOrEqual(-25);
+    expect(scale.max).toBeGreaterThanOrEqual(40);
+    expect(scale.min).toBeGreaterThan(-50);
+    expect(scale.max).toBeLessThan(60);
+    expect(Number.isFinite(scale.min)).toBe(true);
+    expect(Number.isFinite(scale.max)).toBe(true);
+  });
+
   it.each(["linear", "log", "percentage"] as const)(
     "merges finite additional prices into the %s main scale",
     (priceScaleMode) => {

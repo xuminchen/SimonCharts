@@ -9,6 +9,7 @@ import type {
 import type {
   AdjustMode,
   Candle,
+  ChartComparison,
   ChartDataCapabilities,
   ChartMark,
   ChartSeriesProperties,
@@ -19,6 +20,11 @@ import type {
   IntradayDayCount,
   Timeframe
 } from "../contracts";
+import type {
+  ComparisonDataSnapshot,
+  ComparisonDataStatus
+} from "../data/comparisonCoordinator";
+import { parseComparisons } from "../data/comparisons";
 import {
   parseIndicators,
   parseSeriesProperties,
@@ -79,6 +85,11 @@ export interface WorkspaceSearchState {
   error?: ChartError;
 }
 
+export interface WorkspaceComparisonStatus {
+  readonly symbolId: string;
+  readonly status: ComparisonDataStatus;
+}
+
 export interface WorkspaceViewModel {
   state: ChartState;
   status: WorkspaceStatus;
@@ -90,6 +101,8 @@ export interface WorkspaceViewModel {
   indicators: readonly IndicatorConfig[];
   drawings: readonly DrawingObject[];
   marks: readonly ChartMark[];
+  comparisons: readonly ChartComparison[];
+  comparisonStatuses: readonly WorkspaceComparisonStatus[];
   selectedDrawingIds: readonly string[];
   bottomPanel: BottomPanelState;
   drawingPalette: DrawingPaletteState;
@@ -126,6 +139,7 @@ export interface WorkspaceUiActions {
     selectedDrawingIds?: readonly string[]
   ): void;
   setMarks(marks: readonly ChartMark[]): void;
+  setComparisons(comparisons: readonly ChartComparison[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
   executeDrawingCommand(command: DrawingEditorCommand): void;
   undoDrawing(): void;
@@ -162,6 +176,7 @@ export interface ChartController extends WorkspaceUiActions {
   handleMaterializationDemandChanged(demand: MaterializationDemand): void;
   handleCalculationStatus(status: CalculationStatus): void;
   handleDataWindow(snapshot: DataWindowSnapshot | undefined): void;
+  handleComparisonData(snapshots: readonly ComparisonDataSnapshot[]): void;
   handleDrawingsChanged(drawings: readonly DrawingObject[], selectedDrawingIds?: readonly string[]): void;
   handleDrawingHistoryChanged(state: { canUndo: boolean; canRedo: boolean }): void;
   handleRenderError(error: unknown, calculationKind?: "indicator" | "series"): void;
@@ -178,6 +193,7 @@ export interface ChartControllerDependencies {
   initialTimeframe?: Timeframe;
   initialAdjustMode?: AdjustMode;
   initialSeriesProperties?: readonly ChartSeriesProperties[];
+  initialComparisons?: readonly ChartComparison[];
   getCapabilities(symbol: ChartSymbol, signal: AbortSignal): Promise<ChartDataCapabilities>;
   store: PagedSeriesStore;
   dataCoordinator: DataCoordinator;
@@ -270,6 +286,10 @@ export function createChartController(
     ...optionSeriesProperties
   ]);
   const layout = dependencies.persistence.loadLayout();
+  const initialComparisons = parseComparisons(
+    dependencies.initialComparisons ?? [],
+    dependencies.initialSymbol
+  );
   let state: ChartState = {
     symbol: cloneSymbol(dependencies.initialSymbol),
     timeframe: dependencies.initialTimeframe ?? "1d",
@@ -288,10 +308,15 @@ export function createChartController(
     seriesType: dependencies.seriesTypePersistenceEnabled ? persistedSeriesType : "candles",
     seriesProperties: initialSeriesProperties,
     favoriteTimeframes: [...preferences.favoriteTimeframes.slice(0, maxFavoriteTimeframes)],
-    priceScaleMode: preferences.priceScaleMode,
+    priceScaleMode: initialComparisons.length === 0 ? preferences.priceScaleMode : "percentage",
     indicators: dependencies.persistence.loadIndicators(),
     drawings: loadDrawings(state.symbol, state.adjustMode),
     marks: [],
+    comparisons: initialComparisons,
+    comparisonStatuses: initialComparisons.map((comparison) => ({
+      symbolId: comparison.symbol.id,
+      status: comparison.visible === false ? "hidden" : "loading"
+    })),
     selectedDrawingIds: [],
     bottomPanel: layout.bottomPanel,
     drawingPalette: layout.drawingPalette,
@@ -302,6 +327,8 @@ export function createChartController(
     calculationStatus: { type: "idle" },
     search: { query: "", loading: false, results: [] }
   };
+  let priceScaleBeforeComparisons =
+    initialComparisons.length === 0 ? undefined : preferences.priceScaleMode;
   let timeframeSeriesType = viewModel.seriesType;
   const savePreferences = (): void => {
     const seriesProperties = dependencies.seriesTypePersistenceEnabled
@@ -310,7 +337,7 @@ export function createChartController(
     dependencies.persistence.savePreferences({
       seriesType: dependencies.seriesTypePersistenceEnabled ? timeframeSeriesType : persistedSeriesType,
       favoriteTimeframes: viewModel.favoriteTimeframes,
-      priceScaleMode: viewModel.priceScaleMode,
+      priceScaleMode: priceScaleBeforeComparisons ?? viewModel.priceScaleMode,
       gridVisible: viewModel.gridVisible,
       ...(seriesProperties.length === 0
         ? {}
@@ -1048,6 +1075,11 @@ export function createChartController(
     },
     setSymbol(symbol) {
       if (!active || sameSymbol(symbol, state.symbol)) return;
+      if (viewModel.comparisons.some((comparison) => comparison.symbol.id === symbol.id)) {
+        api.setComparisons(
+          viewModel.comparisons.filter((comparison) => comparison.symbol.id !== symbol.id)
+        );
+      }
       if (symbol.id !== state.symbol.id) {
         dependencies.runtime.setExecutions([]);
         dependencies.runtime.setMarks([]);
@@ -1460,6 +1492,18 @@ export function createChartController(
       viewModel = { ...viewModel, ...(snapshot === undefined ? { dataWindow: undefined } : { dataWindow: snapshot }) };
       publish();
     },
+    handleComparisonData(snapshots) {
+      if (!active) return;
+      viewModel = {
+        ...viewModel,
+        comparisonStatuses: snapshots.map((snapshot) => ({
+          symbolId: snapshot.comparison.symbol.id,
+          status: snapshot.status
+        }))
+      };
+      dependencies.runtime.setComparisonData(snapshots);
+      publish();
+    },
     handleDrawingsChanged(drawings, selectedDrawingIds = []) {
       if (!active) return;
       viewModel = {
@@ -1590,9 +1634,43 @@ export function createChartController(
       return true;
     },
     setPriceScaleMode(mode) {
-      if (!active || mode === viewModel.priceScaleMode) return;
+      if (
+        !active ||
+        mode === viewModel.priceScaleMode ||
+        (viewModel.comparisons.length > 0 && mode !== "percentage")
+      ) return;
       viewModel = { ...viewModel, priceScaleMode: mode };
       dependencies.runtime.setPriceScaleMode(mode);
+      savePreferences();
+      publish();
+    },
+    setComparisons(comparisons) {
+      if (!active) return;
+      const parsed = parseComparisons(comparisons, state.symbol);
+      const hadComparisons = viewModel.comparisons.length > 0;
+      const hasComparisons = parsed.length > 0;
+      const previousPriceScaleMode = viewModel.priceScaleMode;
+      let priceScaleMode = viewModel.priceScaleMode;
+      if (!hadComparisons && hasComparisons) {
+        priceScaleBeforeComparisons = priceScaleMode;
+        priceScaleMode = "percentage";
+      } else if (hadComparisons && !hasComparisons) {
+        priceScaleMode = priceScaleBeforeComparisons ?? priceScaleMode;
+        priceScaleBeforeComparisons = undefined;
+      }
+      viewModel = {
+        ...viewModel,
+        comparisons: parsed,
+        comparisonStatuses: parsed.map((comparison) => ({
+          symbolId: comparison.symbol.id,
+          status: comparison.visible === false ? "hidden" : "loading"
+        })),
+        priceScaleMode
+      };
+      dependencies.runtime.setComparisonData([]);
+      if (priceScaleMode !== previousPriceScaleMode) {
+        dependencies.runtime.setPriceScaleMode(priceScaleMode);
+      }
       savePreferences();
       publish();
     },
@@ -1677,6 +1755,7 @@ export function createChartController(
   );
   dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
   dependencies.runtime.setIndicators(viewModel.indicators);
+  dependencies.runtime.setComparisonData([]);
   dependencies.runtime.setDrawings(viewModel.drawings);
   dependencies.runtime.setMarks(viewModel.marks);
   dependencies.runtime.setGridVisible(viewModel.gridVisible);

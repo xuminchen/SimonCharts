@@ -54,6 +54,7 @@ export interface IndicatorVisualOutputBase {
   label: string;
   panelId?: string;
   visible?: boolean;
+  coordinateSpace?: "price" | "percentage";
 }
 
 export interface IndicatorLineOutput extends IndicatorVisualOutputBase {

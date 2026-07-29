@@ -714,6 +714,33 @@ describe("visual renderers", () => {
 });
 
 describe("visual layer", () => {
+  it("renders percentage-space main outputs directly against the shared percentage axis", () => {
+    const valueScales: Parameters<VisualRenderer["render"]>[0]["valueScale"][] = [];
+    const registry = createRangeProbeRegistry(
+      { comparison: { min: -5, max: 10 } },
+      (context) => valueScales.push(context.valueScale)
+    );
+    const state = createState({
+      viewport: { ...createViewport(), priceScaleMode: "percentage" },
+      priceScale: { mode: "percentage", basePrice: 100, min: -12, max: 18 },
+      visualOutputs: [{
+        ...createRenderableOutput("line"),
+        id: "comparison",
+        panelId: "main",
+        coordinateSpace: "percentage"
+      }]
+    });
+
+    createVisualLayer(registry).render(createLayerContext(state));
+
+    expect(valueScales).toEqual([{
+      mode: "linear",
+      basePrice: 1,
+      min: -12,
+      max: 18
+    }]);
+  });
+
   it("shares one linear value scale across outputs in the same sub panel", () => {
     const valueScales: Parameters<VisualRenderer["render"]>[0]["valueScale"][] = [];
     const registry = createRangeProbeRegistry(

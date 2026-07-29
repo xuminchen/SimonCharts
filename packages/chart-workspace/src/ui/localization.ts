@@ -18,6 +18,18 @@ export interface ChartLabels {
   readonly drawingCategories: Readonly<Record<DrawingToolCategory, string>>;
   readonly drawingTools: Readonly<Partial<Record<BuiltInDrawingType, string>>>;
   readonly searchSymbol: string;
+  readonly compareSymbol: string;
+  readonly addComparisonSymbol: string;
+  readonly comparisonSymbols: string;
+  readonly showComparisonSymbol: string;
+  readonly hideComparisonSymbol: string;
+  readonly removeComparisonSymbol: string;
+  readonly comparisonLoading: string;
+  readonly comparisonReady: string;
+  readonly comparisonNoData: string;
+  readonly comparisonUnsupported: string;
+  readonly comparisonLoadFailed: string;
+  readonly comparisonHidden: string;
   readonly searchingSymbols: string;
   readonly noSearchResults: string;
   readonly searchResultCount: (count: number) => string;
@@ -199,6 +211,18 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       drawingCategories: drawingCategories[locale],
       drawingTools: drawingTools[locale],
       searchSymbol: "Search symbol",
+      compareSymbol: "Compare",
+      addComparisonSymbol: "Add comparison symbol",
+      comparisonSymbols: "Comparison symbols",
+      showComparisonSymbol: "Show comparison symbol",
+      hideComparisonSymbol: "Hide comparison symbol",
+      removeComparisonSymbol: "Remove comparison symbol",
+      comparisonLoading: "Loading",
+      comparisonReady: "Ready",
+      comparisonNoData: "No data",
+      comparisonUnsupported: "Unsupported",
+      comparisonLoadFailed: "Load failed",
+      comparisonHidden: "Hidden",
       searchingSymbols: "Searching symbols",
       noSearchResults: "No symbols found",
       searchResultCount: (count) => `${count} symbol${count === 1 ? "" : "s"} found`,
@@ -235,6 +259,18 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     drawingCategories: drawingCategories[locale],
     drawingTools: drawingTools[locale],
     searchSymbol: "搜索标的",
+    compareSymbol: "比较",
+    addComparisonSymbol: "添加比较标的",
+    comparisonSymbols: "比较标的",
+    showComparisonSymbol: "显示比较标的",
+    hideComparisonSymbol: "隐藏比较标的",
+    removeComparisonSymbol: "移除比较标的",
+    comparisonLoading: "加载中",
+    comparisonReady: "已就绪",
+    comparisonNoData: "无数据",
+    comparisonUnsupported: "不支持",
+    comparisonLoadFailed: "加载失败",
+    comparisonHidden: "已隐藏",
     searchingSymbols: "正在搜索标的",
     noSearchResults: "没有找到标的",
     searchResultCount: (count) => `找到 ${count} 个标的`,

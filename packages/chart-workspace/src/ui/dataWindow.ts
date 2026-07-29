@@ -16,6 +16,10 @@ function price(value: number | undefined, precision: number | undefined): string
     : precision === undefined ? format(value) : formatPrice(value, precision);
 }
 
+function percent(value: number | null): string {
+  return value === null ? "--" : `${value > 0 ? "+" : ""}${format(value)}%`;
+}
+
 export function createDataWindow(): DataWindow {
   const element = document.createElement("div");
   element.className = "sc-data-window";
@@ -23,7 +27,7 @@ export function createDataWindow(): DataWindow {
     element,
     render(snapshot) {
       element.replaceChildren();
-      const rows: Array<[string, string, string?]> = snapshot
+      const rows: Array<[string, string, string?, string?]> = snapshot
         ? [
             ["时间", snapshot.formattedTime],
             ["开", price(snapshot.candle.open, snapshot.pricePrecision), "data-window-open"],
@@ -34,14 +38,21 @@ export function createDataWindow(): DataWindow {
             ["涨跌幅", `${format(snapshot.changePercent)}%`],
             ["成交量", format(snapshot.candle.volume)],
             ["成交额", format(snapshot.candle.turnover)],
-            ...snapshot.indicatorRows.map((row) => [row.label, row.value, `data-window-indicator-${row.id}`] as [string, string, string])
+            ...snapshot.indicatorRows.map((row) => [row.label, row.value, `data-window-indicator-${row.id}`] as [string, string, string]),
+            ...(snapshot.comparisonRows ?? []).map((row) => [
+              `${row.name} ${row.code}`,
+              `${row.value === null ? "--" : price(row.value, row.pricePrecision)} · ${percent(row.changePercent)}`,
+              `data-window-comparison-${row.symbolId}`,
+              row.color
+            ] as [string, string, string, string?])
           ]
         : [["时间", "--"], ["开", "--", "data-window-open"], ["高", "--"], ["低", "--"], ["收", "--"], ["涨跌", "--"], ["涨跌幅", "--"], ["成交量", "--"], ["成交额", "--"]];
-      for (const [label, value, testId] of rows) {
+      for (const [label, value, testId, color] of rows) {
         const row = document.createElement("div");
         row.className = "sc-data-window-row";
         const name = document.createElement("span");
         name.textContent = label;
+        if (color) name.style.color = color;
         const output = document.createElement("strong");
         output.textContent = value;
         if (testId) output.dataset.testid = testId;

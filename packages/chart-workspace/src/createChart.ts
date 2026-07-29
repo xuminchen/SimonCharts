@@ -3,6 +3,7 @@ import type {
   ChartCrosshairEvent,
   ChartCrosshairListener,
   ChartCrosshairSnapshot,
+  ChartComparison,
   ChartCustomStudyId,
   ChartEvent,
   ChartEventListener,
@@ -48,6 +49,8 @@ import { defaultChartFeatures } from "./contracts";
 import { createChartController, type ChartController, type WorkspaceViewModel } from "./controller/chartController";
 import { createCalculationCheckpointStore } from "./data/calculationCheckpointStore";
 import { parseChartSymbol } from "./data/chartSymbol";
+import { createComparisonCoordinator } from "./data/comparisonCoordinator";
+import { parseComparisons } from "./data/comparisons";
 import { createDataCoordinator } from "./data/dataCoordinator";
 import { createPagedSeriesStore } from "./data/pagedSeriesStore";
 import { createSymbolSearchCoordinator } from "./data/symbolSearchCoordinator";
@@ -93,6 +96,7 @@ import { createWorkspaceShell } from "./ui/workspaceShell";
 
 const validFeatures = new Set<ChartFeature>([
   "symbol-search",
+  "symbol-compare",
   "timeframes",
   "adjustment",
   "series-type",
@@ -187,6 +191,15 @@ function validSymbol(symbol: unknown): symbol is ChartSymbol {
   return parseChartSymbol(symbol) !== undefined;
 }
 
+function validComparisons(value: unknown, mainSymbol: Readonly<ChartSymbol>): boolean {
+  try {
+    parseComparisons(value, mainSymbol);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validOptions(options: ChartOptions): boolean {
   const symbol = options?.initialSymbol;
   return (
@@ -206,6 +219,7 @@ function validOptions(options: ChartOptions): boolean {
     (options.theme === undefined || (["dark", "light"] as const).includes(options.theme)) &&
     (options.locale === undefined || (["zh-CN", "en-US"] as const).includes(options.locale)) &&
     (options.executions === undefined || validExecutions(options.executions)) &&
+    (options.comparisons === undefined || validComparisons(options.comparisons, symbol)) &&
     (options.marks === undefined || validMarks(options.marks)) &&
     validSeriesProperties(options.seriesProperties) &&
     typeof options?.datafeed?.getCapabilities === "function" &&
@@ -226,6 +240,8 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     indicators: [],
     drawings: [],
     marks: [],
+    comparisons: [],
+    comparisonStatuses: [],
     selectedDrawingIds: [],
     bottomPanel: defaultLayoutState.bottomPanel,
     drawingPalette: defaultLayoutState.drawingPalette,
@@ -281,6 +297,17 @@ function presentationKey(state: Readonly<ChartState>): string {
     state.adjustMode,
     state.view,
     state.view === "intraday" ? state.intradayDays : null
+  ]);
+}
+
+function presentationReadinessKey(viewModel: Readonly<WorkspaceViewModel>): string {
+  return JSON.stringify([
+    presentationKey(viewModel.state),
+    viewModel.comparisons.map((comparison) => [
+      ...symbolKey(comparison.symbol),
+      comparison.color ?? null,
+      comparison.visible ?? true
+    ])
   ]);
 }
 
@@ -466,6 +493,20 @@ export function createChart(
       referencePrice: snapshot.referencePrice,
       change: snapshot.change,
       changePercent: snapshot.changePercent,
+      comparisons: snapshot.comparisons.map((comparison) => ({
+        symbolId: comparison.symbolId,
+        code: comparison.code,
+        name: comparison.name,
+        ...(comparison.color === undefined ? {} : { color: comparison.color }),
+        value: comparison.value,
+        changePercent: comparison.changePercent,
+        ...(comparison.dataVersion === undefined
+          ? {}
+          : { dataVersion: comparison.dataVersion }),
+        ...(comparison.pricePrecision === undefined
+          ? {}
+          : { pricePrecision: comparison.pricePrecision })
+      })),
       studies: snapshot.studies.map((study) => ({
         entityId: toEntityId(
           { kind: "indicator", value: study.indicator },
@@ -555,6 +596,7 @@ export function createChart(
       getIndicators: () => [],
       getDrawings: () => [],
       getMarks: () => [],
+      getComparisons: () => [],
       dataReady: () => Promise.resolve(false),
       createStudy: () => {
         throw new DOMException("Chart study API is unavailable", "InvalidStateError");
@@ -591,6 +633,7 @@ export function createChart(
       setIndicators: () => undefined,
       setDrawings: () => undefined,
       setMarks: () => undefined,
+      setComparisons: () => undefined,
       setDrawingTool: () => undefined,
       setGridVisible: () => undefined,
       undoDrawing: () => undefined,
@@ -647,21 +690,25 @@ export function createChart(
     lastSelectionKey = key;
     emitEvent({ type: "selection-changed", selection });
   };
-  const schedulePresentationReadiness = (key: string): void => {
+  const schedulePresentationReadiness = (
+    materializedKey: string,
+    readinessKey: string
+  ): void => {
     cancelReadinessFrame();
     const markReady = (): void => {
       readinessFrameId = undefined;
-      if (destroyed || materializedPresentationKey !== key) return;
+      if (destroyed || materializedPresentationKey !== materializedKey) return;
       const viewModel = controller!.getViewModel();
       if (
-        presentationKey(viewModel.state) !== key ||
+        presentationKey(viewModel.state) !== materializedKey ||
+        presentationReadinessKey(viewModel) !== readinessKey ||
         viewModel.state.loading ||
         viewModel.status.type === "blocked" ||
         viewModel.calculationStatus.type !== "idle"
       ) return;
-      readyPresentationKey = key;
+      readyPresentationKey = readinessKey;
       unavailablePresentationKey = undefined;
-      settleDataReady((candidate) => candidate === key, true);
+      settleDataReady((candidate) => candidate === readinessKey, true);
     };
     if (readinessWindow === null) markReady();
     else readinessFrameId = readinessWindow.requestAnimationFrame(markReady);
@@ -681,6 +728,154 @@ export function createChart(
     store,
     onEvent: (event) => controller?.handleDataEvent(event)
   });
+  const initialComparisons = parseComparisons(
+    options.comparisons ?? [],
+    options.initialSymbol
+  );
+  const comparisonCoordinator = createComparisonCoordinator({
+    datafeed: options.datafeed,
+    dataCutoffTime: options.dataCutoffTime,
+    onChange: (snapshots) => controller?.handleComparisonData(snapshots)
+  });
+  let comparisonContextKey: string | undefined;
+  let comparisonContextGeneration = 0;
+  let comparisonRequestedRangeKey: string | undefined;
+  let comparisonPreparationGeneration = 0;
+  let comparisonContextTask = Promise.resolve(true);
+  let comparisonRangeTask = Promise.resolve(true);
+  const comparisonKey = (viewModel: Readonly<WorkspaceViewModel>): string =>
+    JSON.stringify([
+      ...symbolKey(viewModel.state.symbol),
+      viewModel.state.timeframe,
+      viewModel.state.adjustMode,
+      viewModel.state.view === "intraday",
+      viewModel.comparisons.map((comparison) => [
+        ...symbolKey(comparison.symbol),
+        comparison.color ?? null,
+        comparison.visible ?? true
+      ])
+    ]);
+  const syncComparisonContext = (
+    viewModel: Readonly<WorkspaceViewModel>
+  ): Promise<boolean> => {
+    const key = comparisonKey(viewModel);
+    if (key === comparisonContextKey) return comparisonContextTask;
+    comparisonContextKey = key;
+    comparisonRequestedRangeKey = undefined;
+    const generation = ++comparisonContextGeneration;
+    const context = {
+      comparisons: viewModel.comparisons,
+      mainSymbol: viewModel.state.symbol,
+      timeframe: viewModel.state.timeframe,
+      adjustMode: viewModel.state.adjustMode,
+      intraday: viewModel.state.view === "intraday"
+    } as const;
+    comparisonContextTask = Promise.resolve()
+      .then(() => comparisonCoordinator.setContext(context))
+      .then((ready) =>
+      !destroyed &&
+      generation === comparisonContextGeneration &&
+      comparisonContextKey === key &&
+      ready
+      )
+      .catch(() => false);
+    comparisonRangeTask = comparisonContextTask;
+    return comparisonContextTask;
+  };
+  const ensureComparisonRange = (
+    viewModel: Readonly<WorkspaceViewModel>,
+    range: Readonly<ChartVisibleRange> | undefined
+  ): Promise<boolean> => {
+    const key = comparisonKey(viewModel);
+    const generation = comparisonContextGeneration + (
+      key === comparisonContextKey ? 0 : 1
+    );
+    const context = syncComparisonContext(viewModel);
+    if (
+      range === undefined ||
+      viewModel.comparisons.every((comparison) => comparison.visible === false)
+    ) return context;
+    const rangeKey = JSON.stringify([range.from, range.to]);
+    if (comparisonRequestedRangeKey === rangeKey) return comparisonRangeTask;
+    comparisonRequestedRangeKey = rangeKey;
+    comparisonRangeTask = context.then(async (ready) => {
+      if (
+        !ready ||
+        destroyed ||
+        generation !== comparisonContextGeneration ||
+        comparisonContextKey !== key
+      ) return false;
+      const loaded = await comparisonCoordinator.ensureTimeRange(range);
+      return (
+        loaded &&
+        !destroyed &&
+        generation === comparisonContextGeneration &&
+        comparisonContextKey === key
+      );
+    }).then((ready) => {
+      if (
+        !ready &&
+        generation === comparisonContextGeneration &&
+        comparisonContextKey === key &&
+        comparisonRequestedRangeKey === rangeKey
+      ) {
+        comparisonRequestedRangeKey = undefined;
+      }
+      return ready;
+    }).catch(() => {
+      if (
+        generation === comparisonContextGeneration &&
+        comparisonContextKey === key &&
+        comparisonRequestedRangeKey === rangeKey
+      ) {
+        comparisonRequestedRangeKey = undefined;
+      }
+      return false;
+    });
+    return comparisonRangeTask;
+  };
+  const preparePresentationReadiness = (
+    viewModel: Readonly<WorkspaceViewModel>,
+    range = controller?.getVisibleRange()
+  ): void => {
+    const materializedKey = presentationKey(viewModel.state);
+    const readinessKey = presentationReadinessKey(viewModel);
+    const preparation = ++comparisonPreparationGeneration;
+    if (
+      range !== undefined &&
+      viewModel.comparisons.some((comparison) => comparison.visible !== false) &&
+      readyPresentationKey === readinessKey
+    ) {
+      readyPresentationKey = undefined;
+      cancelReadinessFrame();
+    }
+    void ensureComparisonRange(
+      viewModel,
+      range
+    ).then((ready) => {
+      if (
+        destroyed ||
+        controller === undefined ||
+        preparation !== comparisonPreparationGeneration
+      ) return;
+      const current = controller.getViewModel();
+      if (
+        presentationKey(current.state) !== materializedKey ||
+        presentationReadinessKey(current) !== readinessKey
+      ) return;
+      if (!ready) {
+        unavailablePresentationKey = readinessKey;
+        settleDataReady((candidate) => candidate === readinessKey, false);
+        return;
+      }
+      if (unavailablePresentationKey === readinessKey) {
+        unavailablePresentationKey = undefined;
+      }
+      if (materializedPresentationKey === materializedKey) {
+        schedulePresentationReadiness(materializedKey, readinessKey);
+      }
+    });
+  };
   const searchCoordinator = createSymbolSearchCoordinator({
     dataSource: options.datafeed,
     onEvent: (event) => controller?.handleSearchEvent(event)
@@ -706,6 +901,9 @@ export function createChart(
     onMaterializedBoundary: (direction, anchor) => controller?.handleMaterializedBoundary(direction, anchor),
     onMaterializationDemandChanged: (demand) => controller?.handleMaterializationDemandChanged(demand),
     onVisibleRangeChanged: (range) => {
+      if (controller !== undefined) {
+        preparePresentationReadiness(controller.getViewModel(), range);
+      }
       if (controller?.shouldPublishVisibleRange()) {
         emitEvent({ type: "visible-range", range });
       }
@@ -792,6 +990,7 @@ export function createChart(
     initialTimeframe: options.initialTimeframe,
     initialAdjustMode: options.initialAdjustMode,
     initialSeriesProperties: parseSeriesProperties(options.seriesProperties),
+    initialComparisons,
     getCapabilities: (symbol, signal) => options.datafeed.getCapabilities(symbol, signal),
     store,
     dataCoordinator,
@@ -811,28 +1010,39 @@ export function createChart(
     },
     onPresentationReady: (state) => {
       if (destroyed) return;
-      const key = presentationKey(state);
-      if (unavailablePresentationKey === key) unavailablePresentationKey = undefined;
-      materializedPresentationKey = key;
-      schedulePresentationReadiness(key);
+      const materializedKey = presentationKey(state);
+      const viewModel = controller!.getViewModel();
+      const readinessKey = presentationReadinessKey(viewModel);
+      if (unavailablePresentationKey === readinessKey) {
+        unavailablePresentationKey = undefined;
+      }
+      materializedPresentationKey = materializedKey;
+      preparePresentationReadiness(viewModel);
     },
     onPresentationPending: (state) => {
-      const key = presentationKey(state);
-      if (unavailablePresentationKey === key) unavailablePresentationKey = undefined;
-      if (materializedPresentationKey === key) materializedPresentationKey = undefined;
-      if (readyPresentationKey === key) readyPresentationKey = undefined;
+      const materializedKey = presentationKey(state);
+      const readinessKey = presentationReadinessKey(controller!.getViewModel());
+      if (unavailablePresentationKey === readinessKey) unavailablePresentationKey = undefined;
+      if (materializedPresentationKey === materializedKey) materializedPresentationKey = undefined;
+      if (readyPresentationKey === readinessKey) readyPresentationKey = undefined;
       cancelReadinessFrame();
     },
     onPresentationUnavailable: (state) => {
       if (destroyed) return;
-      const key = presentationKey(state);
-      if (materializedPresentationKey === key || readyPresentationKey === key) return;
-      unavailablePresentationKey = key;
-      settleDataReady((candidate) => candidate === key, false);
+      const materializedKey = presentationKey(state);
+      const readinessKey = presentationReadinessKey(controller!.getViewModel());
+      if (
+        materializedPresentationKey === materializedKey ||
+        readyPresentationKey === readinessKey
+      ) return;
+      unavailablePresentationKey = readinessKey;
+      settleDataReady((candidate) => candidate === readinessKey, false);
     },
     onViewModelChanged: (viewModel, revision) => {
       latestViewModelRevision = revision;
       const currentPresentationKey = presentationKey(viewModel.state);
+      const currentReadinessKey = presentationReadinessKey(viewModel);
+      void syncComparisonContext(viewModel);
       if (
         materializedPresentationKey !== undefined &&
         materializedPresentationKey !== currentPresentationKey
@@ -842,19 +1052,19 @@ export function createChart(
       }
       if (
         readyPresentationKey !== undefined &&
-        readyPresentationKey !== currentPresentationKey
+        readyPresentationKey !== currentReadinessKey
       ) readyPresentationKey = undefined;
       if (
         unavailablePresentationKey !== undefined &&
-        unavailablePresentationKey !== currentPresentationKey
+        unavailablePresentationKey !== currentReadinessKey
       ) unavailablePresentationKey = undefined;
-      settleDataReady((candidate) => candidate !== currentPresentationKey, false);
+      settleDataReady((candidate) => candidate !== currentReadinessKey, false);
       if (viewModel.state.loading) {
         cancelReadinessFrame();
         if (materializedPresentationKey === currentPresentationKey) {
           materializedPresentationKey = undefined;
         }
-        if (readyPresentationKey === currentPresentationKey) {
+        if (readyPresentationKey === currentReadinessKey) {
           readyPresentationKey = undefined;
         }
       }
@@ -863,25 +1073,25 @@ export function createChart(
         if (materializedPresentationKey === currentPresentationKey) {
           materializedPresentationKey = undefined;
         }
-        if (readyPresentationKey === currentPresentationKey) {
+        if (readyPresentationKey === currentReadinessKey) {
           readyPresentationKey = undefined;
         }
-        settleDataReady((candidate) => candidate === currentPresentationKey, false);
+        settleDataReady((candidate) => candidate === currentReadinessKey, false);
       }
       if (
         viewModel.calculationStatus.type === "calculating" &&
-        readyPresentationKey === currentPresentationKey
+        readyPresentationKey === currentReadinessKey
       ) {
         readyPresentationKey = undefined;
         cancelReadinessFrame();
       } else if (
         viewModel.calculationStatus.type === "idle" &&
         materializedPresentationKey === currentPresentationKey &&
-        readyPresentationKey !== currentPresentationKey &&
+        readyPresentationKey !== currentReadinessKey &&
         !viewModel.state.loading &&
         viewModel.status.type !== "blocked"
       ) {
-        schedulePresentationReadiness(currentPresentationKey);
+        preparePresentationReadiness(viewModel);
       }
       if (
         readySelectionKey !== undefined &&
@@ -1151,10 +1361,11 @@ export function createChart(
     getIndicators: () => structuredClone(controller!.getViewModel().indicators),
     getDrawings: () => fromEngineDrawings(controller!.getViewModel().drawings),
     getMarks: () => structuredClone(controller!.getViewModel().marks),
+    getComparisons: () => structuredClone(controller!.getViewModel().comparisons),
     dataReady: () => {
       if (destroyed) return Promise.resolve(false);
       const viewModel = controller!.getViewModel();
-      const key = presentationKey(viewModel.state);
+      const key = presentationReadinessKey(viewModel);
       if (viewModel.status.type === "blocked") {
         return Promise.resolve(false);
       }
@@ -1365,6 +1576,10 @@ export function createChart(
       controller!.setDrawings(toEngineDrawings(parsed));
     },
     setMarks: (marks: readonly ChartMark[]) => controller!.setMarks(parseMarks(marks)),
+    setComparisons: (comparisons: readonly ChartComparison[]) => {
+      const parsed = parseComparisons(comparisons, controller!.getState().symbol);
+      controller!.setComparisons(parsed);
+    },
     setDrawingTool: (tool: ChartDrawingTool) => controller!.setDrawingTool(parseDrawingTool(tool)),
     setGridVisible: (visible: boolean) => {
       if (typeof visible !== "boolean") throw new TypeError("Grid visibility must be boolean");
@@ -1430,7 +1645,22 @@ export function createChart(
       controller!.setVisibleRange(parseVisibleRange(range));
     },
     resetToLatest: () => controller!.resetToLatest(),
-    retry: () => controller!.retry(),
+    retry: () => {
+      controller!.retry();
+      if (
+        comparisonCoordinator.getSnapshots().some(
+          (snapshot) => snapshot.status === "error"
+        )
+      ) {
+        comparisonContextKey = undefined;
+        comparisonRequestedRangeKey = undefined;
+        const viewModel = controller!.getViewModel();
+        const key = presentationReadinessKey(viewModel);
+        if (readyPresentationKey === key) readyPresentationKey = undefined;
+        if (unavailablePresentationKey === key) unavailablePresentationKey = undefined;
+        preparePresentationReadiness(viewModel);
+      }
+    },
     subscribe: (listener: ChartStateListener) => {
       if (typeof listener !== "function") throw new TypeError("Chart listener must be a function");
       if (destroyed) return () => undefined;
@@ -1470,6 +1700,9 @@ export function createChart(
       controller!.deactivate();
       unbind();
       controller!.destroy();
+      comparisonContextGeneration += 1;
+      comparisonPreparationGeneration += 1;
+      comparisonCoordinator.destroy();
       stateListeners.clear();
       eventListeners.clear();
       crosshairListeners.clear();

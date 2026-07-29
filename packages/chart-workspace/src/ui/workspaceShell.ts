@@ -43,6 +43,7 @@ const toolbarFeatures = new Set<ChartFeature>([
   "adjustment",
   "series-type",
   "price-scale",
+  "symbol-compare",
   "indicators",
   "drawing-history",
   "settings",

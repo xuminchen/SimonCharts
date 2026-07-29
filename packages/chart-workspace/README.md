@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.41.tgz
+npm install ./simoncharts-charts-1.0.0-rc.42.tgz
 ```
 
 ## Embed the default chart
@@ -125,6 +125,57 @@ if (await chart.dataReady()) {
   chart.setVisibleRange({ from: rangeStartEpochMs, to: rangeEndEpochMs });
 }
 ```
+
+## Compare symbols
+
+Symbol Compare is host-owned and available through the initial `comparisons` option plus `setComparisons()` and `getComparisons()`. Advanced mode includes its search UI through the `symbol-compare` feature. A batch contains at most four distinct symbols, cannot repeat the main symbol, and is validated atomically.
+
+```ts
+import {
+  advancedChartFeatures,
+  createChart,
+  type ChartComparison
+} from "@simoncharts/charts";
+
+const comparisons: readonly ChartComparison[] = [{
+  symbol: {
+    id: "index:SSE:000001",
+    code: "000001",
+    name: "上证指数",
+    exchange: "SSE",
+    kind: "index"
+  },
+  color: "#2962ff",
+  visible: true
+}];
+
+const chart = createChart(container, {
+  // ...required host-owned options
+  features: advancedChartFeatures,
+  comparisons
+});
+
+chart.setComparisons([
+  ...chart.getComparisons(),
+  {
+    symbol: {
+      id: "index:SZSE:399001",
+      code: "399001",
+      name: "深证成指",
+      exchange: "SZSE",
+      kind: "index"
+    },
+    color: "#f59e0b"
+  }
+]);
+chart.setComparisons([]); // restores the price-scale mode used before comparison
+```
+
+The main series owns the time axis. Comparison values are projected only at exact main-series timestamps; the SDK does not interpolate, forward-fill, backfill, add calendar rows, or construct market data. For an ordinary period, each comparison is normalized independently from its first visible finite positive real value. Intraday instead uses that comparison symbol's trusted positive `intradayScale.previousClose`; an unavailable baseline produces no fabricated line.
+
+While the comparison list is non-empty, the main price scale uses percentage display. Removing the final comparison restores the price-scale mode active before comparison began. Comparison symbols and candles are not serialized into `ChartLayoutV3`, `exportLayout()` / `importLayout()`, or automatic browser persistence snapshots; the host must provide them again. `getComparisons()` and crosshair events return defensive current snapshots.
+
+`dataReady()` waits for the current main presentation, comparison context, and requested visible comparison range. It resolves `false` if a visible comparison is empty, unsupported, fails to load, is superseded, or the chart is destroyed; hidden comparisons do not block readiness. Use the existing `retry()` path after repairing a recoverable host datafeed failure.
 
 ## Subscribe to crosshair data
 
@@ -483,4 +534,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.41 hardens browser performance and long-history lifecycle without changing the public API. A lazy one-million-candle fixture now proves exact navigation through at least 50,000 real fixture candles, a 2,000-page descriptor chain remains complete while cached payloads stay bounded, and Chrome/Edge exercise crosshair, pan, and zoom with 63 Drawings plus MA/RSI/MACD. Static frames perform one layout reconciliation instead of repeating it across empty dynamic and overlay passes, while price-axis geometry still follows scale, precision, Drawing, and Study changes. Same-selection history recovery cannot reuse stale readiness; a failed requested range settles `dataReady()` as `false`; and `destroy()` releases cached and materialized market/visual data even during reentry or host callback failure. rc.41 preserves rc.39's symbol formatting/search contract and every earlier RC contract.
+Current rc.42 adds the host-owned Symbol Compare contract described above without adding a second time axis, filling missing market data, or persisting comparison state. rc.41 hardens browser performance and long-history lifecycle without changing the public API. A lazy one-million-candle fixture proves exact navigation through at least 50,000 real fixture candles, a 2,000-page descriptor chain remains complete while cached payloads stay bounded, and Chrome/Edge exercise crosshair, pan, and zoom with 63 Drawings plus MA/RSI/MACD. Static frames perform one layout reconciliation instead of repeating it across empty dynamic and overlay passes, while price-axis geometry still follows scale, precision, Drawing, and Study changes. Same-selection history recovery cannot reuse stale readiness; a failed requested range settles `dataReady()` as `false`; and `destroy()` releases cached and materialized market/visual data even during reentry or host callback failure. rc.42 preserves rc.41 and every earlier RC contract.

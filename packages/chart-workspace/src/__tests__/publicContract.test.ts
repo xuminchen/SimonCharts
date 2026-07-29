@@ -7,6 +7,8 @@ import {
 } from "../index";
 import type {
   ChartDatafeed,
+  ChartComparison,
+  ChartCrosshairComparisonValue,
   ChartCrosshairEvent,
   ChartCrosshairSnapshot,
   ChartCrosshairStudyOutput,
@@ -127,6 +129,8 @@ describe("charts public contract", () => {
     >();
     expectTypeOf<ChartOptions["seriesProperties"]>()
       .toEqualTypeOf<readonly ChartSeriesProperties[] | undefined>();
+    expectTypeOf<ChartOptions["comparisons"]>()
+      .toEqualTypeOf<readonly ChartComparison[] | undefined>();
     expectTypeOf<ChartInstance["setSeriesProperties"]>()
       .toEqualTypeOf<(properties: ChartSeriesProperties) => void>();
   });
@@ -358,6 +362,10 @@ describe("charts public contract", () => {
       .toEqualTypeOf<(executions: readonly ChartExecution[]) => void>();
     expectTypeOf<ChartInstance["setExecutionsVisible"]>()
       .toEqualTypeOf<(visible: boolean) => void>();
+    expectTypeOf<ChartInstance["getComparisons"]>()
+      .toEqualTypeOf<() => readonly ChartComparison[]>();
+    expectTypeOf<ChartInstance["setComparisons"]>()
+      .toEqualTypeOf<(comparisons: readonly ChartComparison[]) => void>();
     expectTypeOf<ChartInstance>().toHaveProperty("setVisibleRange");
     expectTypeOf<ChartInstance>().toHaveProperty("resetToLatest");
     expectTypeOf<ChartInstance>().toHaveProperty("retry");
@@ -374,6 +382,7 @@ describe("charts public contract", () => {
     expectTypeOf<ChartOptions>().toHaveProperty("themeOverrides");
     expectTypeOf<ChartOptions>().toHaveProperty("locale");
     expectTypeOf<ChartOptions>().toHaveProperty("executions");
+    expectTypeOf<ChartOptions>().toHaveProperty("comparisons");
     expectTypeOf<ChartOptions>().toHaveProperty("marks");
     expectTypeOf<ChartOptions>().toHaveProperty("studyDefinitions");
     expectTypeOf<ChartCustomStudyId>().toMatchTypeOf<`custom:${string}`>();
@@ -394,6 +403,23 @@ describe("charts public contract", () => {
       readonly fee?: number;
       readonly tQuantity?: number;
     }>();
+    expectTypeOf<ChartComparison>().toEqualTypeOf<{
+      readonly symbol: ChartSymbol;
+      readonly color?: string;
+      readonly visible?: boolean;
+    }>();
+    expectTypeOf<ChartCrosshairComparisonValue>().toEqualTypeOf<{
+      readonly symbolId: string;
+      readonly code: string;
+      readonly name: string;
+      readonly pricePrecision?: number;
+      readonly color?: string;
+      readonly value: number | null;
+      readonly changePercent: number | null;
+      readonly dataVersion?: string;
+    }>();
+    expectTypeOf<ChartCrosshairSnapshot["comparisons"]>()
+      .toEqualTypeOf<readonly ChartCrosshairComparisonValue[]>();
     expectTypeOf<ChartStateListener>().toEqualTypeOf<(
       state: Readonly<import("../index").ChartState>
     ) => void>();
@@ -456,6 +482,7 @@ describe("charts public contract", () => {
     expectTypeOf<ChartError>().toHaveProperty("recoverable");
     expectTypeOf<ChartFeature>().toEqualTypeOf<
       | "symbol-search"
+      | "symbol-compare"
       | "timeframes"
       | "adjustment"
       | "series-type"
@@ -476,6 +503,7 @@ describe("charts public contract", () => {
     expect(defaultChartFeatures).toEqual(["timeframes", "adjustment", "indicators"]);
     expect(advancedChartFeatures).toEqual([
       "symbol-search",
+      "symbol-compare",
       "timeframes",
       "adjustment",
       "series-type",

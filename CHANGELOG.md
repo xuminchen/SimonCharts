@@ -1,5 +1,15 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.42 - 2026-07-30
+
+- Added public host-owned Symbol Compare through `ChartComparison`, `ChartOptions.comparisons`, `getComparisons()`, and atomic `setComparisons()` replacement, with at most four distinct non-main symbols and defensive snapshots.
+- Reused the existing host datafeed, capability negotiation, bounded cursor paging, cancellation, retry, and readiness lifecycle for every comparison; no market data, calendar row, interpolation, forward fill, or backfill is constructed.
+- Kept the main series as the sole time-axis owner and aligned comparison values only at exact timestamps. Ordinary periods normalize each comparison from its first visible real value; intraday uses that comparison's trusted `previousClose`.
+- Switched a non-empty comparison presentation to percentage display and restored the prior price-scale mode after the final comparison is removed.
+- Added comparison rows to the native header, data window, crosshair snapshot, and keyboard-operable advanced symbol-search flow without creating a second chart, tooltip, or persistence model.
+- Kept comparisons host-owned and excluded from `ChartLayoutV3`, layout export/import, and automatic browser persistence snapshots. A visible comparison that is empty, unsupported, failed, superseded, or unable to satisfy the requested range makes the current `dataReady()` resolve `false`.
+- Accepted the exact 8-file immutable package after `74 files / 1,280 tests`, combined Chrome `154/154`, Charts `19 files / 269 tests`, Charts Chrome/Edge `103/103` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer execution; SHA-256 is `e23c8aa287c74bf1f9a72a10e7ef8d9592e741053b6bcff38f4bedd1f380c97e`, SHA-512 is `89bc969ade897f023232de5e9b0d7cfe3b5f95907335af769c39034e330b1c0e39d2040c1854f605f32f34df604ba35350e6ce3fcf2e6ad4667d08c6061946e7`. Final adversarial review found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.41 - 2026-07-30
 
 - Added a browser performance gate over a lazy one-million-candle fixture that navigates through at least 50,000 exact fixture candles, then exercises crosshair, pan, and zoom with 63 non-interactive Drawings plus MA, RSI, and MACD in Chrome and Edge.

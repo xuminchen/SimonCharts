@@ -27,7 +27,17 @@ export function createVisualLayer(registry: VisualRendererRegistry): ChartLayer 
 
       for (const routedOutput of routedOutputs) {
         const valueRange = rangeByPanelId.get(routedOutput.panel.id);
-        const valueScale = valueScaleByPanelId.get(routedOutput.panel.id)!;
+        const sharedScale = valueScaleByPanelId.get(routedOutput.panel.id)!;
+        const valueScale =
+          routedOutput.output.coordinateSpace === "percentage" &&
+          routedOutput.panel.kind === "main" &&
+          sharedScale.mode === "percentage"
+            ? {
+                ...sharedScale,
+                mode: "linear" as const,
+                basePrice: 1
+              }
+            : sharedScale;
 
         routedOutput.renderer.render({
           ...context,

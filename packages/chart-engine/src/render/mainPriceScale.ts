@@ -36,9 +36,27 @@ export function createMainPanelPriceScale(
     mode === "percentage" && percentageBasePrice !== undefined
       ? percentageBasePrice
       : firstVisibleCandle?.close ?? 1;
+  const percentageValues: number[] = [];
 
   for (const output of visualOutputs) {
     if (output.visible === false || (output.panelId !== undefined && output.panelId !== "main")) {
+      continue;
+    }
+
+    if (output.coordinateSpace === "percentage") {
+      if (mode !== "percentage") continue;
+      for (const point of getOutputValues(output)) {
+        const index =
+          typeof point.index === "number" && Number.isFinite(point.index)
+            ? point.index
+            : indexByTime.get(point.time);
+        if (
+          index !== undefined &&
+          index >= from &&
+          index <= to &&
+          Number.isFinite(point.value)
+        ) percentageValues.push(point.value);
+      }
       continue;
     }
 
@@ -96,7 +114,7 @@ export function createMainPanelPriceScale(
   }
 
   return (
-    createSafePriceScale(rawBounds, basePrice, mode) ??
+    createSafePriceScale(rawBounds, basePrice, mode, percentageValues) ??
     createSafePriceScale(rawBounds, firstVisibleCandle?.close ?? 1, "linear")!
   );
 }
@@ -104,8 +122,18 @@ export function createMainPanelPriceScale(
 function createSafePriceScale(
   bounds: { min: number; max: number },
   basePrice: number,
-  mode: PriceScaleMode
+  mode: PriceScaleMode,
+  scaleValues: readonly number[] = []
 ): PriceScale | undefined {
+  if (mode === "percentage" && scaleValues.length > 0) {
+    const provisional: PriceScale = { mode, basePrice, min: 0, max: 1 };
+    const min = Math.min(priceToScaleValue(bounds.min, provisional), ...scaleValues);
+    const max = Math.max(priceToScaleValue(bounds.max, provisional), ...scaleValues);
+    const span = max - min;
+    const padding = span === 0 ? Math.max(Math.abs(max), 1) * 0.05 : span * 0.05;
+    const combined = { ...provisional, min: min - padding, max: max + padding };
+    return isFinitePriceScale(combined) ? combined : undefined;
+  }
   const padded = createPriceScaleFromBounds(bounds, basePrice, mode);
   if (isFinitePriceScale(padded)) return padded;
 

@@ -1,10 +1,13 @@
 import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartController";
+import { chartComparisonColors } from "../data/comparisons";
 import type { ChartLabels } from "./localization";
 
 export interface SymbolSearch {
   readonly element: HTMLDivElement;
   bind(actions: WorkspaceUiActions): () => void;
   render(viewModel: WorkspaceViewModel): void;
+  setMode(mode: "primary" | "comparison"): void;
+  focus(): void;
 }
 
 let nextSymbolSearchId = 0;
@@ -47,6 +50,16 @@ export function createSymbolSearch(labels: ChartLabels): SymbolSearch {
   let activeIndex = -1;
   let renderedQuery = "";
   let dismissed = false;
+  let mode: "primary" | "comparison" = "primary";
+  let currentViewModel: WorkspaceViewModel | undefined;
+  let selectionError: string | undefined;
+
+  const applyMode = (): void => {
+    const label = mode === "comparison" ? labels.addComparisonSymbol : labels.searchSymbol;
+    input.setAttribute("aria-label", label);
+    listbox.setAttribute("aria-label", label);
+    input.placeholder = label;
+  };
 
   const setExpanded = (expanded: boolean): void => {
     popup.hidden = !expanded;
@@ -74,20 +87,41 @@ export function createSymbolSearch(labels: ChartLabels): SymbolSearch {
   const select = (index: number): void => {
     const symbol = results[index];
     if (!symbol) return;
+    selectionError = undefined;
+    if (mode === "comparison") {
+      if (!currentViewModel || !actions) return;
+      const color = chartComparisonColors.find((candidate) =>
+        !currentViewModel!.comparisons.some((comparison) => comparison.color?.toLowerCase() === candidate)
+      ) ?? chartComparisonColors[currentViewModel.comparisons.length % chartComparisonColors.length];
+      try {
+        actions.setComparisons([...currentViewModel.comparisons, { symbol, color }]);
+      } catch (error) {
+        selectionError = error instanceof Error ? error.message : String(error);
+        message.textContent = selectionError;
+        message.hidden = false;
+        status.textContent = selectionError;
+        setExpanded(true);
+        return;
+      }
+    } else {
+      actions?.setSymbol(symbol);
+    }
     dismissed = true;
     activeIndex = -1;
     input.value = "";
     setExpanded(false);
     actions?.searchSymbols("");
-    actions?.setSymbol(symbol);
     input.focus({ preventScroll: true });
   };
+
+  applyMode();
 
   return {
     element,
     bind(nextActions) {
       actions = nextActions;
       const updateQuery = () => {
+        selectionError = undefined;
         dismissed = false;
         activeIndex = -1;
         results = [];
@@ -190,6 +224,7 @@ export function createSymbolSearch(labels: ChartLabels): SymbolSearch {
       };
     },
     render(viewModel) {
+      currentViewModel = viewModel;
       const query = input.value.trim();
       const matches = query.length > 0 && viewModel.search.query === query;
       if (renderedQuery !== viewModel.search.query) activeIndex = -1;
@@ -210,7 +245,9 @@ export function createSymbolSearch(labels: ChartLabels): SymbolSearch {
       if (activeIndex >= results.length) activeIndex = -1;
       message.replaceChildren();
       message.hidden = true;
-      const error = matches ? viewModel.search.error : undefined;
+      const error = selectionError === undefined
+        ? (matches ? viewModel.search.error : undefined)
+        : { message: selectionError, recoverable: false };
       if (error) {
         const text = document.createElement("span");
         text.textContent = error.message;
@@ -245,6 +282,19 @@ export function createSymbolSearch(labels: ChartLabels): SymbolSearch {
         (results.length > 0 || !message.hidden);
       setExpanded(expanded);
       paintActive(activeIndex >= 0);
+    },
+    setMode(nextMode) {
+      if (mode === nextMode) return;
+      mode = nextMode;
+      selectionError = undefined;
+      input.value = "";
+      results = [];
+      actions?.searchSymbols("");
+      close();
+      applyMode();
+    },
+    focus() {
+      input.focus({ preventScroll: true });
     }
   };
 }

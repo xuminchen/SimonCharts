@@ -79,6 +79,7 @@ import type {
   Timeframe
 } from "../contracts";
 import type { MaterializedSeries } from "../data/materializedSeries";
+import type { ComparisonDataSnapshot } from "../data/comparisonCoordinator";
 import { shanghaiTradingDayKey } from "../data/pagedSeriesStore";
 import type { CalculationStatus, CheckpointedCalculationRuntime } from "./checkpointedCalculationRuntime";
 import {
@@ -98,6 +99,11 @@ import {
   executionTooltipRows
 } from "./executionMarks";
 import { priceFormatter } from "./priceFormatter";
+import {
+  comparisonBaseValue,
+  comparisonValueAtTime,
+  createComparisonLineOutput
+} from "./comparisonProjection";
 
 export interface WorkspaceRuntimeMetrics extends RenderMetrics {
   maxMaterializedCandleCount: number;
@@ -109,6 +115,17 @@ export interface MaterializationDemand {
 }
 
 export interface DataWindowIndicatorRow { id: string; label: string; value: string; }
+export interface DataWindowComparisonRow {
+  readonly symbolId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly pricePrecision?: number;
+  readonly label: string;
+  readonly color?: string;
+  readonly value: number | null;
+  readonly changePercent: number | null;
+  readonly dataVersion?: string;
+}
 export interface DataWindowIntradaySummary {
   readonly open: number;
   readonly high: number;
@@ -123,6 +140,7 @@ export interface DataWindowSnapshot {
   change: number;
   changePercent: number;
   indicatorRows: readonly DataWindowIndicatorRow[];
+  comparisonRows?: readonly DataWindowComparisonRow[];
   pricePrecision?: number;
   intradaySummary?: DataWindowIntradaySummary;
 }
@@ -146,6 +164,7 @@ export interface RuntimeCrosshairSnapshot {
   readonly change: number | null;
   readonly changePercent: number | null;
   readonly studies: readonly RuntimeCrosshairStudyValues[];
+  readonly comparisons: readonly DataWindowComparisonRow[];
 }
 
 export interface ExecutionTooltipSnapshot {
@@ -166,6 +185,7 @@ export interface ChartEngineRuntime {
   clearCrosshair(): void;
   setSeriesType(type: SeriesType, properties?: ChartSeriesProperties): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
+  setComparisonData(snapshots: readonly ComparisonDataSnapshot[]): void;
   setMarks(marks: readonly ChartMark[]): void;
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
@@ -310,6 +330,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   ]]);
   let panelPriceScales = new Map<string, PriceScale>();
   let visualOutputs: IndicatorVisualOutput[] = [];
+  let comparisonData: readonly ComparisonDataSnapshot[] = [];
   let markOutput: IndicatorMarkerOutput | undefined;
   let marks: readonly ChartMark[] = [];
   let executionOutput: IndicatorMarkerOutput | undefined;
@@ -394,8 +415,26 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let drawingEditor: DrawingEditor;
 
   const intradayLocked = (): boolean => materialized?.intradayDays !== undefined;
+  const comparisonOutputs = (): IndicatorVisualOutput[] => {
+    if (materialized === undefined) return [];
+    return comparisonData
+      .filter((snapshot) =>
+        snapshot.status === "ready" &&
+        snapshot.comparison.visible !== false
+      )
+      .map((snapshot) => createComparisonLineOutput({
+        comparison: snapshot.comparison,
+        mainCandles: materialized!.series.candles,
+        comparisonCandles: snapshot.candles,
+        visibleRange: viewport.visibleRange,
+        ...(snapshot.previousClose === undefined
+          ? {}
+          : { previousClose: snapshot.previousClose })
+      }));
+  };
   const activeVisualOutputs = (): IndicatorVisualOutput[] => [
     ...visualOutputs,
+    ...comparisonOutputs(),
     ...(markOutput === undefined ? [] : [markOutput]),
     ...(executionOutput === undefined ? [] : [executionOutput])
   ];
@@ -934,6 +973,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const state = chartEngine.getState();
     const mainPane = paneLayouts.get("main")!;
     const intradayScale = materialized?.intradayScale;
+    const outputs = activeVisualOutputs();
     let drawingPrices = drawingAutoscalePrices(
       intradayScale === undefined ? viewport.priceScaleMode : "percentage",
       intradayScale?.previousClose
@@ -943,7 +983,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         state.series,
         viewport.visibleRange,
         intradayScale === undefined ? viewport.priceScaleMode : "percentage",
-        activeVisualOutputs(),
+        outputs,
         intradayAverage === undefined ? [] : [intradayAverage],
         prices,
         intradayScale?.previousClose
@@ -975,11 +1015,26 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     } else if (manualPriceScale !== undefined) {
       priceScale = manualPriceScale;
     } else if (intradayScale.priceLimitPercent !== undefined) {
+      const comparisonPrices = outputs.flatMap((output) => {
+        if (output.coordinateSpace !== "percentage" || output.type !== "line") return [];
+        let minimum = Number.POSITIVE_INFINITY;
+        let maximum = Number.NEGATIVE_INFINITY;
+        for (const point of output.values) {
+          if (point.value === null || !Number.isFinite(point.value)) continue;
+          minimum = Math.min(minimum, point.value);
+          maximum = Math.max(maximum, point.value);
+        }
+        if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return [];
+        return [
+          intradayScale.previousClose * (1 + minimum / 100),
+          intradayScale.previousClose * (1 + maximum / 100)
+        ];
+      });
       const extent = calculateFixedIntradayPercentExtent(
         state.series.candles,
         intradayScale.previousClose,
         intradayScale.priceLimitPercent,
-        drawingPrices
+        [...drawingPrices, ...comparisonPrices]
       );
       priceScale = {
         mode: "percentage",
@@ -1089,6 +1144,53 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     return chartEngine.getState().series.candles[index - 1]?.close;
   }
 
+  function comparisonRowsAt(time: number): DataWindowComparisonRow[] {
+    const mainCandles = chartEngine.getState().series.candles;
+    return comparisonData
+      .filter((snapshot) =>
+        snapshot.status === "ready" &&
+        snapshot.comparison.visible !== false
+      )
+      .map((snapshot) => {
+        const input = {
+          comparison: snapshot.comparison,
+          mainCandles,
+          comparisonCandles: snapshot.candles,
+          visibleRange: viewport.visibleRange,
+          ...(snapshot.previousClose === undefined
+            ? {}
+            : { previousClose: snapshot.previousClose })
+        };
+        const base = comparisonBaseValue(input);
+        const raw = comparisonValueAtTime(snapshot.candles, time);
+        const value =
+          raw !== undefined && Number.isFinite(raw) && raw > 0 ? raw : null;
+        return {
+          symbolId: snapshot.comparison.symbol.id,
+          code: snapshot.comparison.symbol.code,
+          name: snapshot.comparison.symbol.name,
+          ...(snapshot.comparison.symbol.pricePrecision === undefined
+            ? {}
+            : { pricePrecision: snapshot.comparison.symbol.pricePrecision }),
+          label: `${snapshot.comparison.symbol.name} ${snapshot.comparison.symbol.code}`,
+          ...(snapshot.comparison.color === undefined
+            ? {}
+            : { color: snapshot.comparison.color }),
+          value,
+          changePercent:
+            value === null ||
+            base === undefined ||
+            !Number.isFinite(base) ||
+            base <= 0
+              ? null
+              : (value / base - 1) * 100,
+          ...(snapshot.dataVersion === undefined
+            ? {}
+            : { dataVersion: snapshot.dataVersion })
+        };
+      });
+  }
+
   function buildCrosshairSnapshot(
     pending: Extract<NonNullable<typeof pendingCrosshairEvent>, { crosshair: ChartCrosshairState }>
   ): RuntimeCrosshairSnapshot | undefined {
@@ -1152,6 +1254,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       });
     const referencePrice = crosshairReferencePriceAt(pending.crosshair.index);
     const change = referencePrice === undefined ? null : candle.close - referencePrice;
+    const comparisons = comparisonRowsAt(candle.time);
     return {
       symbolId: materialized.selection.symbol.id,
       timeframe: materialized.selection.timeframe,
@@ -1166,7 +1269,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       changePercent: referencePrice === undefined || referencePrice === 0
         ? null
         : ((candle.close - referencePrice) / referencePrice) * 100,
-      studies
+      studies,
+      comparisons
     };
   }
 
@@ -1331,6 +1435,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
           value: typeof value === "number" ? String(value) : "--"
         };
       });
+    const comparisonRows = comparisonRowsAt(candle.time);
     options.onDataWindowChanged?.({
       crosshair: snapshotCrosshair,
       candle: { ...candle },
@@ -1338,6 +1443,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       change,
       changePercent: previousClose === 0 ? 0 : (change / previousClose) * 100,
       indicatorRows,
+      ...(comparisonRows.length === 0 ? {} : { comparisonRows }),
       ...(currentPricePrecision === undefined ? {} : { pricePrecision: currentPricePrecision }),
       ...(currentIntradaySummary === undefined
         ? {}
@@ -2478,6 +2584,22 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       indicatorGeneration += 1;
       void calculateIndicators(indicatorConfigs, indicatorGeneration);
     },
+    setComparisonData(snapshots) {
+      if (destroyed) return;
+      comparisonData = snapshots;
+      syncVisualOutputs();
+      updatePriceScale();
+      refreshCrosshairAtPoint();
+      if (crosshair !== undefined && crosshairPoint !== undefined) {
+        queueCrosshairEvent(crosshair, crosshairPoint);
+      }
+      lastDataWindowIndex = undefined;
+      emitDataWindow(true);
+      scheduler.invalidate({
+        layers: ["axis", "visuals", "crosshair"],
+        reason: "comparisonsChanged"
+      });
+    },
     setMarks(nextMarks) { if (destroyed) return; marks = nextMarks.map((mark) => ({ ...mark })); rebuildMarkOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair"], reason: "marksChanged" }); },
     setExecutions(nextExecutions) { if (destroyed) return; if (pendingClick?.kind === "execution") pendingClick = undefined; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionsChanged" }); },
     setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; if (pendingClick?.kind === "execution") pendingClick = undefined; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionVisibilityChanged" }); },
@@ -2675,6 +2797,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       session.destroy();
       materialized = undefined;
       visualOutputs = [];
+      comparisonData = [];
       markOutput = undefined;
       marks = [];
       executionOutput = undefined;

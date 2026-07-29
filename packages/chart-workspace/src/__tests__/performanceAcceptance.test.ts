@@ -101,6 +101,85 @@ function materialized(start = 1, count = 100): MaterializedSeries {
 }
 
 describe("workspace engine runtime", () => {
+  it("renders comparison data on the native percentage scale and publishes exact crosshair values", () => {
+    const staticCanvas = new FakeCanvas();
+    const overlayCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    let currentViewport: ViewportState | undefined;
+    const snapshots: Array<import("../runtime/chartEngineRuntime").DataWindowSnapshot | undefined> = [];
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500, lang: "zh-CN" } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame(id) { frames.delete(id); },
+      devicePixelRatio: 1,
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onViewportChanged(viewport) { currentViewport = viewport; },
+      onDataWindowChanged(snapshot) { snapshots.push(snapshot); }
+    });
+    const source = materialized(1, 100);
+    const comparisonCandles = source.series.candles.map((item, index) => ({
+      ...item,
+      open: 10 + index,
+      high: 10 + index,
+      low: 10 + index,
+      close: 10 + index
+    }));
+    runtime.setMaterializedSeries(source);
+    runtime.setPriceScaleMode("percentage");
+    runtime.setComparisonData([{
+      comparison: {
+        symbol: {
+          id: "SZSE:000001",
+          code: "000001",
+          name: "平安银行",
+          exchange: "SZSE",
+          kind: "stock",
+          pricePrecision: 2
+        },
+        color: "#7c83ff",
+        visible: true
+      },
+      status: "ready",
+      candles: comparisonCandles,
+      adjustMode: "forward",
+      dataVersion: "compare-v1"
+    }]);
+    while (frames.size > 0) {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((callback) => callback());
+    }
+
+    expect(staticCanvas.strokeStyles).toContain("#7c83ff");
+    const layout = createChartLayout(800, 500);
+    const x = indexToX(50, currentViewport!, layout.plotArea.x);
+    overlayCanvas.dispatch("pointermove", { clientX: x, clientY: 200, pointerType: "mouse" });
+    while (frames.size > 0) {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((callback) => callback());
+    }
+
+    const comparisonBase = comparisonCandles[currentViewport!.visibleRange.from]!.close;
+    expect(snapshots.at(-1)?.comparisonRows).toEqual([{
+      symbolId: "SZSE:000001",
+      code: "000001",
+      name: "平安银行",
+      pricePrecision: 2,
+      label: "平安银行 000001",
+      color: "#7c83ff",
+      value: 60,
+      changePercent: (60 / comparisonBase - 1) * 100,
+      dataVersion: "compare-v1"
+    }]);
+    runtime.destroy();
+  });
+
   it.each(["indicator", "series"] as const)(
     "publishes idle only after concurrent indicator and series calculations settle (%s first)",
     async (first) => {
@@ -897,6 +976,36 @@ describe("workspace engine runtime", () => {
     expect(runtime.getVisibleRange()).toEqual({ from: 1, to: 241 });
     expect(renderErrors).toEqual([]);
     expect(staticCanvas.texts).toEqual(expect.arrayContaining(["+10.00%", "0.00%", "-10.00%"]));
+
+    staticCanvas.texts.splice(0);
+    runtime.setComparisonData([{
+      comparison: {
+        symbol: {
+          id: "SZSE:300001",
+          code: "300001",
+          name: "特锐德",
+          exchange: "SZSE",
+          kind: "stock"
+        },
+        visible: true
+      },
+      status: "ready",
+      candles: source.series.candles.map((entry) => ({
+        ...entry,
+        open: 12.5,
+        high: 12.5,
+        low: 12.5,
+        close: 12.5
+      })),
+      previousClose: 10,
+      dataVersion: "compare-v1"
+    }]);
+    frame?.();
+    expect(Math.max(
+      ...staticCanvas.texts
+        .filter((value) => value.endsWith("%"))
+        .map((value) => Number.parseFloat(value))
+    )).toBeGreaterThan(25);
 
     staticCanvas.texts.splice(0);
     runtime.setDrawings([{

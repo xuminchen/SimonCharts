@@ -1,5 +1,147 @@
 import { expect, test } from "@playwright/test";
 
+test("reuses one symbol search for adding and managing comparisons", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  const input = page.getByTestId("symbol-search-input");
+  const initialSymbol = await page.locator(".sc-current-symbol").textContent();
+
+  await expect(input).toHaveCount(1);
+  await page.getByTestId("symbol-compare-toggle").click();
+  await expect(input).toHaveAttribute("aria-label", "添加比较标的");
+  await expect(input).toBeFocused();
+
+  await input.fill("慢速");
+  await page.getByRole("option", { name: /慢速股票/ }).click();
+  await expect(page.locator(".sc-current-symbol")).toHaveText(initialSymbol ?? "");
+  const chip = page.locator('[data-comparison-symbol-id="stock:SSE:slow"]');
+  await expect(chip).toContainText("慢速股票 600001");
+  await expect(chip.locator(".sc-comparison-status")).toHaveText("加载中");
+  await expect(chip.locator(".sc-comparison-swatch")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__chart?.getPriceScaleMode()))
+    .toBe("percentage");
+  await expect.poll(() => page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-static-canvas");
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return 0;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let matches = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (
+        pixels[index] === 41 &&
+        pixels[index + 1] === 98 &&
+        pixels[index + 2] === 255 &&
+        pixels[index + 3]! > 0
+      ) matches += 1;
+    }
+    return matches;
+  })).toBeGreaterThan(0);
+  const canvas = page.locator("canvas.sc-overlay-canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas missing");
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.45);
+  await page.getByRole("tab", { name: "数据窗口", exact: true }).click();
+  await expect(page.getByTestId("data-window-comparison-stock:SSE:slow"))
+    .toContainText(/[\d.]+ · [+-]?[\d.]+%/);
+  await expect(chip).toHaveAttribute("data-status", "ready");
+  await expect(chip.locator(".sc-comparison-status")).toBeHidden();
+  await expect(chip.locator(".sc-comparison-visibility")).toHaveAttribute("title", /已就绪/);
+
+  const visibility = chip.getByRole("button", { name: /隐藏比较标的/ });
+  await visibility.click();
+  await expect(chip).toHaveAttribute("data-status", "hidden");
+  await expect(chip.locator(".sc-comparison-status")).toHaveText("已隐藏");
+  await expect(page.getByTestId("data-window-comparison-stock:SSE:slow")).toHaveCount(0);
+  await expect(chip.getByRole("button", { name: /显示比较标的/ })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__chart?.getComparisons()[0]?.visible))
+    .toBe(false);
+
+  await chip.getByRole("button", { name: /移除比较标的/ }).click();
+  await expect(chip).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__chart?.getComparisons()))
+    .toEqual([]);
+
+  await page.getByTestId("symbol-compare-toggle").click();
+  await expect(input).toHaveAttribute("aria-label", "搜索标的");
+  await expect(input).toHaveCount(1);
+});
+
+test("localizes the comparison search mode in English", async ({ page }) => {
+  await page.goto("/?locale=en-US");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  const input = page.getByTestId("symbol-search-input");
+  const toggle = page.getByTestId("symbol-compare-toggle");
+
+  await expect(toggle).toHaveAttribute("aria-label", "Add comparison symbol");
+  await toggle.press("Enter");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(input).toHaveAttribute("aria-label", "Add comparison symbol");
+  await expect(input).toBeFocused();
+});
+
+test("formats each comparison data-window value with its own precision", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  expect(await page.evaluate(async () => {
+    const chart = window.__chart!;
+    chart.setComparisons([
+      {
+        symbol: {
+          id: "stock:SSE:slow",
+          code: "600001",
+          name: "零位精度标的",
+          exchange: "SSE",
+          kind: "stock",
+          pricePrecision: 0
+        },
+        color: "#2962ff"
+      },
+      {
+        symbol: {
+          id: "stock:SSE:fast",
+          code: "600002",
+          name: "五位精度标的",
+          exchange: "SSE",
+          kind: "stock",
+          pricePrecision: 5
+        },
+        color: "#f59e0b"
+      }
+    ]);
+    return chart.dataReady();
+  })).toBe(true);
+  const canvas = page.locator("canvas.sc-overlay-canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas missing");
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.45);
+  await page.getByRole("tab", { name: "数据窗口", exact: true }).click();
+
+  await expect(page.getByTestId("data-window-comparison-stock:SSE:slow"))
+    .toHaveText(/^\d+ · [+-]?[\d.]+%$/);
+  await expect(page.getByTestId("data-window-comparison-stock:SSE:fast"))
+    .toHaveText(/^\d+\.\d{5} · [+-]?[\d.]+%$/);
+});
+
+test("surfaces the contract rejection without partially adding a fifth comparison", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  await page.evaluate(() => window.__chart!.setComparisons([
+    { symbol: { id: "index:SSE:000001", code: "000001", name: "上证指数", exchange: "SSE", kind: "index" } },
+    { symbol: { id: "stock:SSE:slow", code: "600001", name: "慢速股票", exchange: "SSE", kind: "stock" } },
+    { symbol: { id: "stock:SSE:fast", code: "600002", name: "快速股票", exchange: "SSE", kind: "stock" } },
+    { symbol: { id: "stock:SSE:other", code: "600003", name: "其他股票", exchange: "SSE", kind: "stock" } }
+  ]));
+  await expect(page.locator(".sc-comparison-chip")).toHaveCount(4);
+  await page.getByTestId("symbol-compare-toggle").click();
+  await page.getByTestId("symbol-search-input").fill("600008");
+  await page.getByRole("option", { name: /八位精度标的/ }).click();
+
+  await expect(page.locator(".sc-symbol-search-message")).toContainText("at most 4");
+  await expect(page.locator(".sc-comparison-chip")).toHaveCount(4);
+  await expect.poll(() => page.evaluate(() => window.__chart!.getComparisons().length))
+    .toBe(4);
+});
+
 test("exposes a keyboard-operable ARIA combobox without moving DOM focus", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();

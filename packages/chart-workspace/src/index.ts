@@ -9,6 +9,8 @@ export type {
   ChartDataCapabilities,
   ChartDataSeriesCapability,
   ChartDatafeed,
+  ChartComparison,
+  ChartCrosshairComparisonValue,
   ChartCrosshairEvent,
   ChartCrosshairListener,
   ChartCrosshairSnapshot,

@@ -30,6 +30,12 @@ export interface ChartSymbol {
   pricePrecision?: number;
 }
 
+export interface ChartComparison {
+  readonly symbol: ChartSymbol;
+  readonly color?: string;
+  readonly visible?: boolean;
+}
+
 export interface Candle {
   time: number;
   open: number;
@@ -79,6 +85,7 @@ export interface ChartDatafeed {
 
 export type ChartFeature =
   | "symbol-search"
+  | "symbol-compare"
   | "timeframes"
   | "adjustment"
   | "series-type"
@@ -445,6 +452,7 @@ export const defaultChartFeatures: readonly ChartFeature[] = Object.freeze([
 
 export const advancedChartFeatures: readonly ChartFeature[] = Object.freeze([
   "symbol-search",
+  "symbol-compare",
   "timeframes",
   "adjustment",
   "series-type",
@@ -470,6 +478,7 @@ export interface ChartOptions {
   themeOverrides?: ChartThemeOverrides;
   locale?: ChartLocale;
   executions?: readonly ChartExecution[];
+  comparisons?: readonly ChartComparison[];
   marks?: readonly ChartMark[];
   seriesProperties?: readonly ChartSeriesProperties[];
   studyDefinitions?: readonly ChartCustomStudyDefinition[];
@@ -515,6 +524,17 @@ export interface ChartCrosshairStudyValues {
   readonly outputs: readonly ChartCrosshairStudyOutput[];
 }
 
+export interface ChartCrosshairComparisonValue {
+  readonly symbolId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly pricePrecision?: number;
+  readonly color?: string;
+  readonly value: number | null;
+  readonly changePercent: number | null;
+  readonly dataVersion?: string;
+}
+
 export interface ChartCrosshairSnapshot {
   readonly symbolId: string;
   readonly timeframe: Timeframe;
@@ -529,6 +549,7 @@ export interface ChartCrosshairSnapshot {
   readonly change: number | null;
   readonly changePercent: number | null;
   readonly studies: readonly ChartCrosshairStudyValues[];
+  readonly comparisons: readonly ChartCrosshairComparisonValue[];
 }
 
 export type ChartCrosshairEvent =
@@ -626,6 +647,7 @@ export interface ChartInstance {
   getIndicators(): readonly ChartIndicator[];
   getDrawings(): readonly ChartDrawing[];
   getMarks(): readonly ChartMark[];
+  getComparisons(): readonly ChartComparison[];
   dataReady(): Promise<boolean>;
   createStudy(indicator: ChartIndicatorInput): ChartIndicatorEntityId;
   getStudyById(entityId: ChartIndicatorEntityId): ChartIndicator | undefined;
@@ -654,6 +676,7 @@ export interface ChartInstance {
   setIndicators(indicators: readonly ChartIndicator[]): void;
   setDrawings(drawings: readonly ChartDrawing[]): void;
   setMarks(marks: readonly ChartMark[]): void;
+  setComparisons(comparisons: readonly ChartComparison[]): void;
   setDrawingTool(tool: ChartDrawingTool): void;
   setGridVisible(visible: boolean): void;
   undoDrawing(): void;

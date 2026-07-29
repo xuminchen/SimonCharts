@@ -39,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setComparisonData: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -53,6 +53,76 @@ function dependencies(): ChartControllerDependencies {
 }
 
 describe("chart workspace controller", () => {
+  it("atomically replaces comparisons, fixes percentage mode, and restores the prior scale", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    const rows = [{
+      symbol: {
+        id: "stock:SZSE:000001",
+        code: "000001",
+        name: "平安银行",
+        exchange: "SZSE",
+        kind: "stock"
+      }
+    }];
+
+    controller.setComparisons(rows);
+    rows[0]!.symbol.name = "changed";
+    expect(controller.getViewModel().comparisons).toEqual([{
+      symbol: expect.objectContaining({ name: "平安银行" }),
+      color: "#2962ff",
+      visible: true
+    }]);
+    expect(controller.getViewModel().priceScaleMode).toBe("percentage");
+    expect(deps.runtime.setPriceScaleMode).toHaveBeenLastCalledWith("percentage");
+    expect(deps.persistence.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ priceScaleMode: "linear" })
+    );
+
+    controller.setPriceScaleMode("log");
+    expect(controller.getViewModel().priceScaleMode).toBe("percentage");
+
+    controller.setComparisons([]);
+    expect(controller.getViewModel().comparisons).toEqual([]);
+    expect(controller.getViewModel().priceScaleMode).toBe("linear");
+    expect(deps.runtime.setPriceScaleMode).toHaveBeenLastCalledWith("linear");
+  });
+
+  it("rejects a comparison that duplicates the main symbol without changing state", () => {
+    const controller = createChartController(dependencies());
+
+    expect(() => controller.setComparisons([{ symbol: stock }])).toThrow(TypeError);
+    expect(controller.getViewModel().comparisons).toEqual([]);
+  });
+
+  it("removes a comparison when it becomes the main symbol", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+
+    controller.setComparisons([{ symbol: index }]);
+    controller.setSymbol(index);
+
+    expect(controller.getViewModel().comparisons).toEqual([]);
+    expect(controller.getViewModel().priceScaleMode).toBe("linear");
+    expect(deps.runtime.setComparisonData).toHaveBeenLastCalledWith([]);
+  });
+
+  it("publishes comparison terminal status without retaining candle payloads", () => {
+    const controller = createChartController(dependencies());
+    controller.setComparisons([{ symbol: index }]);
+
+    controller.handleComparisonData([{
+      comparison: controller.getViewModel().comparisons[0]!,
+      status: "empty",
+      candles: []
+    }]);
+
+    expect(controller.getViewModel().comparisonStatuses).toEqual([
+      { symbolId: index.id, status: "empty" }
+    ]);
+    expect(controller.getViewModel()).not.toHaveProperty("comparisonData");
+  });
+
   it("clears search state and cancels work for an empty query", () => {
     const deps = dependencies();
     const controller = createChartController(deps);

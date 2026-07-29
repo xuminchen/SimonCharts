@@ -107,9 +107,38 @@ export function createTopToolbar(
   symbolGroup.className = "sc-toolbar-group sc-symbol-group";
   const currentSymbol = document.createElement("span");
   currentSymbol.className = "sc-current-symbol";
-  const symbolSearch = features.has("symbol-search") ? createSymbolSearch(labels) : undefined;
+  const primarySymbolSearchEnabled = features.has("symbol-search");
+  const comparisonEnabled = features.has("symbol-compare");
+  const symbolSearch = primarySymbolSearchEnabled || comparisonEnabled
+    ? createSymbolSearch(labels)
+    : undefined;
   symbolGroup.append(currentSymbol);
   if (symbolSearch) symbolGroup.append(symbolSearch.element);
+
+  const comparisonGroup = comparisonEnabled ? document.createElement("div") : undefined;
+  const comparisonToggle = comparisonGroup && symbolSearch ? document.createElement("button") : undefined;
+  const comparisonChips = comparisonGroup ? document.createElement("div") : undefined;
+  if (comparisonGroup && comparisonChips) {
+    comparisonGroup.className = "sc-toolbar-group sc-comparison-group";
+    comparisonChips.className = "sc-comparison-chips";
+    comparisonChips.setAttribute("role", "list");
+    comparisonChips.setAttribute("aria-label", labels.comparisonSymbols);
+    if (comparisonToggle) {
+      comparisonToggle.type = "button";
+      comparisonToggle.dataset.testid = "symbol-compare-toggle";
+      comparisonToggle.className = "sc-symbol-compare-toggle";
+      comparisonToggle.textContent = `+ ${labels.compareSymbol}`;
+      comparisonToggle.title = labels.addComparisonSymbol;
+      comparisonToggle.setAttribute("aria-label", labels.addComparisonSymbol);
+      comparisonToggle.setAttribute("aria-pressed", "false");
+      comparisonGroup.append(comparisonToggle);
+    }
+    comparisonGroup.append(comparisonChips);
+    if (!primarySymbolSearchEnabled && symbolSearch && comparisonToggle) {
+      symbolSearch.setMode("comparison");
+      comparisonToggle.setAttribute("aria-pressed", "true");
+    }
+  }
 
   const timeframeHost = features.has("timeframes") ? document.createElement("div") : undefined;
   const intradayDays = timeframeHost ? document.createElement("select") : undefined;
@@ -321,6 +350,7 @@ export function createTopToolbar(
   }
 
   element.append(symbolGroup);
+  if (comparisonGroup) element.append(comparisonGroup);
   if (timeframeHost) element.append(timeframeHost);
   if (actionGroup.childElementCount > 0) element.append(actionGroup);
   if (more) element.append(more);
@@ -426,6 +456,61 @@ export function createTopToolbar(
     more.dataset.open = "false";
     moreToggle.setAttribute("aria-expanded", "false");
   };
+  const renderComparisons = (viewModel: WorkspaceViewModel): void => {
+    if (!comparisonChips) return;
+    comparisonChips.replaceChildren();
+    for (const comparison of viewModel.comparisons) {
+      const label = `${comparison.symbol.name} ${comparison.symbol.code}`;
+      const visible = comparison.visible !== false;
+      const status = viewModel.comparisonStatuses.find(
+        (item) => item.symbolId === comparison.symbol.id
+      )?.status ?? (visible ? "loading" : "hidden");
+      const statusLabel = status === "ready"
+        ? labels.comparisonReady
+        : status === "empty"
+          ? labels.comparisonNoData
+          : status === "unsupported"
+            ? labels.comparisonUnsupported
+            : status === "error"
+              ? labels.comparisonLoadFailed
+              : status === "hidden" ? labels.comparisonHidden : labels.comparisonLoading;
+      const chip = document.createElement("div");
+      chip.className = "sc-comparison-chip";
+      chip.dataset.comparisonSymbolId = comparison.symbol.id;
+      chip.dataset.visible = String(visible);
+      chip.dataset.status = status;
+      chip.setAttribute("role", "listitem");
+      const swatch = document.createElement("span");
+      swatch.className = "sc-comparison-swatch";
+      swatch.style.backgroundColor = comparison.color ?? "currentColor";
+      swatch.setAttribute("aria-hidden", "true");
+      const visibility = document.createElement("button");
+      visibility.type = "button";
+      visibility.className = "sc-comparison-visibility";
+      visibility.dataset.comparisonAction = "visibility";
+      visibility.dataset.symbolId = comparison.symbol.id;
+      visibility.textContent = label;
+      visibility.title = `${label} · ${statusLabel}`;
+      visibility.setAttribute("aria-pressed", String(visible));
+      visibility.setAttribute(
+        "aria-label",
+        `${visible ? labels.hideComparisonSymbol : labels.showComparisonSymbol}: ${label}, ${statusLabel}`
+      );
+      const statusText = document.createElement("span");
+      statusText.className = "sc-comparison-status";
+      statusText.textContent = statusLabel;
+      statusText.hidden = status === "ready";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "sc-comparison-remove";
+      remove.dataset.comparisonAction = "remove";
+      remove.dataset.symbolId = comparison.symbol.id;
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", `${labels.removeComparisonSymbol}: ${label}`);
+      chip.append(swatch, visibility, statusText, remove);
+      comparisonChips.append(chip);
+    }
+  };
 
   return {
     element,
@@ -452,6 +537,40 @@ export function createTopToolbar(
         };
         timeframeHost.addEventListener("click", click);
         cleanup.push(() => timeframeHost.removeEventListener("click", click));
+      }
+      if (comparisonToggle && symbolSearch) {
+        const click = () => {
+          if (!primarySymbolSearchEnabled) {
+            symbolSearch.focus();
+            return;
+          }
+          const active = comparisonToggle.getAttribute("aria-pressed") !== "true";
+          comparisonToggle.setAttribute("aria-pressed", String(active));
+          symbolSearch.setMode(active ? "comparison" : "primary");
+          if (active) symbolSearch.focus();
+        };
+        comparisonToggle.addEventListener("click", click);
+        cleanup.push(() => comparisonToggle.removeEventListener("click", click));
+      }
+      if (comparisonChips) {
+        const click = (event: Event) => {
+          const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-comparison-action]");
+          const symbolId = button?.dataset.symbolId;
+          if (!button || !symbolId || !currentViewModel) return;
+          if (button.dataset.comparisonAction === "remove") {
+            actions.setComparisons(
+              currentViewModel.comparisons.filter((comparison) => comparison.symbol.id !== symbolId)
+            );
+            return;
+          }
+          actions.setComparisons(currentViewModel.comparisons.map((comparison) =>
+            comparison.symbol.id === symbolId
+              ? { ...comparison, visible: comparison.visible === false }
+              : comparison
+          ));
+        };
+        comparisonChips.addEventListener("click", click);
+        cleanup.push(() => comparisonChips.removeEventListener("click", click));
       }
       if (timeframeMore && timeframeMoreToggle && timeframeMoreMenu) {
         const click = () => {
@@ -657,6 +776,7 @@ export function createTopToolbar(
       if (executionsToggle) executionsToggle.setAttribute("aria-pressed", String(viewModel.executionsVisible));
       if (grid) grid.checked = viewModel.gridVisible;
       if (bottomToggle) bottomToggle.setAttribute("aria-pressed", String(!viewModel.bottomPanel.collapsed));
+      renderComparisons(viewModel);
       symbolSearch?.render(viewModel);
       indicatorManager?.render(viewModel);
     }
