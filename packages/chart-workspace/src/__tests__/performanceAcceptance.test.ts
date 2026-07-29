@@ -1936,6 +1936,13 @@ describe("workspace engine runtime", () => {
     const cancelFrame = vi.fn((id: number) => frames.delete(id));
     const onDrawingsChanged = vi.fn();
     const onDrawingHistoryChanged = vi.fn();
+    let runtime!: ReturnType<typeof createChartEngineRuntime>;
+    let reenterOnCleanup = false;
+    const onExecutionTooltipChanged = vi.fn(() => {
+      if (!reenterOnCleanup) return;
+      runtime.destroy();
+      throw new Error("host cleanup failed");
+    });
     const calculationRuntime: CheckpointedCalculationRuntime = {
       async calculateIndicators() { return new Map<string, IndicatorResult>(); },
       async calculateSeries(input) {
@@ -1943,7 +1950,7 @@ describe("workspace engine runtime", () => {
       }
     };
     const themeRoot = { clientWidth: 800, clientHeight: 500 } as HTMLElement;
-    const runtime = createChartEngineRuntime({
+    runtime = createChartEngineRuntime({
       staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
       overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
       themeRoot,
@@ -1958,7 +1965,8 @@ describe("workspace engine runtime", () => {
       }) as CSSStyleDeclaration,
       devicePixelRatio: 1,
       onDrawingsChanged,
-      onDrawingHistoryChanged
+      onDrawingHistoryChanged,
+      onExecutionTooltipChanged
     });
 
     runtime.setMaterializedSeries(materialized());
@@ -1977,12 +1985,17 @@ describe("workspace engine runtime", () => {
     expect(after.renderCountByPass.static).toBe(before.renderCountByPass.static);
     expect(after.renderCountByPass.overlay).toBeGreaterThan(before.renderCountByPass.overlay);
     expect(after.maxMaterializedCandleCount).toBeLessThan(20_000);
+    expect(runtime.getVisibleRange()).toBeDefined();
 
     runtime.retryRender();
+    reenterOnCleanup = true;
+    onExecutionTooltipChanged.mockClear();
     runtime.destroy();
     runtime.destroy();
     runtime.setDrawings([{ id: "late", type: "trendLine", anchors: [] }]);
+    expect(runtime.getVisibleRange()).toBeUndefined();
     expect(observer.disconnect).toHaveBeenCalledTimes(1);
+    expect(onExecutionTooltipChanged).toHaveBeenCalledTimes(1);
     expect(cancelFrame).toHaveBeenCalled();
     expect(staticCanvas.listenerCount()).toBe(0);
     expect(overlayCanvas.listenerCount()).toBe(0);

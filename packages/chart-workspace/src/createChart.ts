@@ -819,6 +819,9 @@ export function createChart(
     onPresentationPending: (state) => {
       const key = presentationKey(state);
       if (unavailablePresentationKey === key) unavailablePresentationKey = undefined;
+      if (materializedPresentationKey === key) materializedPresentationKey = undefined;
+      if (readyPresentationKey === key) readyPresentationKey = undefined;
+      cancelReadinessFrame();
     },
     onPresentationUnavailable: (state) => {
       if (destroyed) return;

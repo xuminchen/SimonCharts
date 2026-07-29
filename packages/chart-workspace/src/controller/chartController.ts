@@ -385,6 +385,17 @@ export function createChartController(
     capabilityGeneration += 1;
     capabilityController?.abort();
     capabilityController = undefined;
+    currentMaterialized = undefined;
+    pendingDataLoads = [];
+    boundaryMaterializing = undefined;
+    viewModel = {
+      ...viewModel,
+      drawings: [],
+      marks: [],
+      selectedDrawingIds: [],
+      dataWindow: undefined,
+      search: { ...viewModel.search, results: [] }
+    };
     dependencies.dataCoordinator.destroy();
     dependencies.searchCoordinator.destroy();
   };
@@ -1333,10 +1344,14 @@ export function createChartController(
       }
       if (event.type === "historyRequestFailed") {
         if (isAbortError(event.error)) return;
-        if (requestedVisibleRange !== undefined) cancelVisibleRangeCommand();
+        const requestedRangeFailed = requestedVisibleRange !== undefined;
+        if (requestedRangeFailed) cancelVisibleRangeCommand();
         const failure = datafeedFailure(event.error, "Earlier market data could not be loaded");
         failedHistoryCursor = failure.recoverable ? event.cursor ?? null : undefined;
         materializePartialIntradayAfterHistoryFailure();
+        if (requestedRangeFailed) {
+          dependencies.onPresentationUnavailable?.(structuredClone(state));
+        }
         report(
           createChartError(
             "HISTORY_DATA_FAILED",
@@ -1350,8 +1365,12 @@ export function createChartController(
         return;
       }
       const blocking = event.phase === "initial";
-      if (requestedVisibleRange !== undefined) cancelVisibleRangeCommand();
+      const requestedRangeFailed = requestedVisibleRange !== undefined;
+      if (requestedRangeFailed) cancelVisibleRangeCommand();
       if (!blocking) materializePartialIntradayAfterHistoryFailure();
+      if (!blocking && requestedRangeFailed) {
+        dependencies.onPresentationUnavailable?.(structuredClone(state));
+      }
       const code = event.code === "NO_VALID_DATA" ? "NO_VALID_DATA" : "INVALID_DATA";
       report(
         createChartError(
@@ -1647,6 +1666,7 @@ export function createChartController(
       deactivate();
       if (runtimeDestroyed) return;
       runtimeDestroyed = true;
+      dependencies.store.clear();
       dependencies.runtime.destroy();
     }
   };

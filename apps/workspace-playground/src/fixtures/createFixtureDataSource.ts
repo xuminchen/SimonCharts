@@ -28,8 +28,11 @@ export interface HostCounters {
   abortedRequests: number;
   errors: number;
   frameCallbackDurations: number[];
+  frameCallbackScheduledAt: number[];
+  frameCallbackCompletedAt: number[];
+  interactionStartedAt?: number;
   lastSeriesResolvedAt?: number;
-  firstFrameAfterSeriesResolvedAt?: number;
+  firstDataReadyAt?: number;
 }
 
 export interface FixtureRequestLog extends Record<string, unknown> {
@@ -166,7 +169,6 @@ export function createFixtureDataSource(
       log.status = "resolved";
       if (!log.symbolId.startsWith("search:")) {
         counters.lastSeriesResolvedAt = performance.now();
-        counters.firstFrameAfterSeriesResolvedAt = undefined;
       }
       return result;
     } catch (error) {

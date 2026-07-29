@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.39.tgz
+npm install ./simoncharts-charts-1.0.0-rc.41.tgz
 ```
 
 ## Embed the default chart
@@ -483,4 +483,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.39 adds host-owned price precision and a keyboard/IME-safe ARIA symbol-search combobox. It preserves rc.38's Pane/Price Scale API and `ChartLayoutV3`, rc.37's typed Selection and semantic action events, rc.36's Theme Overrides, rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.41 hardens browser performance and long-history lifecycle without changing the public API. A lazy one-million-candle fixture now proves exact navigation through at least 50,000 real fixture candles, a 2,000-page descriptor chain remains complete while cached payloads stay bounded, and Chrome/Edge exercise crosshair, pan, and zoom with 63 Drawings plus MA/RSI/MACD. Static frames perform one layout reconciliation instead of repeating it across empty dynamic and overlay passes, while price-axis geometry still follows scale, precision, Drawing, and Study changes. Same-selection history recovery cannot reuse stale readiness; a failed requested range settles `dataReady()` as `false`; and `destroy()` releases cached and materialized market/visual data even during reentry or host callback failure. rc.41 preserves rc.39's symbol formatting/search contract and every earlier RC contract.

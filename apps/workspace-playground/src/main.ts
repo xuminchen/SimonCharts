@@ -25,7 +25,9 @@ const counters: HostCounters = {
   activeEventListeners: 0,
   abortedRequests: 0,
   errors: 0,
-  frameCallbackDurations: []
+  frameCallbackDurations: [],
+  frameCallbackScheduledAt: [],
+  frameCallbackCompletedAt: []
 };
 window.__hostCounters = counters;
 const requests: FixtureRequestLog[] = [];
@@ -75,16 +77,17 @@ const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
 const nativeCancelAnimationFrame = window.cancelAnimationFrame.bind(window);
 const activeFrames = new Set<number>();
 window.requestAnimationFrame = (callback) => {
+  const scheduledAt = performance.now();
   const id = nativeRequestAnimationFrame((time) => {
     if (activeFrames.delete(id)) counters.activeAnimationFrames -= 1;
-    if (counters.lastSeriesResolvedAt !== undefined && counters.firstFrameAfterSeriesResolvedAt === undefined) {
-      counters.firstFrameAfterSeriesResolvedAt = performance.now();
-    }
     const started = performance.now();
     try {
       callback(time);
     } finally {
-      counters.frameCallbackDurations.push(performance.now() - started);
+      const completed = performance.now();
+      counters.frameCallbackDurations.push(completed - started);
+      counters.frameCallbackScheduledAt.push(scheduledAt);
+      counters.frameCallbackCompletedAt.push(completed);
     }
   });
   activeFrames.add(id);
@@ -264,6 +267,9 @@ if (params.get("nonElement") === "1") {
   } as ChartOptions;
   chart = createChart(container, options);
   window.__chart = chart;
+  void chart.dataReady().then((ready) => {
+    if (ready) counters.firstDataReadyAt = performance.now();
+  });
   if (customStudies) {
     window.__customStudyIds = [
       chart.createStudy({

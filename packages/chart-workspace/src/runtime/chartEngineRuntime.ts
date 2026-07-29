@@ -1348,9 +1348,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   }
 
   function render(pass: "static" | "dynamic" | "overlay"): void {
-    if (destroyed) return;
+    if (destroyed || pass === "dynamic") return;
     try {
-      syncLayout();
+      if (pass === "static") syncLayout();
       const state = chartEngine.getState();
       const theme = currentTheme();
       const panels = createPanels();
@@ -2127,10 +2127,14 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         calculationRecoveryPending = true;
       }
       if (pendingClick?.kind === "study") pendingClick = undefined;
+      const visiblePaneIds = JSON.stringify(paneOrder.filter(paneIsVisible));
       visualOutputs = configs.flatMap((config) =>
         config.visible ? results.get(config.instanceId)?.outputs ?? [] : []
       );
-      if (reconcilePaneLayouts(configs)) syncLayout();
+      if (
+        reconcilePaneLayouts(configs) ||
+        visiblePaneIds !== JSON.stringify(paneOrder.filter(paneIsVisible))
+      ) syncLayout();
       syncVisualOutputs();
       updatePriceScale();
       refreshCrosshairAtPoint();
@@ -2647,12 +2651,16 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     getMetrics() { return { ...scheduler.getState().metrics, maxMaterializedCandleCount }; },
     destroy() {
       if (destroyed) return;
-      options.onExecutionTooltipChanged?.(undefined);
+      destroyed = true;
+      try {
+        options.onExecutionTooltipChanged?.(undefined);
+      } catch {
+        // Destruction must release owned browser and data resources even if the host cleanup fails.
+      }
       indicatorCalculationController?.abort();
       seriesCalculationController?.abort();
       indicatorCalculationController = undefined;
       seriesCalculationController = undefined;
-      destroyed = true;
       renderRecoveryPending = false;
       indicatorCalculationFailed = false;
       failedSeriesCalculation = undefined;
@@ -2665,6 +2673,25 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       observer?.disconnect();
       scheduler.destroy();
       session.destroy();
+      materialized = undefined;
+      visualOutputs = [];
+      markOutput = undefined;
+      marks = [];
+      executionOutput = undefined;
+      executions = [];
+      indicatorConfigs = [];
+      seriesModel = undefined;
+      currentIntradaySummary = undefined;
+      intradayAverage = undefined;
+      timeCoordinates = undefined;
+      pendingClick = undefined;
+      interaction = undefined;
+      drawingHandleDragOperation = undefined;
+      drawingMoveDragOperation = undefined;
+      drawingEditor = createEditor([]);
+      chartEngine.setSeries(emptySeries);
+      chartEngine.setVisualOutputs([]);
+      chartEngine.setDrawings([]);
       chartEngine.destroy();
     }
   };

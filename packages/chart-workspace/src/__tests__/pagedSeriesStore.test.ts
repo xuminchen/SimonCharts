@@ -90,6 +90,55 @@ describe("paged series store", () => {
     ]);
   });
 
+  it("keeps a complete 2,000-page descriptor chain bounded and reloads evicted data atomically", () => {
+    const store = createPagedSeriesStore();
+    const totalPages = 2_000;
+    const newestPage = page([candle(totalPages)], "cursor-1");
+    store.reset(selection, "v1");
+
+    expect(store.mergePage(undefined, newestPage)).toEqual({ ok: true });
+    for (let index = 1; index < totalPages; index += 1) {
+      const requestCursor = `cursor-${index}`;
+      const lastPage = index === totalPages - 1;
+      expect(
+        store.mergePage(
+          requestCursor,
+          page(
+            [candle(totalPages - index)],
+            lastPage ? undefined : `cursor-${index + 1}`,
+            !lastPage
+          )
+        )
+      ).toEqual({ ok: true });
+    }
+
+    const diagnostics = store.getDiagnostics();
+    expect(diagnostics.descriptorCount).toBe(totalPages);
+    expect(diagnostics.cachedPageCount).toBeLessThanOrEqual(diagnostics.maxPages);
+    expect(diagnostics.estimatedBytes).toBeLessThanOrEqual(diagnostics.maxEstimatedBytes);
+    expect(store.getNextBeforeCursor()).toBeUndefined();
+    expect(store.getDescriptorForCursor(undefined)?.candles).toBeUndefined();
+
+    const beforeInvalidReload = store.getSnapshot();
+    expect(
+      store.mergePage(undefined, { ...newestPage, dataVersion: "v2" })
+    ).toMatchObject({ ok: false, code: "DATA_VERSION_MISMATCH" });
+    expect(store.getSnapshot()).toEqual(beforeInvalidReload);
+
+    expect(store.mergePage(undefined, newestPage)).toEqual({ ok: true });
+    expect(store.getDescriptorForCursor(undefined)?.candles).toEqual([candle(totalPages)]);
+    expect(store.getSnapshot().dataVersion).toBe("v1");
+    expect(store.getDiagnostics()).toMatchObject({
+      descriptorCount: totalPages,
+      maxPages: diagnostics.maxPages,
+      maxEstimatedBytes: diagnostics.maxEstimatedBytes
+    });
+    expect(store.getDiagnostics().cachedPageCount).toBeLessThanOrEqual(diagnostics.maxPages);
+    expect(store.getDiagnostics().estimatedBytes).toBeLessThanOrEqual(
+      diagnostics.maxEstimatedBytes
+    );
+  });
+
   it("retains Shanghai trading-day metadata across payload eviction and reload", () => {
     const store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 512 });
     const newestTimes = [Date.UTC(2026, 6, 15, 1, 30), Date.UTC(2026, 6, 16, 1, 30)];

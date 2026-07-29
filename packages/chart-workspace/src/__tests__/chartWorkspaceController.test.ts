@@ -677,6 +677,7 @@ describe("chart workspace controller", () => {
 
   it("materializes an accepted page and destroys dependencies once", () => {
     const deps = dependencies();
+    const clearStore = vi.spyOn(deps.store, "clear");
     deps.onDataLoaded = vi.fn();
     const valid = validateSeriesPage({ candles: [{ time: 1, open: 10, high: 11, low: 9, close: 10.5, volume: 1, turnover: 10.5 }], hasMoreBefore: false, dataVersion: "v1" }, { seenCursors: new Set() });
     if (!valid.ok) throw new Error("fixture invalid");
@@ -691,12 +692,25 @@ describe("chart workspace controller", () => {
       phase: "initial"
     });
     expect(controller.getViewModel().status.type).toBe("ready");
+    vi.mocked(deps.runtime.getVisibleRange).mockReturnValue({ from: 1, to: 1 });
+    expect(controller.getVisibleRange()).toEqual({ from: 1, to: 1 });
+    controller.setDrawings([{
+      id: "retained",
+      type: "trendLine",
+      anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }]
+    }]);
+    controller.setMarks([{ id: "retained", time: 1, price: 10 }]);
 
+    vi.mocked(deps.dataCoordinator.destroy).mockImplementationOnce(() => controller.destroy());
     controller.destroy();
     controller.destroy();
+    expect(controller.getVisibleRange()).toBeUndefined();
+    expect(controller.getViewModel().drawings).toEqual([]);
+    expect(controller.getViewModel().marks).toEqual([]);
     expect(deps.runtime.destroy).toHaveBeenCalledTimes(1);
     expect(deps.dataCoordinator.destroy).toHaveBeenCalledTimes(1);
     expect(deps.searchCoordinator.destroy).toHaveBeenCalledTimes(1);
+    expect(clearStore).toHaveBeenCalledTimes(1);
   });
 
   it("rematerializes both directions inside a cached page before requesting remote history", async () => {

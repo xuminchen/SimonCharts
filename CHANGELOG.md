@@ -1,5 +1,21 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.41 - 2026-07-30
+
+- Added a browser performance gate over a lazy one-million-candle fixture that navigates through at least 50,000 exact fixture candles, then exercises crosshair, pan, and zoom with 63 non-interactive Drawings plus MA, RSI, and MACD in Chrome and Edge.
+- Replaced arbitrary frame timing with `dataReady()`-bound first-paint timing and interaction frames scheduled after the measured event; empty samples fail closed.
+- Skipped the unused dynamic render pass and reduced layout work to one reconciliation per static frame while preserving dynamic price-axis width across scale, precision, Drawing autoscale, Study, pane, and viewport changes.
+- Invalidated stale same-selection readiness before history rematerialization, so deep range requests, unavailable recovery, and reset-to-latest wait for the exact current presentation; failed requested ranges settle `dataReady()` as `false`.
+- Released paged-store payloads, materialized candles, calculated visual data, and chart-engine copies on idempotent or reentrant destruction, including host callback failure.
+- Added a 2,000-page descriptor-chain test that preserves reload metadata and version isolation while payload count and estimated bytes remain bounded.
+- Kept the public API, market-data ownership, package allowlist, and dependencies unchanged.
+- Accepted the exact 8-file immutable package after `70 files / 1,235 tests`, combined Chrome `150/150`, Charts `15 files / 226 tests`, Charts Chrome/Edge `99/99` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer execution; SHA-256 is `46a062ed41434d465ca4c236d79fdb35f67519a1b1f4a0041dbb277b9f22ae87`, SHA-512 is `6288b8e5dba12c8e58c7cbed7b8aa53e7c535a2c0357adfd80fd484eca1f374d6371a07a6c5e4383fea050568c044d031f055e00ec16fb5b82603e6aa1c65df2`. Independent lifecycle and performance adversarial reviews found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
+## @simoncharts/charts 1.0.0-rc.40 - 2026-07-30 (rejected candidate)
+
+- Preserved the immutable 8-file candidate without accepting or overwriting it after adversarial review found that a failed requested history range could leave `dataReady()` pending.
+- SHA-256 remains `b805c7561cd69ea07e83791dbd49d4bcc649b2e47048ab206e0f32e37d306daa`; SHA-512 remains `36fe3a5b24f96c65f37c1d995a522713324e544e66c3c8684197131727683fe4080378cee5b976469231fbaedf76a9f01daa71d0e5aa77979c7a2701847331e4`. TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.39 - 2026-07-29
 
 - Added optional `ChartSymbol.pricePrecision` with strict integer validation from 0 through 8, defensive cloning across initial options, search, state, and `SeriesRequest`, and same-ID metadata replacement.

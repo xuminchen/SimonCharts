@@ -93,6 +93,21 @@ for (const control of ["historyFailure=1", "invalidPage=history", "cursorCycle=1
   });
 }
 
+for (const control of ["historyFailure=1", "invalidPage=history"] as const) {
+  test(`settles dataReady false when ${control} blocks a requested range`, async ({ page }) => {
+    await page.goto(`/?${control}`);
+    await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+    expect(await page.evaluate(async () => {
+      const origin = Date.UTC(2026, 5, 5, 1, 30);
+      window.__chart!.setVisibleRange({ from: origin, to: origin + 499 * 60_000 });
+      return Promise.race([
+        window.__chart!.dataReady(),
+        new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), 1_000))
+      ]);
+    })).toBe(false);
+  });
+}
+
 test("atomically refreshes a changed data version", async ({ page }) => {
   await page.goto("/?versionChange=1");
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
@@ -129,8 +144,11 @@ declare global {
       abortedRequests: number;
       errors: number;
       frameCallbackDurations: number[];
+      frameCallbackScheduledAt: number[];
+      frameCallbackCompletedAt: number[];
+      interactionStartedAt?: number;
       lastSeriesResolvedAt?: number;
-      firstFrameAfterSeriesResolvedAt?: number;
+      firstDataReadyAt?: number;
     };
     __workspaceRequests?: Array<Record<string, unknown>>;
   }
