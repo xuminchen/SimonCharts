@@ -1,5 +1,15 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.38 - 2026-07-29
+
+- Added live `getPanes()`, `getPaneById()`, and `getPaneApi()` contracts for the fixed main pane and existing separate Study panes, including height, collapse, ordering, and per-pane price-scale control.
+- Gave Study panes independent linear auto/manual and inverted scales while retaining linear, log, and percentage modes on the main pane; native right-axis drag and double-click use the same public state.
+- Replaced overlapping Study-panel geometry with one ordered pane layout shared by rendering, axes, grid, crosshair, hit testing, and pointer interaction.
+- Added strict `ChartLayoutV3` pane persistence with defensive snapshots, atomic import, exact pane-set validation, and deterministic V2 migration. Export and `layout-changed` events now always emit V3.
+- Reset manual price ranges to automatic when the market presentation changes, while preserving pane order, ratios, collapse, and inversion; intraday keeps its fixed percentage scale.
+- Preserved existing Study, Entity, Selection, Drawing, execution, readiness, browser persistence, and real-data-only contracts without adding a second pane engine or chart dependency.
+- Accepted the exact 8-file immutable package artifact after `69 files / 1,213 tests`, combined Chrome `137/137`, Charts `14 files / 207 tests`, Charts Chrome/Edge `86/86` per browser, and packed Chrome/Edge consumer execution; SHA-256 is `9bba2f18c7bf0a7819cbdcd1c72f50929c6bb4a5f237b6fb4a8a6a29d0454019`, SHA-512 is `7c1d46525a6351c23fc64f59c637e1a191c063a298414059b5a99382076aec0085202844418144cf64ac4abcce2c1fbbc21573f6a8d42b47164c96013ca91459`. Independent adversarial review found no remaining P0/P1, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.37 - 2026-07-28
 
 - Added typed `getSelection()`, `setSelection()`, and `clearSelection()` APIs for multiple interactive Drawings or exactly one Study, reusing existing opaque Entity IDs.

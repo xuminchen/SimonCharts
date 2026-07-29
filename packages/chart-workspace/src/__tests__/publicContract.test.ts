@@ -28,9 +28,16 @@ import type {
   ChartInstance,
   ChartIntradayScale,
   ChartLayoutV2,
+  ChartLayoutV3,
   ChartLocale,
   ChartMark,
   ChartOptions,
+  ChartPane,
+  ChartPaneApi,
+  ChartPaneId,
+  ChartPriceRange,
+  ChartPriceScaleApi,
+  ChartPriceScaleState,
   ChartSeriesProperties,
   ChartSelectableEntityId,
   ChartStateListener,
@@ -51,6 +58,7 @@ import {
   parseIndicatorInput,
   parseIndicators,
   parseLayout,
+  toLayoutV3,
   parseSeriesProperties,
   resolveSeriesProperties,
   parseThemeOverrides,
@@ -266,7 +274,7 @@ describe("charts public contract", () => {
   it("keeps the approved chart handle and options", () => {
     expectTypeOf<ChartInstance>().toHaveProperty("getState");
     expectTypeOf<ChartInstance>().toHaveProperty("getVisibleRange");
-    expectTypeOf<ChartInstance["exportLayout"]>().toEqualTypeOf<() => ChartLayoutV2>();
+    expectTypeOf<ChartInstance["exportLayout"]>().toEqualTypeOf<() => ChartLayoutV3>();
     expectTypeOf<ChartInstance["importLayout"]>().toEqualTypeOf<(layout: unknown) => void>();
     expectTypeOf<ChartInstance["setIndicators"]>()
       .toEqualTypeOf<(indicators: readonly ChartIndicator[]) => void>();
@@ -318,6 +326,22 @@ describe("charts public contract", () => {
       .toEqualTypeOf<(entityIds: readonly ChartSelectableEntityId[]) => void>();
     expectTypeOf<ChartInstance["clearSelection"]>()
       .toEqualTypeOf<() => void>();
+    expectTypeOf<ChartInstance["getPanes"]>()
+      .toEqualTypeOf<() => readonly ChartPane[]>();
+    expectTypeOf<ChartInstance["getPaneById"]>()
+      .toEqualTypeOf<(id: ChartPaneId) => ChartPane | undefined>();
+    expectTypeOf<ChartInstance["getPaneApi"]>()
+      .toEqualTypeOf<(id: ChartPaneId) => ChartPaneApi | undefined>();
+    expectTypeOf<ChartPaneApi["getPriceScale"]>()
+      .toEqualTypeOf<() => ChartPriceScaleApi>();
+    expectTypeOf<ChartPriceScaleApi["setVisibleRange"]>()
+      .toEqualTypeOf<(range: ChartPriceRange) => void>();
+    expectTypeOf<ChartPriceScaleState>().toEqualTypeOf<{
+      readonly mode: import("../index").ChartPriceScaleMode;
+      readonly autoScale: boolean;
+      readonly inverted: boolean;
+      readonly visibleRange?: Readonly<ChartPriceRange>;
+    }>();
     expectTypeOf<ChartInstance>().toHaveProperty("setSymbol");
     expectTypeOf<ChartInstance>().toHaveProperty("setTimeframe");
     expectTypeOf<ChartInstance>().toHaveProperty("setView");
@@ -383,7 +407,7 @@ describe("charts public contract", () => {
     expectTypeOf<Extract<ChartEvent, { type: "data-loaded" }>["phase"]>()
       .toEqualTypeOf<"initial" | "history">();
     expectTypeOf<Extract<ChartEvent, { type: "layout-changed" }>["layout"]>()
-      .toEqualTypeOf<Readonly<ChartLayoutV2>>();
+      .toEqualTypeOf<Readonly<ChartLayoutV3>>();
     expectTypeOf<Extract<ChartEvent, { type: "mark-clicked" }>["mark"]>()
       .toEqualTypeOf<Readonly<ChartMark>>();
     expectTypeOf<Extract<ChartEvent, { type: "selection-changed" }>["selection"]>()
@@ -567,6 +591,204 @@ describe("charts public contract", () => {
       ...configured,
       seriesProperties: [{ type: "renko", brickSize: 0 }]
     })).toThrow();
+  });
+
+  it("parses Layout V3 and migrates V2 pane state without sharing input references", () => {
+    const v2 = {
+      schemaVersion: 2,
+      seriesType: "candles",
+      priceScaleMode: "log",
+      indicators: [{
+        instanceId: "macd-primary",
+        id: "MACD",
+        params: { fast: 12, slow: 26, signal: 9 },
+        visible: true
+      }],
+      drawings: [],
+      gridVisible: true
+    } as const satisfies ChartLayoutV2;
+    const migrated = toLayoutV3(parseLayout(v2));
+    expect(migrated).toEqual({
+      ...v2,
+      schemaVersion: 3,
+      panes: [
+        {
+          id: "main",
+          heightRatio: 3,
+          collapsed: false,
+          priceScale: { autoScale: true, inverted: false }
+        },
+        {
+          id: "study:macd-primary",
+          heightRatio: 1,
+          collapsed: false,
+          priceScale: { autoScale: true, inverted: false }
+        }
+      ]
+    });
+
+    const source = {
+      ...migrated,
+      panes: migrated.panes.map((pane) => pane.id === "main"
+        ? {
+            ...pane,
+            heightRatio: 4,
+            priceScale: {
+              autoScale: false,
+              inverted: true,
+              visibleRange: { from: 8, to: 18 }
+            }
+          }
+        : { ...pane, collapsed: true })
+    } as const;
+    const parsed = parseLayout(source) as ChartLayoutV3;
+    expect(parsed).toEqual(source);
+    expect(parsed.panes).not.toBe(source.panes);
+    expect(parsed.panes[0]?.priceScale).not.toBe(source.panes[0]?.priceScale);
+  });
+
+  it("round-trips the pane id generated from the longest valid study instance id", () => {
+    const instanceId = "x".repeat(256);
+    const layout = {
+      schemaVersion: 3,
+      seriesType: "candles",
+      priceScaleMode: "linear",
+      indicators: [{
+        instanceId,
+        id: "MACD",
+        params: { fast: 12, slow: 26, signal: 9 },
+        visible: true
+      }],
+      drawings: [],
+      gridVisible: true,
+      panes: [
+        {
+          id: "main",
+          heightRatio: 3,
+          collapsed: false,
+          priceScale: { autoScale: true, inverted: false }
+        },
+        {
+          id: `study:${instanceId}`,
+          heightRatio: 1,
+          collapsed: false,
+          priceScale: { autoScale: true, inverted: false }
+        }
+      ]
+    } as const;
+
+    expect(parseLayout(layout)).toEqual(layout);
+  });
+
+  it("atomically rejects malformed Layout V3 pane and scale state", () => {
+    const valid = {
+      schemaVersion: 3,
+      seriesType: "candles",
+      priceScaleMode: "linear",
+      indicators: [{
+        instanceId: "macd-primary",
+        id: "MACD",
+        params: { fast: 12, slow: 26, signal: 9 },
+        visible: true
+      }],
+      drawings: [],
+      gridVisible: true,
+      panes: [
+        {
+          id: "main",
+          heightRatio: 3,
+          collapsed: false,
+          priceScale: { autoScale: true, inverted: false }
+        },
+        {
+          id: "study:macd-primary",
+          heightRatio: 1,
+          collapsed: false,
+          priceScale: { autoScale: true, inverted: false }
+        }
+      ]
+    } as const;
+
+    expect(parseLayout(valid)).toEqual(valid);
+    expect(() => parseLayout({
+      ...valid,
+      panes: [valid.panes[0], valid.panes[0]]
+    })).toThrow("duplicated");
+    expect(() => parseLayout({
+      ...valid,
+      panes: [...valid.panes, {
+        id: "study:unknown",
+        heightRatio: 1,
+        collapsed: false,
+        priceScale: { autoScale: true, inverted: false }
+      }]
+    })).toThrow("does not match");
+    expect(() => parseLayout({
+      ...valid,
+      panes: valid.panes.map((pane) => pane.id === "main"
+        ? { ...pane, collapsed: true }
+        : pane)
+    })).toThrow("main pane");
+    expect(() => parseLayout({
+      ...valid,
+      panes: valid.panes.map((pane) => pane.id === "main"
+        ? { ...pane, heightRatio: Number.NaN }
+        : pane)
+    })).toThrow("height ratio");
+    expect(() => parseLayout({
+      ...valid,
+      panes: valid.panes.map((pane) => pane.id === "main"
+        ? {
+            ...pane,
+            priceScale: {
+              autoScale: false,
+              inverted: false,
+              visibleRange: { from: 10, to: 10 }
+            }
+          }
+        : pane)
+    })).toThrow("ascending");
+    expect(() => parseLayout({
+      ...valid,
+      priceScaleMode: "log",
+      panes: valid.panes.map((pane) => pane.id === "main"
+        ? {
+            ...pane,
+            priceScale: {
+              autoScale: false,
+              inverted: false,
+              visibleRange: { from: -1, to: 10 }
+            }
+          }
+        : pane)
+    })).toThrow("positive");
+    expect(() => parseLayout({
+      ...valid,
+      panes: valid.panes.map((pane) => ({
+        ...pane,
+        priceScale: {
+          autoScale: true,
+          inverted: false,
+          visibleRange: { from: 1, to: 2 }
+        }
+      }))
+    })).toThrow("automatic");
+    expect(() => parseLayout({
+      ...valid,
+      panes: valid.panes.map((pane) => pane.id === "main"
+        ? {
+            ...pane,
+            priceScale: {
+              autoScale: false,
+              inverted: false,
+              visibleRange: {
+                from: -Number.MAX_VALUE,
+                to: Number.MAX_VALUE
+              }
+            }
+          }
+        : pane)
+    })).toThrow("finite span");
   });
 
   it("validates and defensively converts drawing interaction and scale flags", () => {

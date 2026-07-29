@@ -71,6 +71,23 @@ describe("panel engine", () => {
     ]);
   });
 
+  it("keeps every positive-ratio panel visible when pixels are available", () => {
+    const panels: PanelDefinition[] = [
+      { id: "main", kind: "main", label: "Price", heightRatio: Number.MIN_VALUE },
+      { id: "macd", kind: "sub", label: "MACD", heightRatio: 100 }
+    ];
+
+    const layout = createPanelLayout({
+      width: 120,
+      height: 100,
+      rightAxisWidth: 20,
+      bottomAxisHeight: 0,
+      panels
+    });
+
+    expect(layout.map((panel) => panel.plotArea.height)).toEqual([1, 99]);
+  });
+
   it("clamps oversized axis dimensions inside chart bounds", () => {
     const panels: PanelDefinition[] = [{ id: "main", kind: "main", label: "Price", heightRatio: 1 }];
 

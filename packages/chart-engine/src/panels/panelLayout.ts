@@ -28,18 +28,33 @@ export function createPanelLayout(input: CreatePanelLayoutInput): PanelArea[] {
       break;
     }
   }
-  let y = 0;
-
-  return input.panels.map((panel, index) => {
-    const remainingHeight = chartHeight - y;
+  let allocatedHeight = 0;
+  const heights = input.panels.map((panel, index) => {
     const panelRatio = Math.max(0, panel.heightRatio);
     const rawHeight =
       panelRatio <= 0
         ? 0
         : index === lastPositivePanelIndex
-        ? remainingHeight
+        ? chartHeight - allocatedHeight
         : Math.floor((chartHeight * panelRatio) / totalRatio);
     const height = Math.max(0, rawHeight);
+    allocatedHeight += height;
+    return height;
+  });
+  if (chartHeight >= input.panels.filter((panel) => panel.heightRatio > 0).length) {
+    for (let index = 0; index < heights.length; index += 1) {
+      if (input.panels[index]!.heightRatio <= 0 || heights[index]! > 0) continue;
+      let donor = heights.length - 1;
+      while (donor >= 0 && heights[donor]! <= 1) donor -= 1;
+      if (donor < 0) break;
+      heights[donor] -= 1;
+      heights[index] = 1;
+    }
+  }
+  let y = 0;
+
+  return input.panels.map((panel, index) => {
+    const height = heights[index]!;
     const area: PanelArea = {
       id: panel.id,
       kind: panel.kind,

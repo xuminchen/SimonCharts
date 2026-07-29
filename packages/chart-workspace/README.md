@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.37.tgz
+npm install ./simoncharts-charts-1.0.0-rc.38.tgz
 ```
 
 ## Embed the default chart
@@ -132,13 +132,13 @@ const stopCrosshair = chart.subscribeCrosshair((event) => {
 
 ## Program the chart and persist its layout
 
-The public handle controls series type, price scale, indicators, drawings, drawing tools/history, grid visibility, and host-owned marks without clicking the built-in UI. `exportLayout()` and `importLayout()` use a JSON-safe, versioned `ChartLayoutV2`; import validates the complete payload before changing chart state. V2 gives every indicator a stable `instanceId`, so multiple copies of the same definition remain independent. Wait for the current selection's initial `data-loaded` event before importing, exporting, or replacing drawings. Symbol, timeframe, adjustment, visible range, marks, executions, market data, and host business state deliberately remain outside the layout and keep their existing dedicated APIs.
+The public handle controls series type, panes, pane price scales, indicators, drawings, drawing tools/history, grid visibility, and host-owned marks without clicking the built-in UI. `exportLayout()` returns a JSON-safe `ChartLayoutV3`; `importLayout()` accepts both V3 and legacy `ChartLayoutV2` and validates the complete payload before changing chart state. V3 adds pane order, height ratios, collapsed state, inversion, and automatic or explicit visible price ranges. Wait for the current selection's initial `data-loaded` event before importing, exporting, replacing drawings, or using Pane APIs. Symbol, timeframe, adjustment, candle visible range, marks, executions, market data, and host business state deliberately remain outside the layout and keep their existing dedicated APIs.
 
 ```ts
-import type { ChartLayoutV2, ChartMark } from "@simoncharts/charts";
+import type { ChartLayout, ChartMark } from "@simoncharts/charts";
 
 const layoutStorageKey = `${dataContextId}:${initialSymbol.id}:${initialAdjustMode}`;
-const savedLayout: ChartLayoutV2 = JSON.parse(await loadHostLayout(layoutStorageKey));
+const savedLayout: ChartLayout = JSON.parse(await loadHostLayout(layoutStorageKey));
 const marks: readonly ChartMark[] = [
   { id: "earnings", time: earningsCandleTime, price: earningsPrice, label: "E", color: "#a855f7" }
 ];
@@ -179,6 +179,20 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
 
 // On host teardown: unsubscribeEvents();
 ```
+
+Separate Study panes use the stable ID `study:${instanceId}`; the fixed main pane ID is `main`. Pane handles stay live until their pane is removed. The main pane must remain first and cannot collapse; Study panes may be reordered after it, resized, or collapsed. Height ratios must satisfy `0 < ratio <= 100`. Calling `setVisibleRange()` switches that pane to manual scale, while `setAutoScale(false)` freezes the currently computed range and `setAutoScale(true)` returns it to data-driven scaling. Manual ranges must contain finite, strictly ascending endpoints with a finite span; the main pane additionally requires a positive lower endpoint in log mode. Study panes are linear; the main pane also supports the existing linear, log, and percentage modes.
+
+```ts
+const macdPane = chart.getPaneApi("study:review-macd");
+macdPane?.setHeightRatio(1.5);
+macdPane?.moveTo(1);
+macdPane?.setCollapsed(false);
+macdPane?.getPriceScale().setVisibleRange({ from: -5, to: 5 });
+macdPane?.getPriceScale().setInverted(true);
+macdPane?.getPriceScale().setAutoScale(true);
+```
+
+Ordinary timeframe views also support native right-axis drag for manual scaling and double-click to restore automatic scaling. Changing symbol, timeframe, adjustment, or intraday presentation restores automatic scale while preserving pane order, ratios, collapse, and inversion. Intraday rejects Pane Price Scale mutations and V3 pane state that would alter its fixed presentation; the legacy `chart.setPriceScaleMode()` may still preselect the mode used after returning to an ordinary timeframe.
 
 `interactive` defaults to `true`. Setting it to `false` keeps the Drawing visible and available to `setDrawings()`, `getDrawings()`, Entity API, and layout export/import, but removes it from hover, hit testing, handles, selection, pointer capture, drag, and keyboard edits. It therefore cannot change the crosshair cursor or block chart pan, zoom, crosshair, execution-mark, or host-mark interaction. `locked` is separate: a locked Drawing remains interactive unless `interactive: false` is also set.
 
@@ -245,7 +259,7 @@ if (await chart.dataReady()) {
 
 ## Select entities and subscribe to user actions
 
-Selection reuses the existing opaque Entity IDs. A chart may select multiple interactive Drawings or exactly one Study; marks, mixed Drawing/Study batches, missing IDs, and `interactive: false` Drawings are rejected atomically. Selection is transient host/UI state: it is not exported in `ChartLayoutV2` and is not written to browser persistence.
+Selection reuses the existing opaque Entity IDs. A chart may select multiple interactive Drawings or exactly one Study; marks, mixed Drawing/Study batches, missing IDs, and `interactive: false` Drawings are rejected atomically. Selection is transient host/UI state: it is not exported in `ChartLayoutV3` and is not written to browser persistence.
 
 ```ts
 const stopActions = chart.subscribeEvents((event) => {
@@ -322,7 +336,7 @@ Definition IDs must use the `custom:` namespace. A chart accepts at most 32 defi
 
 Instances must name the exact registered `definitionVersion`; missing or mismatched versions are rejected atomically by creation, batch replacement, Entity update, and layout import. Use `ChartCustomStudyInput` for the statically exact custom contract. The legacy extendable `ChartIndicator` and `ChartIndicatorInput` interfaces remain source-compatible, while the same ID/version rules are enforced at runtime.
 
-Definitions and callback functions never enter `ChartLayoutV2`, JSON export, or browser storage. Layouts contain only the custom instance's `id`, exact `definitionVersion`, `instanceId`, normalized numeric `params`, and `visible` state. Custom instances are also excluded from automatic browser indicator preferences: the host must retain its definitions and explicitly save/import the layout. The built-in UI displays the custom title and supports visibility/removal, but rc.34 intentionally provides no code editor, marketplace, arbitrary DOM/Canvas renderer, async callback, or custom input form.
+Definitions and callback functions never enter the portable layout, JSON export, or browser storage. Layouts contain only the custom instance's `id`, exact `definitionVersion`, `instanceId`, normalized numeric `params`, and `visible` state. Custom instances are also excluded from automatic browser indicator preferences: the host must retain its definitions and explicitly save/import the layout. The built-in UI displays the custom title and supports visibility/removal, but rc.34 intentionally provides no code editor, marketplace, arbitrary DOM/Canvas renderer, async callback, or custom input form.
 
 Thrown calculations fail closed through the existing `CALCULATION_FAILED` state and `retry()` path. Superseded or cancelled generations cannot publish visuals or checkpoints, and `dataReady()` remains pending until all concurrent study and stateful-series calculations have settled and the resulting presentation has painted.
 
@@ -402,7 +416,7 @@ const chart = createChart(container, {
 });
 ```
 
-`getSeriesProperties(type)` returns a defensive, normalized full object. `setSeriesProperties(properties)` replaces one configurable type without switching the current series. Defaults are Renko `brickSize: 1`, Line Break `lineCount: 3`, Kagi `reversalAmount: 2`, and Point & Figure `boxSize: 1, reversalBoxes: 3`. Amounts must be positive finite numbers; `lineCount` is an integer from 1 to 500 and `reversalBoxes` from 1 to 10,000. Non-default values are stored sparsely in `ChartLayoutV2.seriesProperties` and browser preferences; explicit `ChartOptions.seriesProperties` wins for matching types. Importing a legacy layout without the field restores defaults. Intraday stays a fixed line, though properties may be prepared for the next timeframe view.
+`getSeriesProperties(type)` returns a defensive, normalized full object. `setSeriesProperties(properties)` replaces one configurable type without switching the current series. Defaults are Renko `brickSize: 1`, Line Break `lineCount: 3`, Kagi `reversalAmount: 2`, and Point & Figure `boxSize: 1, reversalBoxes: 3`. Amounts must be positive finite numbers; `lineCount` is an integer from 1 to 500 and `reversalBoxes` from 1 to 10,000. Non-default values are stored sparsely in the portable layout and browser preferences; explicit `ChartOptions.seriesProperties` wins for matching types. Importing a legacy layout without the field restores defaults. Intraday stays a fixed line, though properties may be prepared for the next timeframe view.
 
 `ChartFeature` is a stable union of `symbol-search`, `timeframes`, `adjustment`, `series-type`, `price-scale`, `indicators`, `drawing-tools`, `drawing-history`, `settings`, and `bottom-panel`. Passing a feature controls construction: disabled controls are not mounted and do not bind listeners. `advancedChartFeatures` explicitly enables the complete 17-series, 16-indicator, 63-drawing, three-scale workbench.
 
@@ -450,4 +464,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.37 adds typed Selection and semantic Drawing, Study, and execution action events through the existing event and Entity systems. Selection remains transient, true clicks are separated from pan/edit gestures by one shared pointer threshold, and Study actions hit-test the rendered Canvas geometry. It preserves rc.36's Theme Overrides, rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.38 adds live Pane and per-pane Price Scale APIs plus `ChartLayoutV3`. Study panes have independent geometry and linear price scales, the main pane owns the existing scale mode, native axis drag/double-click shares the same state, and V2 layouts migrate to deterministic defaults. It preserves rc.37's typed Selection and semantic action events, rc.36's Theme Overrides, rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

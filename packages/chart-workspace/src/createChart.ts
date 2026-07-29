@@ -18,10 +18,16 @@ import type {
   ChartIndicatorEntityId,
   ChartIndicatorInput,
   ChartInstance,
-  ChartLayoutV2,
+  ChartLayoutV3,
   ChartLocale,
   ChartMark,
   ChartOptions,
+  ChartPane,
+  ChartPaneApi,
+  ChartPaneId,
+  ChartPaneLayout,
+  ChartPriceRange,
+  ChartPriceScaleApi,
   ChartPriceScaleMode,
   ChartConfigurableSeriesType,
   ChartSeriesProperties,
@@ -59,6 +65,9 @@ import {
   parseIndicators,
   parseLayout,
   parseMarks,
+  parsePaneHeightRatio,
+  parsePaneId,
+  parsePanePriceRange,
   parsePriceScaleMode,
   parseSeriesProperties,
   parseSeriesType,
@@ -67,6 +76,8 @@ import {
   parseVisibleRange,
   resolveSeriesProperties,
   studyDefinitionKey,
+  paneIdForIndicator,
+  toLayoutV3,
   toEntityId,
   toEngineDrawings,
   type StudyDefinitionCatalog
@@ -238,8 +249,12 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
   };
 }
 
-function layoutSnapshot(viewModel: Readonly<WorkspaceViewModel>): ChartLayoutV2 {
-  return {
+function layoutSnapshot(
+  viewModel: Readonly<WorkspaceViewModel>,
+  studyDefinitions: StudyDefinitionCatalog,
+  panes?: readonly ChartPaneLayout[]
+): ChartLayoutV3 {
+  const layout = toLayoutV3({
     schemaVersion: 2,
     seriesType: viewModel.seriesType,
     ...(viewModel.seriesProperties.length === 0
@@ -249,7 +264,10 @@ function layoutSnapshot(viewModel: Readonly<WorkspaceViewModel>): ChartLayoutV2 
     indicators: structuredClone(viewModel.indicators),
     drawings: fromEngineDrawings(viewModel.drawings),
     gridVisible: viewModel.gridVisible
-  };
+  }, studyDefinitions);
+  return panes === undefined
+    ? layout
+    : { ...layout, panes: structuredClone(panes) };
 }
 
 function layoutSelectionKey(state: Readonly<ChartState>): string {
@@ -328,7 +346,8 @@ export function createChart(
   const parseChartEntityInput = (value: unknown) =>
     parseEntityInput(value, studyDefinitions);
   const parseChartEntity = (value: unknown) => parseEntity(value, studyDefinitions);
-  const parseChartLayout = (value: unknown) => parseLayout(value, studyDefinitions);
+  const parseChartLayout = (value: unknown) =>
+    toLayoutV3(parseLayout(value, studyDefinitions), studyDefinitions);
   const studyTitleFor = (config: Readonly<ChartIndicator>): string =>
     config.definitionVersion === undefined
       ? config.id
@@ -486,7 +505,7 @@ export function createChart(
       readySelectionKey !== layoutSelectionKey(viewModel.state) ||
       (viewModel.status.type !== "ready" && viewModel.status.type !== "readyWithWarning")
     ) return;
-    const layout = layoutSnapshot(viewModel);
+    const layout = layoutSnapshot(viewModel, studyDefinitions, runtime.getPaneLayouts());
     const nextLayout = JSON.stringify(layout);
     if (nextLayout === lastNotifiedLayout) return;
     lastNotifiedLayout = nextLayout;
@@ -520,7 +539,7 @@ export function createChart(
         // Host error handlers are isolated from chart construction.
       }
     }
-    const layout = layoutSnapshot(blockedViewModel(state, error));
+    const layout = layoutSnapshot(blockedViewModel(state, error), studyDefinitions);
     return Object.freeze({
       getState: () => structuredClone(state),
       getTheme: () => theme,
@@ -530,6 +549,9 @@ export function createChart(
       getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
         resolveSeriesProperties(type, []),
       getPriceScaleMode: () => layout.priceScaleMode,
+      getPanes: () => [],
+      getPaneById: () => undefined,
+      getPaneApi: () => undefined,
       getIndicators: () => [],
       getDrawings: () => [],
       getMarks: () => [],
@@ -676,6 +698,7 @@ export function createChart(
     themeRoot: shell.chartRegion,
     calculationRuntime,
     studyTitleFor,
+    paneIdFor: (config) => paneIdForIndicator(config, studyDefinitions),
     devicePixelRatio: window.devicePixelRatio,
     onViewportChanged: (viewport) => controller?.handleViewportChanged(viewport),
     onMaterializedBoundary: (direction, anchor) => controller?.handleMaterializedBoundary(direction, anchor),
@@ -684,6 +707,9 @@ export function createChart(
       if (controller?.shouldPublishVisibleRange()) {
         emitEvent({ type: "visible-range", range });
       }
+    },
+    onPaneLayoutChanged: () => {
+      if (controller !== undefined) emitLayoutChanged(controller.getViewModel());
     },
     onMarkClicked: (mark) => emitEvent({ type: "mark-clicked", mark }),
     onCalculationStatusChanged: (status) => controller?.handleCalculationStatus(status),
@@ -877,7 +903,9 @@ export function createChart(
     }
   });
   const unbind = shell.bind(controller);
-  lastNotifiedLayout = JSON.stringify(layoutSnapshot(controller.getViewModel()));
+  lastNotifiedLayout = JSON.stringify(
+    layoutSnapshot(controller.getViewModel(), studyDefinitions, runtime.getPaneLayouts())
+  );
   controller.setMarks(parseMarks(options.marks ?? []));
   lastEntitySnapshot = new Map(
     entitySnapshot(controller.getViewModel(), entityScope).map((entity) => [entity.id, entity])
@@ -987,6 +1015,103 @@ export function createChart(
           .map((entity) => entity.value.id));
     emitSelectionChanged(controller!.getViewModel());
   };
+  const requirePaneState = (id: ChartPaneId): ChartPane => {
+    if (destroyed) {
+      throw new DOMException("Chart pane API is unavailable", "InvalidStateError");
+    }
+    requireReadyLayout(controller!.getViewModel(), readySelectionKey);
+    const pane = runtime.getPanes().find((candidate) => candidate.id === id);
+    if (pane === undefined) {
+      throw new DOMException("Chart pane was not found", "NotFoundError");
+    }
+    return pane;
+  };
+  const requireMutablePriceScale = (): void => {
+    if (controller!.getState().view === "intraday") {
+      throw new RangeError("Intraday view has a fixed price scale");
+    }
+  };
+  const paneApi = (id: ChartPaneId): ChartPaneApi => {
+    const priceScale: ChartPriceScaleApi = Object.freeze({
+      paneId: id,
+      getState: () => structuredClone(requirePaneState(id).priceScale),
+      setMode: (mode: ChartPriceScaleMode) => {
+        requireMutablePriceScale();
+        const parsed = parsePriceScaleMode(mode);
+        const pane = requirePaneState(id);
+        if (id !== "main") {
+          if (parsed !== "linear") {
+            throw new RangeError("Study panes support only a linear price scale");
+          }
+          return;
+        }
+        if (pane.priceScale.mode !== parsed) controller!.setPriceScaleMode(parsed);
+      },
+      setAutoScale: (enabled: boolean) => {
+        requireMutablePriceScale();
+        if (typeof enabled !== "boolean") {
+          throw new TypeError("Chart pane auto scale state must be boolean");
+        }
+        if (requirePaneState(id).priceScale.autoScale !== enabled) {
+          runtime.setPaneAutoScale(id, enabled);
+        }
+      },
+      setVisibleRange: (range: ChartPriceRange) => {
+        requireMutablePriceScale();
+        const parsed = parsePanePriceRange(range);
+        const pane = requirePaneState(id);
+        if (pane.priceScale.mode === "log" && parsed.from <= 0) {
+          throw new RangeError("Chart logarithmic visible range must be positive");
+        }
+        runtime.setPaneVisibleRange(id, parsed);
+      },
+      setInverted: (inverted: boolean) => {
+        requireMutablePriceScale();
+        if (typeof inverted !== "boolean") {
+          throw new TypeError("Chart pane inverted state must be boolean");
+        }
+        if (requirePaneState(id).priceScale.inverted !== inverted) {
+          runtime.setPaneInverted(id, inverted);
+        }
+      }
+    });
+    return Object.freeze({
+      id,
+      getState: () => structuredClone(requirePaneState(id)),
+      setHeightRatio: (ratio: number) => {
+        const parsed = parsePaneHeightRatio(ratio);
+        if (requirePaneState(id).heightRatio !== parsed) {
+          runtime.setPaneHeightRatio(id, parsed);
+        }
+      },
+      setCollapsed: (collapsed: boolean) => {
+        if (typeof collapsed !== "boolean") {
+          throw new TypeError("Chart pane collapsed state must be boolean");
+        }
+        if (id === "main" && collapsed) {
+          throw new RangeError("Chart main pane cannot be collapsed");
+        }
+        if (requirePaneState(id).collapsed !== collapsed) {
+          runtime.setPaneCollapsed(id, collapsed);
+        }
+      },
+      moveTo: (index: number) => {
+        requirePaneState(id);
+        const panes = runtime.getPanes();
+        if (!Number.isSafeInteger(index) || index < 0 || index >= panes.length) {
+          throw new RangeError("Chart pane index is out of range");
+        }
+        if (id === "main" && index !== 0) {
+          throw new RangeError("Chart main pane must remain first");
+        }
+        if (id !== "main" && index === 0) {
+          throw new RangeError("Study panes cannot precede the main pane");
+        }
+        if (panes[index]?.id !== id) runtime.movePane(id, index);
+      },
+      getPriceScale: () => priceScale
+    });
+  };
 
   return Object.freeze({
     getState: () => controller!.getState(),
@@ -997,6 +1122,23 @@ export function createChart(
     getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
       resolveSeriesProperties(type, controller!.getViewModel().seriesProperties),
     getPriceScaleMode: () => controller!.getViewModel().priceScaleMode,
+    getPanes: () => {
+      requireReadyLayout(controller!.getViewModel(), readySelectionKey);
+      return structuredClone(runtime.getPanes());
+    },
+    getPaneById: (value: ChartPaneId) => {
+      const id = parsePaneId(value);
+      requireReadyLayout(controller!.getViewModel(), readySelectionKey);
+      const pane = runtime.getPanes().find((candidate) => candidate.id === id);
+      return pane === undefined ? undefined : structuredClone(pane);
+    },
+    getPaneApi: (value: ChartPaneId) => {
+      const id = parsePaneId(value);
+      requireReadyLayout(controller!.getViewModel(), readySelectionKey);
+      return runtime.getPanes().some((candidate) => candidate.id === id)
+        ? paneApi(id)
+        : undefined;
+    },
     getIndicators: () => structuredClone(controller!.getViewModel().indicators),
     getDrawings: () => fromEngineDrawings(controller!.getViewModel().drawings),
     getMarks: () => structuredClone(controller!.getViewModel().marks),
@@ -1155,7 +1297,7 @@ export function createChart(
     exportLayout: () => {
       const viewModel = controller!.getViewModel();
       requireReadyLayout(viewModel, readySelectionKey);
-      return layoutSnapshot(viewModel);
+      return layoutSnapshot(viewModel, studyDefinitions, runtime.getPaneLayouts());
     },
     setTheme: (value: ChartTheme) => {
       if (value !== "dark" && value !== "light") {
@@ -1226,6 +1368,17 @@ export function createChart(
       if (controller!.getState().view === "intraday" && layout.seriesType !== "line") {
         throw new RangeError("Intraday view accepts only line-series layouts");
       }
+      if (
+        controller!.getState().view === "intraday" &&
+        layout.panes.some((pane) =>
+          !pane.priceScale.autoScale ||
+          pane.priceScale.inverted ||
+          pane.priceScale.visibleRange !== undefined
+        )
+      ) {
+        throw new RangeError("Intraday view has a fixed price scale");
+      }
+      runtime.validatePaneLayouts(layout.panes, layout.priceScaleMode);
       applyingLayout = true;
       try {
         controller!.setSeriesConfiguration(
@@ -1234,6 +1387,7 @@ export function createChart(
         );
         controller!.setPriceScaleMode(layout.priceScaleMode);
         controller!.setIndicators(layout.indicators);
+        runtime.applyPaneLayouts(layout.panes);
         controller!.setDrawings(toEngineDrawings(layout.drawings));
         controller!.setGridVisible(layout.gridVisible);
       } finally {
@@ -1241,7 +1395,11 @@ export function createChart(
       }
       emitEntityChanges(controller!.getViewModel());
       emitSelectionChanged(controller!.getViewModel());
-      const applied = layoutSnapshot(controller!.getViewModel());
+      const applied = layoutSnapshot(
+        controller!.getViewModel(),
+        studyDefinitions,
+        runtime.getPaneLayouts()
+      );
       const nextLayout = JSON.stringify(applied);
       if (nextLayout !== lastNotifiedLayout) {
         lastNotifiedLayout = nextLayout;

@@ -723,8 +723,27 @@ describe("workspace engine runtime", () => {
       ],
       []
     );
+    const paneAreas = createPanelLayout({
+      width: layout.plotArea.width + layout.rightAxisWidth,
+      height: layout.timeAxisArea.y - layout.plotArea.y,
+      rightAxisWidth: layout.rightAxisWidth,
+      bottomAxisHeight: 0,
+      panels: runtime.getPaneLayouts().map((pane) => ({
+        id: pane.id,
+        kind: pane.id === "main" ? "main" as const : "sub" as const,
+        label: pane.id,
+        heightRatio: pane.heightRatio
+      }))
+    });
+    const mainGroupHeight = paneAreas[0]!.plotArea.height;
+    const contentHeight = layout.timeAxisArea.y - layout.plotArea.y;
+    const volumeHeight = Math.floor(
+      mainGroupHeight * layout.volumeArea.height / contentHeight
+    );
+    const volumeGap = layout.volumeArea.y - layout.plotArea.y - layout.plotArea.height;
+    const mainPlotHeight = mainGroupHeight - volumeGap - volumeHeight;
     expect(events.at(-1)?.crosshair.price).toBeCloseTo(
-      priceAtY(220, expectedScale, layout.plotArea.y, layout.plotArea.height)
+      priceAtY(220, expectedScale, layout.plotArea.y, mainPlotHeight)
     );
 
     const movesBeforeDrawingScale = events.filter((event) => event !== undefined).length;
@@ -755,7 +774,7 @@ describe("workspace engine runtime", () => {
       .toHaveLength(movesBeforeDrawingScale + 1);
     expect(events.at(-1)?.offsetY).toBe(220);
     expect(events.at(-1)?.crosshair.price).toBeCloseTo(
-      priceAtY(220, drawingScale, layout.plotArea.y, layout.plotArea.height)
+      priceAtY(220, drawingScale, layout.plotArea.y, mainPlotHeight)
     );
 
     const leavesBeforeScaleChange = events.filter((event) => event === undefined).length;
@@ -1199,6 +1218,7 @@ describe("workspace engine runtime", () => {
     let nextFrame = 1;
     let currentViewport: ViewportState | undefined;
     const onStudyClicked = vi.fn();
+    const crosshairEvents: Array<Parameters<NonNullable<Parameters<typeof createChartEngineRuntime>[0]["onCrosshairChanged"]>>[0]> = [];
     const source = materialized(1, 100);
     const flushFrames = () => {
       while (frames.size > 0) {
@@ -1258,6 +1278,8 @@ describe("workspace engine runtime", () => {
       cancelFrame: (id) => { frames.delete(id); },
       getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
       onViewportChanged: (viewport) => { currentViewport = viewport; },
+      hasCrosshairListeners: () => true,
+      onCrosshairChanged: (snapshot) => crosshairEvents.push(snapshot),
       onStudyClicked
     });
     runtime.setMaterializedSeries(source);
@@ -1287,16 +1309,12 @@ describe("workspace engine runtime", () => {
     const layout = createChartLayout(800, 500);
     const scale = createMainPanelPriceScale(source.series, currentViewport!.visibleRange, "linear", [], []);
     const x = indexToX(50, currentViewport!, layout.plotArea.x);
-    const y = priceToY(150, scale, layout.plotArea.y, layout.plotArea.height);
-    overlayCanvas.dispatch("pointerdown", { pointerId: 7, clientX: x, clientY: y });
-    overlayCanvas.dispatch("pointerup", { pointerId: 7, clientX: x, clientY: y });
-    expect(onStudyClicked).toHaveBeenCalledWith("top");
-
-    const panels = createPanelLayout({
-      width: 800,
-      height: 500,
+    const contentHeight = layout.timeAxisArea.y - layout.plotArea.y;
+    const contentPanels = createPanelLayout({
+      width: layout.plotArea.width + layout.rightAxisWidth,
+      height: contentHeight,
       rightAxisWidth: layout.rightAxisWidth,
-      bottomAxisHeight: layout.bottomAxisHeight,
+      bottomAxisHeight: 0,
       panels: [
         { id: "main", kind: "main", label: "Main", heightRatio: 3 },
         {
@@ -1307,14 +1325,35 @@ describe("workspace engine runtime", () => {
         }
       ]
     });
-    const separatePanel = panels[1]!;
+    const mainGroup = contentPanels[0]!;
+    const volumeRatio = layout.volumeArea.height / contentHeight;
+    const volumeHeight = Math.floor(mainGroup.plotArea.height * volumeRatio);
+    const volumeGap = layout.volumeArea.y - layout.plotArea.y - layout.plotArea.height;
+    const mainPlotHeight = mainGroup.plotArea.height - volumeGap - volumeHeight;
+    const y = priceToY(150, scale, layout.plotArea.y, mainPlotHeight);
+    overlayCanvas.dispatch("pointerdown", { pointerId: 7, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointerup", { pointerId: 7, clientX: x, clientY: y });
+    expect(onStudyClicked).toHaveBeenCalledWith("top");
+
+    const separatePanel = contentPanels[1]!;
     const separateScale = createPriceScaleFromBounds({ min: 0, max: 100 }, 1, "linear");
     const separateY = priceToY(
       100,
       separateScale,
-      separatePanel.plotArea.y,
+      separatePanel.plotArea.y + layout.plotArea.y,
       separatePanel.plotArea.height
     );
+    overlayCanvas.dispatch("pointermove", {
+      clientX: x,
+      clientY: separateY,
+      pointerType: "mouse"
+    });
+    flushFrames();
+    expect(crosshairEvents.at(-1)).toMatchObject({
+      offsetX: x,
+      offsetY: separateY,
+      candle: source.series.candles[50]
+    });
     overlayCanvas.dispatch("pointerdown", {
       pointerId: 70,
       clientX: x,
@@ -1330,12 +1369,12 @@ describe("workspace engine runtime", () => {
     overlayCanvas.dispatch("pointerdown", {
       pointerId: 71,
       clientX: x,
-      clientY: separatePanel.plotArea.y - 3
+      clientY: separatePanel.plotArea.y + layout.plotArea.y - 3
     });
     overlayCanvas.dispatch("pointerup", {
       pointerId: 71,
       clientX: x,
-      clientY: separatePanel.plotArea.y - 3
+      clientY: separatePanel.plotArea.y + layout.plotArea.y - 3
     });
     expect(onStudyClicked).toHaveBeenCalledTimes(beforeBoundaryMiss);
 
@@ -1357,6 +1396,392 @@ describe("workspace engine runtime", () => {
     runtime.setIndicators([]);
     overlayCanvas.dispatch("pointerup", { pointerId: 10, clientX: x, clientY: y });
     expect(onStudyClicked).toHaveBeenCalledTimes(beforeBoundaryMiss + 1);
+    runtime.destroy();
+  });
+
+  it("preserves a manual pane scale during same-selection history materialization", () => {
+    const overlayCanvas = new FakeCanvas();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined
+    });
+    const source = materialized(100, 100);
+    runtime.setMaterializedSeries(source);
+    runtime.setPaneVisibleRange("main", { from: 50, to: 150 });
+
+    runtime.setMaterializedSeries({
+      ...source,
+      series: {
+        ...source.series,
+        dataVersion: "v2",
+        candles: materialized(50, 150).series.candles
+      },
+      sourceMinTime: 50
+    }, 100);
+    runtime.setPriceScaleMode("linear");
+
+    expect(runtime.getPanes()[0]?.priceScale).toEqual({
+      mode: "linear",
+      autoScale: false,
+      inverted: false,
+      visibleRange: { from: 50, to: 150 }
+    });
+
+    const nextSelection = materialized(1_000, 100);
+    nextSelection.selection = { ...nextSelection.selection, timeframe: "5m" };
+    nextSelection.series = { ...nextSelection.series, timeframe: "5m" };
+    runtime.setMaterializedSeries(nextSelection);
+    expect(runtime.getPanes()[0]?.priceScale.autoScale).toBe(true);
+    runtime.destroy();
+  });
+
+  it("does not switch a pane to manual scale until a price-axis drag crosses the slop", () => {
+    const overlayCanvas = new FakeCanvas();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined
+    });
+    runtime.setMaterializedSeries(materialized());
+    const axis = createChartLayout(800, 500).priceAxisArea;
+    const x = axis.x + axis.width / 2;
+    const y = axis.y + axis.height / 2;
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 42, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointerup", { pointerId: 42, clientX: x, clientY: y });
+
+    expect(runtime.getPanes()[0]?.priceScale).toEqual({
+      mode: "linear",
+      autoScale: true,
+      inverted: false
+    });
+    runtime.destroy();
+  });
+
+  it("discards a canceled price-axis scale preview", () => {
+    const overlayCanvas = new FakeCanvas();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined
+    });
+    runtime.setMaterializedSeries(materialized());
+    runtime.setPaneAutoScale("main", false);
+    const baseline = runtime.getPanes()[0]?.priceScale.visibleRange;
+    runtime.setPaneAutoScale("main", true);
+    const axis = createChartLayout(800, 500).priceAxisArea;
+    const x = axis.x + axis.width / 2;
+    const y = axis.y + axis.height / 2;
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 43, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointermove", { pointerId: 43, clientX: x, clientY: y + 80 });
+    overlayCanvas.dispatch("pointercancel", { pointerId: 43, clientX: x, clientY: y + 80 });
+    runtime.setPaneAutoScale("main", false);
+
+    expect(runtime.getPanes()[0]?.priceScale.visibleRange).toEqual(baseline);
+    runtime.destroy();
+  });
+
+  it("does not let a stale price-axis pointerup override imported or replaced state", () => {
+    const overlayCanvas = new FakeCanvas();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined
+    });
+    runtime.setMaterializedSeries(materialized());
+    const axis = createChartLayout(800, 500).priceAxisArea;
+    const x = axis.x + axis.width / 2;
+    const y = axis.y + 10;
+    const beginDrag = (pointerId: number) => {
+      overlayCanvas.dispatch("pointerdown", { pointerId, clientX: x, clientY: y });
+      overlayCanvas.dispatch("pointermove", { pointerId, clientX: x, clientY: y + 80 });
+    };
+    const finishDrag = (pointerId: number) => {
+      overlayCanvas.dispatch("pointerup", { pointerId, clientX: x, clientY: y + 80 });
+    };
+
+    beginDrag(45);
+    runtime.applyPaneLayouts([{
+      id: "main",
+      heightRatio: 3,
+      collapsed: false,
+      priceScale: { autoScale: true, inverted: false }
+    }]);
+    finishDrag(45);
+    expect(runtime.getPanes()[0]?.priceScale.autoScale).toBe(true);
+
+    beginDrag(46);
+    const replacement = materialized();
+    replacement.selection = {
+      ...replacement.selection,
+      symbol: { ...replacement.selection.symbol, id: "SSE:600001", code: "600001" }
+    };
+    replacement.series = { ...replacement.series, symbol: "SSE:600001" };
+    runtime.setMaterializedSeries(replacement);
+    finishDrag(46);
+    expect(runtime.getPanes()[0]?.priceScale.autoScale).toBe(true);
+
+    runtime.setPaneAutoScale("main", false);
+    const committedRange = runtime.getPanes()[0]?.priceScale.visibleRange;
+    runtime.setPaneAutoScale("main", true);
+    beginDrag(48);
+    runtime.setPaneAutoScale("main", false);
+    finishDrag(48);
+    expect(runtime.getPanes()[0]?.priceScale.visibleRange).toEqual(committedRange);
+    runtime.destroy();
+  });
+
+  it("keeps a price-axis drag active across unchanged render frames", () => {
+    const overlayCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); }
+    });
+    runtime.setMaterializedSeries(materialized());
+    flushFrames();
+    const axis = createChartLayout(800, 500).priceAxisArea;
+    const x = axis.x + axis.width / 2;
+    const y = axis.y + axis.height / 2;
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 47, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointermove", { pointerId: 47, clientX: x, clientY: y + 40 });
+    flushFrames();
+    overlayCanvas.dispatch("pointermove", { pointerId: 47, clientX: x, clientY: y + 80 });
+    flushFrames();
+    overlayCanvas.dispatch("pointerup", { pointerId: 47, clientX: x, clientY: y + 80 });
+
+    expect(runtime.getPanes()[0]?.priceScale.autoScale).toBe(false);
+    runtime.destroy();
+  });
+
+  it("scales a large finite price range without overflowing its center", () => {
+    const overlayCanvas = new FakeCanvas();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined
+    });
+    runtime.setMaterializedSeries(materialized());
+    const original = { from: 1e308, to: 1.5e308 };
+    runtime.setPaneVisibleRange("main", original);
+    const axis = createChartLayout(800, 500).priceAxisArea;
+    const x = axis.x + axis.width / 2;
+    const y = axis.y + axis.height / 2;
+
+    overlayCanvas.dispatch("pointerdown", { pointerId: 44, clientX: x, clientY: y });
+    overlayCanvas.dispatch("pointermove", { pointerId: 44, clientX: x, clientY: y - 40 });
+    overlayCanvas.dispatch("pointerup", { pointerId: 44, clientX: x, clientY: y - 40 });
+    const range = runtime.getPanes()[0]?.priceScale.visibleRange;
+
+    expect(range).not.toEqual(original);
+    expect(Number.isFinite(range?.from)).toBe(true);
+    expect(Number.isFinite(range?.to)).toBe(true);
+    runtime.destroy();
+  });
+
+  it("rejects an overflowing percentage range without changing pane state", () => {
+    const source = materialized();
+    source.series = {
+      ...source.series,
+      candles: source.series.candles.map((candle) => ({
+        ...candle,
+        open: 1,
+        high: 2,
+        low: 0.5,
+        close: 1
+      }))
+    };
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined
+    });
+    runtime.setMaterializedSeries(source);
+    runtime.setPriceScaleMode("percentage");
+    const before = runtime.getPanes();
+
+    expect(() => runtime.setPaneVisibleRange("main", {
+      from: 0,
+      to: Number.MAX_VALUE
+    })).toThrow("price range");
+    expect(runtime.getPanes()).toEqual(before);
+    runtime.destroy();
+  });
+
+  it("removes a hidden study pane from the rendered layout", async () => {
+    const staticCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    let resolveHidden!: (value: Map<string, IndicatorResult>) => void;
+    const source = materialized();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        async calculateIndicators({ configs }) {
+          if (configs[0]?.visible === false) {
+            return new Promise<Map<string, IndicatorResult>>(
+              (resolve) => { resolveHidden = resolve; }
+            );
+          }
+          return new Map(configs.map((config) => [config.instanceId, {
+            outputs: [{
+              id: indicatorOutputId(config.instanceId, "RSI"),
+              label: "RSI",
+              type: "line" as const,
+              panelId: indicatorPanelId(config.instanceId),
+              values: source.series.candles.map((candle) => ({
+                time: candle.time,
+                value: 50
+              }))
+            }]
+          }]));
+        },
+        async calculateSeries(input) {
+          return { type: input.type, source: source.series, sourceIndexOffset: 0, points: [] };
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      paneIdFor: (config) => indicatorPanelId(config.instanceId),
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration
+    });
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    runtime.setMaterializedSeries(source);
+    runtime.setIndicators([{
+      instanceId: "hidden-rsi",
+      id: "RSI",
+      params: { period: 14 },
+      visible: true
+    }]);
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    staticCanvas.texts.splice(0);
+    flushFrames();
+    const visibleLabelCount = staticCanvas.texts.map(Number).filter(Number.isFinite).length;
+
+    runtime.setIndicators([{
+      instanceId: "hidden-rsi",
+      id: "RSI",
+      params: { period: 14 },
+      visible: false
+    }]);
+    staticCanvas.texts.splice(0);
+    flushFrames();
+
+    expect(staticCanvas.texts.map(Number).filter(Number.isFinite).length)
+      .toBeLessThan(visibleLabelCount);
+    expect(staticCanvas.texts).not.toContain("0.50");
+    resolveHidden(new Map());
+    await Promise.resolve();
+    runtime.destroy();
+  });
+
+  it("auto-scales study panes from the visible window instead of hidden history", async () => {
+    const staticCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    const source = materialized(1, 100);
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        async calculateIndicators({ configs }) {
+          return new Map(configs.map((config) => [config.instanceId, {
+            outputs: [{
+              id: indicatorOutputId(config.instanceId, "RSI"),
+              label: "RSI",
+              type: "line" as const,
+              panelId: indicatorPanelId(config.instanceId),
+              values: source.series.candles.map((candle, index) => ({
+                time: candle.time,
+                value: index === 0 ? 1_000_000_000 : 50
+              }))
+            }]
+          }]));
+        },
+        async calculateSeries(input) {
+          return { type: input.type, source: source.series, sourceIndexOffset: 0, points: [] };
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration
+    });
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const callbacks = [...frames.values()];
+        frames.clear();
+        for (const callback of callbacks) callback();
+      }
+    };
+    runtime.setMaterializedSeries(source);
+    expect(runtime.setVisibleRange({ from: 51, to: 100 })).toBe(true);
+    runtime.setIndicators([{
+      instanceId: "visible-rsi",
+      id: "RSI",
+      params: { period: 14 },
+      visible: true
+    }]);
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    staticCanvas.texts.splice(0);
+    flushFrames();
+
+    const numericLabels = staticCanvas.texts
+      .map(Number)
+      .filter(Number.isFinite);
+    expect(Math.max(...numericLabels)).toBeLessThan(1_000);
+    expect(staticCanvas.texts).not.toContain("NaN");
+    expect(staticCanvas.texts).not.toContain("Infinity");
     runtime.destroy();
   });
 

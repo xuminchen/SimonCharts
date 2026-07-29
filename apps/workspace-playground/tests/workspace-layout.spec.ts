@@ -575,7 +575,7 @@ test("programs and atomically restores a versioned public layout", async ({ page
 
   expect(result.restored).toEqual(result.afterInvalid);
   expect(result.restored).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 3,
     seriesType: "area",
     priceScaleMode: "percentage",
     indicators: [{
@@ -590,7 +590,13 @@ test("programs and atomically restores a versioned public layout", async ({ page
       affectsPriceScale: true,
       metadata: { rangeLabel: "支撑" }
     }],
-    gridVisible: false
+    gridVisible: false,
+    panes: [{
+      id: "main",
+      heightRatio: 3,
+      collapsed: false,
+      priceScale: { autoScale: true, inverted: false }
+    }]
   });
   expect(result.marks).toEqual([expect.objectContaining({ id: "earnings", label: "E" })]);
   expect(result.layoutEvents).toBe(1);

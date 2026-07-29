@@ -22,8 +22,13 @@ import type {
   ChartCustomStudyDefinition,
   ChartCustomStudyId,
   ChartJsonValue,
+  ChartLayout,
   ChartLayoutV2,
+  ChartLayoutV3,
   ChartMark,
+  ChartPaneId,
+  ChartPaneLayout,
+  ChartPriceRange,
   ChartPriceScaleMode,
   ChartConfigurableSeriesType,
   ChartSeriesProperties,
@@ -63,6 +68,7 @@ const maxStudyInputs = 16;
 const maxStudyOutputs = 16;
 const maxSeriesCountProperty = 10_000;
 const maxLineBreakCount = 500;
+const maxPaneHeightRatio = 100;
 const maxThemeColorLength = 128;
 const cssNumber = String.raw`[-+]?(?:\d+(?:\.\d*)?|\.\d+)`;
 const rgbComponent = `${cssNumber}%?`;
@@ -1091,11 +1097,172 @@ export function parseVisibleRange(value: unknown): ChartVisibleRange {
   return { from, to };
 }
 
+export function paneIdForIndicator(
+  indicator: Readonly<ChartIndicator>,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartPaneId | undefined {
+  if (indicator.id.startsWith("custom:")) {
+    const definition = studyDefinitions.get(studyDefinitionKey(
+      indicator.id as ChartCustomStudyId,
+      indicator.definitionVersion ?? ""
+    ));
+    if (definition === undefined) {
+      throw new TypeError(`Chart study definition ${indicator.id} is unsupported`);
+    }
+    return definition.pane === "main"
+      ? undefined
+      : `study:${indicator.instanceId}`;
+  }
+  const definition = indicatorDefinitions.get(indicator.id as ChartIndicatorId);
+  if (definition === undefined) {
+    throw new TypeError(`Chart indicator ${indicator.id} is unsupported`);
+  }
+  return definition.panelId === "main"
+    ? undefined
+    : `study:${indicator.instanceId}`;
+}
+
+function defaultPaneLayouts(
+  indicators: readonly ChartIndicator[],
+  studyDefinitions: StudyDefinitionCatalog
+): ChartPaneLayout[] {
+  return [
+    {
+      id: "main",
+      heightRatio: 3,
+      collapsed: false,
+      priceScale: { autoScale: true, inverted: false }
+    },
+    ...indicators.flatMap((indicator) => {
+      const id = paneIdForIndicator(indicator, studyDefinitions);
+      return id === undefined
+        ? []
+        : [{
+            id,
+            heightRatio: 1,
+            collapsed: false,
+            priceScale: { autoScale: true, inverted: false }
+          } satisfies ChartPaneLayout];
+    })
+  ];
+}
+
+export function parsePaneId(value: unknown): ChartPaneId {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0 ||
+    value.length > maxIdentifierLength + "study:".length
+  ) {
+    throw new TypeError("Chart pane id must be a non-empty string");
+  }
+  const id = value;
+  if (id !== "main" && !id.startsWith("study:")) {
+    throw new TypeError("Chart pane id is unsupported");
+  }
+  return id as ChartPaneId;
+}
+
+export function parsePaneHeightRatio(value: unknown): number {
+  const ratio = finite(value, "Chart pane height ratio");
+  if (ratio <= 0 || ratio > maxPaneHeightRatio) {
+    throw new RangeError("Chart pane height ratio is invalid");
+  }
+  return ratio;
+}
+
+export function parsePanePriceRange(
+  value: unknown,
+  label = "Chart pane visible range"
+): ChartPriceRange {
+  const range = record(value, label);
+  onlyKeys(range, ["from", "to"], label);
+  const from = finite(range.from, `${label} from`);
+  const to = finite(range.to, `${label} to`);
+  if (from >= to) throw new RangeError(`${label} must be strictly ascending`);
+  if (!Number.isFinite(to - from)) throw new RangeError(`${label} must have a finite span`);
+  return { from, to };
+}
+
+function parsePaneLayouts(
+  value: unknown,
+  indicators: readonly ChartIndicator[],
+  priceScaleMode: ChartPriceScaleMode,
+  studyDefinitions: StudyDefinitionCatalog
+): ChartPaneLayout[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > maxIndicators + 1) {
+    throw new TypeError("Chart layout panes must be a bounded non-empty array");
+  }
+  const panes = value.map((candidate, index): ChartPaneLayout => {
+    const pane = record(candidate, `Chart layout pane ${index}`);
+    onlyKeys(pane, ["id", "heightRatio", "collapsed", "priceScale"], `Chart layout pane ${index}`);
+    const id = parsePaneId(pane.id);
+    const heightRatio = parsePaneHeightRatio(pane.heightRatio);
+    if (typeof pane.collapsed !== "boolean") {
+      throw new TypeError(`Chart layout pane ${index} collapsed state must be boolean`);
+    }
+    if (id === "main" && pane.collapsed) {
+      throw new RangeError("Chart layout main pane cannot be collapsed");
+    }
+    const scale = record(pane.priceScale, `Chart layout pane ${index} price scale`);
+    onlyKeys(
+      scale,
+      ["autoScale", "inverted", "visibleRange"],
+      `Chart layout pane ${index} price scale`
+    );
+    if (typeof scale.autoScale !== "boolean" || typeof scale.inverted !== "boolean") {
+      throw new TypeError(`Chart layout pane ${index} price scale flags must be boolean`);
+    }
+    if (scale.autoScale && scale.visibleRange !== undefined) {
+      throw new TypeError(`Chart layout pane ${index} automatic price scale cannot have a visible range`);
+    }
+    if (!scale.autoScale && scale.visibleRange === undefined) {
+      throw new TypeError(`Chart layout pane ${index} manual price scale requires a visible range`);
+    }
+    const visibleRange = scale.visibleRange === undefined
+      ? undefined
+      : parsePanePriceRange(scale.visibleRange, `Chart layout pane ${index} visible range`);
+    if (
+      id === "main" &&
+      priceScaleMode === "log" &&
+      visibleRange !== undefined &&
+      visibleRange.from <= 0
+    ) {
+      throw new RangeError("Chart layout logarithmic visible range must be positive");
+    }
+    return {
+      id,
+      heightRatio,
+      collapsed: pane.collapsed,
+      priceScale: {
+        autoScale: scale.autoScale,
+        inverted: scale.inverted,
+        ...(visibleRange === undefined ? {} : { visibleRange })
+      }
+    };
+  });
+  if (panes[0]?.id !== "main") {
+    throw new TypeError("Chart layout main pane must be first");
+  }
+  const ids = panes.map((pane) => pane.id);
+  if (new Set(ids).size !== ids.length) {
+    throw new TypeError("Chart layout pane id is duplicated");
+  }
+  const expected = defaultPaneLayouts(indicators, studyDefinitions).map((pane) => pane.id);
+  if (
+    expected.length !== ids.length ||
+    expected.some((id) => !ids.includes(id))
+  ) {
+    throw new TypeError("Chart layout pane set does not match its studies");
+  }
+  return panes;
+}
+
 export function parseLayout(
   value: unknown,
   studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
-): ChartLayoutV2 {
+): ChartLayout {
   const layout = record(value, "Chart layout");
+  const version = layout.schemaVersion;
   onlyKeys(
     layout,
     [
@@ -1105,23 +1272,59 @@ export function parseLayout(
       "priceScaleMode",
       "indicators",
       "drawings",
-      "gridVisible"
+      "gridVisible",
+      ...(version === 3 ? ["panes"] : [])
     ],
     "Chart layout"
   );
-  if (layout.schemaVersion !== 2) throw new TypeError("Chart layout schema version is unsupported");
+  if (version !== 2 && version !== 3) {
+    throw new TypeError("Chart layout schema version is unsupported");
+  }
   if (typeof layout.gridVisible !== "boolean") throw new TypeError("Chart layout grid visibility must be boolean");
-  return {
-    schemaVersion: 2,
+  const priceScaleMode = parsePriceScaleMode(layout.priceScaleMode);
+  const indicators = parseIndicators(layout.indicators, studyDefinitions);
+  const common = {
     seriesType: parseSeriesType(layout.seriesType),
     ...(layout.seriesProperties === undefined
       ? {}
       : { seriesProperties: parseSeriesProperties(layout.seriesProperties) }),
-    priceScaleMode: parsePriceScaleMode(layout.priceScaleMode),
-    indicators: parseIndicators(layout.indicators, studyDefinitions),
+    priceScaleMode,
+    indicators,
     drawings: parseDrawings(layout.drawings),
     gridVisible: layout.gridVisible
   };
+  return version === 2
+    ? { schemaVersion: 2, ...common }
+    : {
+        schemaVersion: 3,
+        ...common,
+        panes: parsePaneLayouts(
+          layout.panes,
+          indicators,
+          priceScaleMode,
+          studyDefinitions
+        )
+      };
+}
+
+export function toLayoutV3(
+  layout: Readonly<ChartLayout>,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartLayoutV3 {
+  return layout.schemaVersion === 3
+    ? structuredClone(layout)
+    : {
+        schemaVersion: 3,
+        seriesType: layout.seriesType,
+        ...(layout.seriesProperties === undefined
+          ? {}
+          : { seriesProperties: structuredClone(layout.seriesProperties) }),
+        priceScaleMode: layout.priceScaleMode,
+        indicators: structuredClone(layout.indicators),
+        drawings: structuredClone(layout.drawings),
+        gridVisible: layout.gridVisible,
+        panes: defaultPaneLayouts(layout.indicators, studyDefinitions)
+      };
 }
 
 export function toEngineDrawings(drawings: readonly ChartDrawing[]): DrawingObject[] {

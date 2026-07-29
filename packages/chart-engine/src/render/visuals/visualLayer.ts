@@ -21,7 +21,8 @@ export function createVisualLayer(registry: VisualRendererRegistry): ChartLayer 
       const valueScaleByPanelId = createPanelValueScales(
         routedOutputs,
         rangeByPanelId,
-        context.state.priceScale
+        context.state.priceScale,
+        context.state.panelPriceScales
       );
 
       for (const routedOutput of routedOutputs) {
@@ -43,7 +44,8 @@ export function createVisualLayer(registry: VisualRendererRegistry): ChartLayer 
 function createPanelValueScales(
   routedOutputs: RoutedVisualOutput[],
   rangeByPanelId: Map<string, VisualAutoscaleRange | undefined>,
-  mainPriceScale: PriceScale
+  mainPriceScale: PriceScale,
+  configuredScales?: ReadonlyMap<string, PriceScale>
 ): Map<string, PriceScale> {
   const valueScaleByPanelId = new Map<string, PriceScale>();
 
@@ -54,9 +56,10 @@ function createPanelValueScales(
 
     valueScaleByPanelId.set(
       routedOutput.panel.id,
-      routedOutput.panel.kind === "main"
+      configuredScales?.get(routedOutput.panel.id) ??
+      (routedOutput.panel.kind === "main"
         ? mainPriceScale
-        : createLinearValueScale(rangeByPanelId.get(routedOutput.panel.id))
+        : createLinearValueScale(rangeByPanelId.get(routedOutput.panel.id)))
     );
   }
 

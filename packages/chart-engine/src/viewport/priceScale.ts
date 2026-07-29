@@ -7,6 +7,7 @@ export interface PriceScale {
   basePrice: number;
   min: number;
   max: number;
+  inverted?: boolean;
 }
 
 export function createPriceScale(
@@ -74,7 +75,11 @@ export function priceToY(
   const span = scale.max - scale.min;
   return span === 0
     ? plotTop + plotHeight / 2
-    : plotTop + ((scale.max - value) / span) * plotHeight;
+    : plotTop + (
+      scale.inverted
+        ? (value - scale.min) / span
+        : (scale.max - value) / span
+    ) * plotHeight;
 }
 
 export function yToPrice(
@@ -84,13 +89,15 @@ export function yToPrice(
   plotHeight: number
 ): number {
   if (plotHeight === 0) {
-    return scaleValueToPrice(scale.max, scale);
+    return scaleValueToPrice(scale.inverted ? scale.min : scale.max, scale);
   }
 
   const span = scale.max - scale.min;
   const value = span === 0
     ? scale.min
-    : scale.max - ((y - plotTop) / plotHeight) * span;
+    : scale.inverted
+      ? scale.min + ((y - plotTop) / plotHeight) * span
+      : scale.max - ((y - plotTop) / plotHeight) * span;
   return scaleValueToPrice(value, scale);
 }
 

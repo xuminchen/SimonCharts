@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.37";
+const expectedVersion = "1.0.0-rc.38";
 const failures = [];
 const result = spawnSync("npm", ["pack", "--dry-run", "--json", "-w", packageName], {
   cwd: process.cwd(),

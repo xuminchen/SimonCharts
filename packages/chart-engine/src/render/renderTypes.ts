@@ -60,7 +60,9 @@ export interface RenderState {
   layout: ChartLayout;
   movingAverages?: MovingAveragePoint[][];
   crosshair?: CrosshairState | undefined;
+  crosshairPane?: { id: string; y: number };
   panels?: PanelArea[];
+  panelPriceScales?: ReadonlyMap<string, PriceScale>;
   visualOutputs?: IndicatorVisualOutput[];
   drawings?: DrawingObject[];
   selectedDrawingIds?: string[];

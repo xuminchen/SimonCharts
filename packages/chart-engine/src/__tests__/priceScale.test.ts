@@ -29,6 +29,24 @@ describe("price scales", () => {
     }
   });
 
+  it("maps prices bottom-to-top when the scale is inverted", () => {
+    const scale = {
+      ...createPriceScale(series, { from: 0, to: 1 }, "linear"),
+      inverted: true
+    };
+
+    expect(priceToY(scaleValueToPrice(scale.min, scale), scale, 20, 400)).toBe(20);
+    expect(priceToY(scaleValueToPrice(scale.max, scale), scale, 20, 400)).toBe(420);
+    expect(yToPrice(20, scale, 20, 400)).toBeCloseTo(
+      scaleValueToPrice(scale.min, scale),
+      8
+    );
+    expect(yToPrice(420, scale, 20, 400)).toBeCloseTo(
+      scaleValueToPrice(scale.max, scale),
+      8
+    );
+  });
+
   for (const mode of ["linear", "log", "percentage"] as const) {
     it(`maps a zero-height ${mode} plot to the upper scale bound`, () => {
       const scale = createPriceScale(series, { from: 0, to: 1 }, mode);

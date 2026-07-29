@@ -742,6 +742,30 @@ describe("visual layer", () => {
     expect(valueScales[0].min).toBeCloseTo(-valueScales[0].max);
   });
 
+  it("uses the configured scale for a sub panel", () => {
+    const captured: Parameters<VisualRenderer["render"]>[0]["valueScale"][] = [];
+    const registry = createRangeProbeRegistry(
+      { macd: { min: -5, max: 4 } },
+      (context) => captured.push(context.valueScale)
+    );
+    const configured = {
+      mode: "linear" as const,
+      basePrice: 1,
+      min: -2,
+      max: 2,
+      inverted: true
+    };
+    const state = createState({
+      visualOutputs: [{ ...createRenderableOutput("histogram"), id: "macd", panelId: "macd" }],
+      panels: [createPanel("main", "main"), createPanel("macd", "sub")],
+      panelPriceScales: new Map([["macd", configured]])
+    });
+
+    createVisualLayer(registry).render(createLayerContext(state));
+
+    expect(captured).toEqual([configured]);
+  });
+
   it.each(["log", "percentage"] as const)(
     "shares the main %s scale while keeping sub-panel values linear",
     (priceScaleMode) => {

@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.37";
+const expectedVersion = "1.0.0-rc.38";
 let tempRoot;
 
 try {
@@ -142,6 +142,7 @@ function consumerSource() {
   type ChartExecution,
   type ChartIndicatorEntityId,
   type ChartLayoutV2,
+  type ChartLayoutV3,
   type ChartMark,
   type ChartSeriesProperties,
   type ChartSelectableEntityId,
@@ -252,7 +253,7 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
     const view = event.state.view;
     if (phase === "initial") {
       chart.importLayout(JSON.parse(JSON.stringify(layout)));
-      const exportedLayout: ChartLayoutV2 = chart.exportLayout();
+      const exportedLayout: ChartLayoutV3 = chart.exportLayout();
       const exportedDrawings: readonly ChartDrawing[] = chart.getDrawings();
       const exportedMarks: readonly ChartMark[] = chart.getMarks();
       void exportedLayout;
@@ -380,6 +381,18 @@ if (
 }
 customStudyApi.setInputs({ factor: 2 });
 if (!await chart.dataReady()) throw new Error("custom study recalculation did not become usable");
+const customPane = chart.getPaneApi("study:consumer-range");
+if (!customPane) throw new Error("custom study pane handle was not created");
+customPane.setHeightRatio(2);
+customPane.getPriceScale().setVisibleRange({ from: 0, to: 5 });
+customPane.getPriceScale().setInverted(true);
+if (
+  chart.getPaneById("study:consumer-range")?.heightRatio !== 2 ||
+  customPane.getPriceScale().getState().autoScale ||
+  !customPane.getPriceScale().getState().inverted
+) {
+  throw new Error("pane or price-scale API was not usable from the packed package");
+}
 const selectedStudy: ChartSelectableEntityId = customStudyId;
 chart.setSelection([selectedStudy]);
 if (
@@ -397,13 +410,29 @@ if (!customLayout.indicators.some((study) =>
   study.id === "custom:consumer.range" &&
   study.definitionVersion === "1" &&
   study.params.factor === 2
-)) {
+) || customLayout.schemaVersion !== 3) {
   throw new Error("custom study version or inputs were not exported");
+}
+const customPaneLayout = customLayout.panes.find((pane) => pane.id === "study:consumer-range");
+if (
+  customPaneLayout?.heightRatio !== 2 ||
+  customPaneLayout.priceScale.autoScale ||
+  !customPaneLayout.priceScale.inverted ||
+  customPaneLayout.priceScale.visibleRange?.from !== 0 ||
+  customPaneLayout.priceScale.visibleRange.to !== 5
+) {
+  throw new Error("pane state was not exported through Layout V3");
 }
 if (!chart.removeEntity(customStudyId)) throw new Error("custom study entity was not removed");
 chart.importLayout(customLayout);
 if (!await chart.dataReady() || chart.getStudyById(customStudyId)?.params.factor !== 2) {
   throw new Error("custom study layout did not restore through the packed package");
+}
+if (
+  chart.getPaneById("study:consumer-range")?.heightRatio !== 2 ||
+  !chart.getPaneById("study:consumer-range")?.priceScale.inverted
+) {
+  throw new Error("pane state did not round-trip through Layout V3");
 }
 if (Object.values(localStorage).join("\\n").includes("custom:consumer.range")) {
   throw new Error("host-owned custom study leaked into browser indicator persistence");

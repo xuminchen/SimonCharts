@@ -134,6 +134,49 @@ export type ChartSeriesProperties =
     };
 export type ChartConfigurableSeriesType = ChartSeriesProperties["type"];
 export type ChartPriceScaleMode = "linear" | "log" | "percentage";
+
+export type ChartPaneId = "main" | `study:${string}`;
+
+export interface ChartPriceRange {
+  readonly from: number;
+  readonly to: number;
+}
+
+export interface ChartPriceScaleState {
+  readonly mode: ChartPriceScaleMode;
+  readonly autoScale: boolean;
+  readonly inverted: boolean;
+  readonly visibleRange?: Readonly<ChartPriceRange>;
+}
+
+export interface ChartPane {
+  readonly id: ChartPaneId;
+  readonly kind: "main" | "study";
+  readonly title: string;
+  readonly studyInstanceId?: string;
+  readonly visible: boolean;
+  readonly heightRatio: number;
+  readonly collapsed: boolean;
+  readonly priceScale: Readonly<ChartPriceScaleState>;
+}
+
+export interface ChartPriceScaleApi {
+  readonly paneId: ChartPaneId;
+  getState(): Readonly<ChartPriceScaleState>;
+  setMode(mode: ChartPriceScaleMode): void;
+  setAutoScale(enabled: boolean): void;
+  setVisibleRange(range: ChartPriceRange): void;
+  setInverted(inverted: boolean): void;
+}
+
+export interface ChartPaneApi {
+  readonly id: ChartPaneId;
+  getState(): Readonly<ChartPane>;
+  setHeightRatio(ratio: number): void;
+  setCollapsed(collapsed: boolean): void;
+  moveTo(index: number): void;
+  getPriceScale(): ChartPriceScaleApi;
+}
 export type ChartIndicatorId =
   | "MA"
   | "EMA"
@@ -512,7 +555,29 @@ export interface ChartLayoutV2 {
   readonly gridVisible: boolean;
 }
 
-export type ChartLayout = ChartLayoutV2;
+export interface ChartPaneLayout {
+  readonly id: ChartPaneId;
+  readonly heightRatio: number;
+  readonly collapsed: boolean;
+  readonly priceScale: {
+    readonly autoScale: boolean;
+    readonly inverted: boolean;
+    readonly visibleRange?: Readonly<ChartPriceRange>;
+  };
+}
+
+export interface ChartLayoutV3 {
+  readonly schemaVersion: 3;
+  readonly seriesType: ChartSeriesType;
+  readonly seriesProperties?: readonly ChartSeriesProperties[];
+  readonly priceScaleMode: ChartPriceScaleMode;
+  readonly indicators: readonly ChartIndicator[];
+  readonly drawings: readonly ChartDrawing[];
+  readonly gridVisible: boolean;
+  readonly panes: readonly ChartPaneLayout[];
+}
+
+export type ChartLayout = ChartLayoutV2 | ChartLayoutV3;
 
 export type ChartEvent =
   | {
@@ -522,7 +587,7 @@ export type ChartEvent =
       readonly phase: "initial" | "history";
     }
   | { readonly type: "visible-range"; readonly range: Readonly<ChartVisibleRange> }
-  | { readonly type: "layout-changed"; readonly layout: Readonly<ChartLayoutV2> }
+  | { readonly type: "layout-changed"; readonly layout: Readonly<ChartLayoutV3> }
   | { readonly type: "mark-clicked"; readonly mark: Readonly<ChartMark> }
   | { readonly type: "selection-changed"; readonly selection: readonly ChartSelectableEntityId[] }
   | {
@@ -554,6 +619,9 @@ export interface ChartInstance {
     type: T
   ): Readonly<Extract<ChartSeriesProperties, { readonly type: T }>>;
   getPriceScaleMode(): ChartPriceScaleMode;
+  getPanes(): readonly ChartPane[];
+  getPaneById(id: ChartPaneId): ChartPane | undefined;
+  getPaneApi(id: ChartPaneId): ChartPaneApi | undefined;
   getIndicators(): readonly ChartIndicator[];
   getDrawings(): readonly ChartDrawing[];
   getMarks(): readonly ChartMark[];
@@ -571,7 +639,7 @@ export interface ChartInstance {
   clearSelection(): void;
   updateEntity(entity: ChartEntity): void;
   removeEntity(entityId: ChartEntityId): boolean;
-  exportLayout(): ChartLayoutV2;
+  exportLayout(): ChartLayoutV3;
   setTheme(theme: ChartTheme): void;
   setThemeOverrides(overrides: ChartThemeOverrides): void;
   setSymbol(symbol: ChartSymbol): void;

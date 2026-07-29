@@ -1,4 +1,4 @@
-import { formatPriceScaleTick, priceToY } from "../../viewport/priceScale";
+import { formatPriceScaleTick, priceToY, yToPrice } from "../../viewport/priceScale";
 import { indexToX } from "../../viewport/viewport";
 import type { ChartLayer, RenderState } from "../renderTypes";
 import { getTimeAxisLabels } from "../timeAxisLabels";
@@ -13,6 +13,18 @@ export function createCrosshairLayer(): ChartLayer {
     render({ context, state }) {
       const { crosshair, layout, series, theme, viewport } = state;
       const { plotArea } = layout;
+      const activePanel = state.crosshairPane === undefined
+        ? undefined
+        : state.panels?.find((panel) => panel.id === state.crosshairPane!.id);
+      const activeScale = activePanel === undefined
+        ? undefined
+        : state.panelPriceScales?.get(activePanel.id);
+      const activePane = activePanel !== undefined && activeScale !== undefined &&
+        Number.isFinite(state.crosshairPane?.y)
+        ? { panel: activePanel, scale: activeScale, y: state.crosshairPane!.y }
+        : undefined;
+      const targetPlot = activePane?.panel.plotArea ?? plotArea;
+      const targetAxis = activePane?.panel.priceAxisArea ?? layout.priceAxisArea;
 
       if (
         !crosshair ||
@@ -33,11 +45,21 @@ export function createCrosshairLayer(): ChartLayer {
         plotArea.x,
         plotArea.x + plotArea.width
       );
-      const y = clamp(
-        priceToY(crosshair.price, state.priceScale, plotArea.y, plotArea.height),
-        plotArea.y,
-        plotArea.y + plotArea.height
-      );
+      const y = activePane === undefined
+        ? clamp(
+            priceToY(crosshair.price, state.priceScale, targetPlot.y, targetPlot.height),
+            targetPlot.y,
+            targetPlot.y + targetPlot.height
+          )
+        : clamp(activePane.y, targetPlot.y, targetPlot.y + targetPlot.height);
+      const displayedPrice = activePane === undefined
+        ? crosshair.price
+        : yToPrice(y, activePane.scale, targetPlot.y, targetPlot.height);
+      const displayedScale = activePane?.scale ?? state.priceScale;
+      if (
+        !Number.isFinite(displayedPrice) ||
+        (displayedScale.mode === "log" && displayedPrice <= 0)
+      ) return;
 
       context.save();
 
@@ -47,18 +69,23 @@ export function createCrosshairLayer(): ChartLayer {
         context.setLineDash(crosshairDash);
         context.beginPath();
         context.moveTo(x, plotArea.y);
-        context.lineTo(x, Math.max(plotArea.y + plotArea.height, layout.volumeArea.y + layout.volumeArea.height));
-        context.moveTo(plotArea.x, y);
-        context.lineTo(plotArea.x + plotArea.width, y);
+        context.lineTo(x, Math.max(
+          plotArea.y + plotArea.height,
+          layout.volumeArea.y + layout.volumeArea.height,
+          ...(state.panels ?? []).map((panel) => panel.plotArea.y + panel.plotArea.height)
+        ));
+        context.moveTo(targetPlot.x, y);
+        context.lineTo(targetPlot.x + targetPlot.width, y);
         context.stroke();
         context.setLineDash([]);
 
         context.font = `${theme.typography.fontSize}px ${theme.typography.fontFamily}`;
         drawPriceBadge(
           context,
-          formatPriceScaleTick(crosshair.price, state.priceScale),
+          formatPriceScaleTick(displayedPrice, displayedScale),
           y,
-          state
+          state,
+          targetAxis
         );
         drawTimeBadge(
           context,
@@ -77,10 +104,9 @@ function drawPriceBadge(
   context: CanvasRenderingContext2D,
   label: string,
   y: number,
-  state: RenderState
+  state: RenderState,
+  priceAxisArea = state.layout.priceAxisArea
 ): void {
-  const { priceAxisArea } = state.layout;
-
   if (priceAxisArea.width <= 0 || priceAxisArea.height <= 0) return;
 
   const height = Math.min(

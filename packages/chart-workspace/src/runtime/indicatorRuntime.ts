@@ -9,4 +9,4 @@ export const indicatorOutputId = (instanceId: string, outputId: string): string 
   `${indicatorOutputPrefix(instanceId)}${outputId}`;
 
 export const indicatorPanelId = (instanceId: string): string =>
-  `study-panel:${JSON.stringify(instanceId)}`;
+  `study:${instanceId}`;

@@ -140,7 +140,7 @@ test("round-trips sparse properties through layout, preferences and intraday", a
   expect(imported.ready).toBe(true);
   expect(imported.layoutEvents).toBe(1);
   expect(imported.layout).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 3,
     seriesType: "renko",
     seriesProperties: [
       { type: "renko", brickSize: 2 },

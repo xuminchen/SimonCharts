@@ -2,7 +2,8 @@ import type { ViewportState } from "../../model/runtime";
 import {
   formatPriceScaleTick,
   priceToY,
-  scaleValueToPrice
+  priceToScaleValue,
+  yToPrice
 } from "../../viewport/priceScale";
 import type { ChartLayer, RenderState } from "../renderTypes";
 import { getTimeAxisLabels } from "../timeAxisLabels";
@@ -29,7 +30,6 @@ export function createAxisLayer(): ChartLayer {
       }
 
       const priceScale = state.priceScale;
-      const scaleSpan = priceScale.max - priceScale.min;
       let priceTickCount = Math.max(
         2,
         Math.min(maximumPriceTickCount, Math.floor(plotArea.height / minimumPriceTickSpacing))
@@ -55,8 +55,8 @@ export function createAxisLayer(): ChartLayer {
             plotArea.y + theme.typography.fontSize / 2,
             plotArea.y + plotArea.height - theme.typography.fontSize / 2
           );
-          const scaleValue = priceScale.max - (scaleSpan / priceTickCount) * step;
-          const price = scaleValueToPrice(scaleValue, priceScale);
+          const price = yToPrice(y, priceScale, plotArea.y, plotArea.height);
+          const scaleValue = priceToScaleValue(price, priceScale);
 
           if (priceScale.mode === "percentage" && leftPriceAxisArea.width > 0) {
             context.fillStyle = theme.colors.text;
@@ -80,6 +80,8 @@ export function createAxisLayer(): ChartLayer {
           );
         }
 
+        drawSubPanelPriceTicks(context, state);
+
         context.textAlign = "center";
         context.textBaseline = "top";
         context.fillStyle = theme.colors.text;
@@ -94,6 +96,41 @@ export function createAxisLayer(): ChartLayer {
       }
     }
   };
+}
+
+function drawSubPanelPriceTicks(
+  context: CanvasRenderingContext2D,
+  state: RenderState
+): void {
+  for (const panel of state.panels ?? []) {
+    if (panel.kind !== "sub" || panel.plotArea.height <= 0 || panel.priceAxisArea.width <= 0) {
+      continue;
+    }
+    const scale = state.panelPriceScales?.get(panel.id);
+    if (scale === undefined) continue;
+    const count = Math.max(
+      2,
+      Math.min(maximumPriceTickCount, Math.floor(panel.plotArea.height / minimumPriceTickSpacing))
+    );
+    context.fillStyle = state.theme.colors.text;
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    for (let step = 0; step <= count; step += 1) {
+      const y = panel.plotArea.y + (panel.plotArea.height / count) * step;
+      context.fillText(
+        formatPriceScaleTick(
+          yToPrice(y, scale, panel.plotArea.y, panel.plotArea.height),
+          scale
+        ),
+        panel.priceAxisArea.x + state.theme.spacing.axisPadding,
+        clamp(
+          y,
+          panel.plotArea.y + state.theme.typography.fontSize / 2,
+          panel.plotArea.y + panel.plotArea.height - state.theme.typography.fontSize / 2
+        )
+      );
+    }
+  }
 }
 
 function formatRawPrice(price: number): string {

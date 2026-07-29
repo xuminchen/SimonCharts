@@ -69,6 +69,10 @@ import type {
   ChartExecution,
   ChartIndicator,
   ChartMark,
+  ChartPane,
+  ChartPaneId,
+  ChartPaneLayout,
+  ChartPriceRange,
   ChartSeriesProperties,
   ChartVisibleRange,
   Timeframe
@@ -78,7 +82,6 @@ import { shanghaiTradingDayKey } from "../data/pagedSeriesStore";
 import type { CalculationStatus, CheckpointedCalculationRuntime } from "./checkpointedCalculationRuntime";
 import {
   indicatorOutputPrefix,
-  indicatorPanelId,
   type IndicatorConfig
 } from "./indicatorRuntime";
 import {
@@ -164,6 +167,19 @@ export interface ChartEngineRuntime {
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
   setPriceScaleMode(mode: PriceScaleMode): void;
+  getPanes(): readonly ChartPane[];
+  getPaneLayouts(): readonly ChartPaneLayout[];
+  setPaneHeightRatio(id: ChartPaneId, ratio: number): void;
+  setPaneCollapsed(id: ChartPaneId, collapsed: boolean): void;
+  movePane(id: ChartPaneId, index: number): void;
+  setPaneAutoScale(id: ChartPaneId, enabled: boolean): void;
+  setPaneVisibleRange(id: ChartPaneId, range: ChartPriceRange): void;
+  setPaneInverted(id: ChartPaneId, inverted: boolean): void;
+  validatePaneLayouts(
+    panes: readonly ChartPaneLayout[],
+    mainMode: PriceScaleMode
+  ): void;
+  applyPaneLayouts(panes: readonly ChartPaneLayout[]): void;
   setDrawings(drawings: readonly DrawingObject[], selectedDrawingIds?: readonly string[]): void;
   selectDrawings(ids: readonly string[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
@@ -185,6 +201,7 @@ export interface ChartEngineRuntimeOptions {
   themeRoot: HTMLElement;
   calculationRuntime: CheckpointedCalculationRuntime;
   studyTitleFor?: (config: Readonly<IndicatorConfig>) => string;
+  paneIdFor?: (config: Readonly<IndicatorConfig>) => ChartPaneId | undefined;
   observer?: RuntimeResizeObserver;
   requestFrame?: (callback: () => void) => number;
   cancelFrame?: (id: number) => void;
@@ -194,6 +211,7 @@ export interface ChartEngineRuntimeOptions {
   onMaterializedBoundary?: (direction: "before" | "after", anchorTime?: number) => void;
   onMaterializationDemandChanged?: (demand: Readonly<MaterializationDemand>) => void;
   onVisibleRangeChanged?: (range: Readonly<ChartVisibleRange>) => void;
+  onPaneLayoutChanged?: () => void;
   onCalculationStatusChanged?: (status: CalculationStatus) => void;
   onDataWindowChanged?: (snapshot: DataWindowSnapshot | undefined) => void;
   hasCrosshairListeners?: () => boolean;
@@ -268,6 +286,24 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let calculationRecoveryPending = false;
   let viewport = createInitialViewport(0, 1);
   let layout = createChartLayout(1, 1);
+  let panels = createPanelLayout({
+    width: 1,
+    height: 1,
+    rightAxisWidth: layout.rightAxisWidth,
+    bottomAxisHeight: 0,
+    panels: [{ id: "main", kind: "main", label: "Main", heightRatio: 3 }]
+  });
+  let paneOrder: ChartPaneId[] = ["main"];
+  const paneLayouts = new Map<ChartPaneId, ChartPaneLayout>([[
+    "main",
+    {
+      id: "main",
+      heightRatio: 3,
+      collapsed: false,
+      priceScale: { autoScale: true, inverted: false }
+    }
+  ]]);
+  let panelPriceScales = new Map<string, PriceScale>();
   let visualOutputs: IndicatorVisualOutput[] = [];
   let markOutput: IndicatorMarkerOutput | undefined;
   let marks: readonly ChartMark[] = [];
@@ -281,6 +317,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let activeSeriesProperties: ChartSeriesProperties | undefined;
   let crosshair: ChartCrosshairState | undefined;
   let crosshairPoint: { x: number; y: number } | undefined;
+  let crosshairPane: { id: string; y: number } | undefined;
   let crosshairEventsSuspended = false;
   let resumeCrosshairEventsAfterFlush = false;
   let interactionEventPoint: { x: number; y: number } | undefined;
@@ -306,7 +343,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       }
     | undefined;
   let activePointerId: number | undefined;
-  let priceAxisDrag: { pointerId: number; startY: number; scale: PriceScale } | undefined;
+  let priceAxisDrag: {
+    pointerId: number;
+    paneId: ChartPaneId;
+    startY: number;
+    scale: PriceScale;
+    moved: boolean;
+  } | undefined;
   let timeAxisDrag: { pointerId: number; startX: number; viewport: ViewportState } | undefined;
   let lastDataWindowIndex: number | undefined;
   let dataWindowVisible = false;
@@ -541,21 +584,257 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     return candidate;
   }
 
-  function syncLayout(): void {
-    const width = Math.max(1, Math.floor(options.themeRoot.clientWidth || options.staticCanvas.clientWidth || 1));
-    const height = Math.max(1, Math.floor(options.themeRoot.clientHeight || options.staticCanvas.clientHeight || 1));
-    const nextLayout = createChartLayout(
+  function separatePaneConfigs(
+    configs: readonly IndicatorConfig[] = indicatorConfigs
+  ): Array<{ id: ChartPaneId; config: IndicatorConfig }> {
+    return configs.flatMap((config) => {
+      const id = options.paneIdFor?.(config) ??
+        visualOutputs.find((output) =>
+          output.id.startsWith(indicatorOutputPrefix(config.instanceId)) &&
+          output.panelId !== undefined &&
+          output.panelId !== "main"
+        )?.panelId as ChartPaneId | undefined;
+      return id === undefined ? [] : [{ id, config }];
+    });
+  }
+
+  function reconcilePaneLayouts(configs: readonly IndicatorConfig[]): boolean {
+    const before = JSON.stringify(paneOrder);
+    const separate = separatePaneConfigs(configs);
+    const ids = new Set<ChartPaneId>(["main", ...separate.map(({ id }) => id)]);
+    for (const id of paneLayouts.keys()) {
+      if (!ids.has(id)) paneLayouts.delete(id);
+    }
+    paneOrder = [
+      "main",
+      ...paneOrder.filter((id) => id !== "main" && ids.has(id)),
+      ...separate.map(({ id }) => id).filter((id) => !paneOrder.includes(id))
+    ];
+    for (const { id } of separate) {
+      if (paneLayouts.has(id)) continue;
+      paneLayouts.set(id, {
+        id,
+        heightRatio: 1,
+        collapsed: false,
+        priceScale: { autoScale: true, inverted: false }
+      });
+    }
+    return before !== JSON.stringify(paneOrder);
+  }
+
+  function paneIsVisible(id: ChartPaneId): boolean {
+    if (id === "main") return true;
+    return separatePaneConfigs().find((candidate) => candidate.id === id)?.config.visible ?? false;
+  }
+
+  function paneTitle(id: ChartPaneId): string {
+    if (id === "main") return "Main";
+    const config = separatePaneConfigs().find((candidate) => candidate.id === id)?.config;
+    return config === undefined ? id : options.studyTitleFor?.(config) ?? config.id;
+  }
+
+  function rawRange(scale: PriceScale): ChartPriceRange {
+    if (!validPriceScale(scale)) throw new RangeError("Chart pane price scale is invalid");
+    const from = scaleValueToPrice(scale.min, scale);
+    const to = scaleValueToPrice(scale.max, scale);
+    const range = { from: Math.min(from, to), to: Math.max(from, to) };
+    if (
+      !Number.isFinite(range.from) ||
+      !Number.isFinite(range.to) ||
+      !Number.isFinite(range.to - range.from) ||
+      range.from >= range.to
+    ) {
+      throw new RangeError("Chart pane price range is invalid");
+    }
+    return range;
+  }
+
+  function validPriceScale(scale: PriceScale): boolean {
+    return Number.isFinite(scale.basePrice) &&
+      Number.isFinite(scale.min) &&
+      Number.isFinite(scale.max) &&
+      scale.min < scale.max &&
+      Number.isFinite(scale.max - scale.min) &&
+      (scale.mode === "linear" || scale.basePrice > 0) &&
+      Number.isFinite(scaleValueToPrice(scale.min, scale)) &&
+      Number.isFinite(scaleValueToPrice(scale.max, scale));
+  }
+
+  function scaleForRange(
+    range: Readonly<ChartPriceRange>,
+    mode: PriceScaleMode,
+    basePrice: number,
+    inverted: boolean
+  ): PriceScale {
+    const provisional: PriceScale = { mode, basePrice, min: 0, max: 1 };
+    const scale = {
+      ...provisional,
+      min: priceToScaleValue(range.from, provisional),
+      max: priceToScaleValue(range.to, provisional),
+      inverted
+    };
+    if (!validPriceScale(scale)) throw new RangeError("Chart pane price range is invalid");
+    return scale;
+  }
+
+  function validatePaneLayouts(
+    nextPanes: readonly ChartPaneLayout[],
+    mainMode: PriceScaleMode
+  ): void {
+    for (const pane of nextPanes) {
+      if (pane.priceScale.autoScale) continue;
+      scaleForRange(
+        pane.priceScale.visibleRange!,
+        pane.id === "main" ? mainMode : "linear",
+        pane.id === "main" ? priceScale.basePrice : 1,
+        pane.priceScale.inverted
+      );
+    }
+  }
+
+  function visibleVisualOutput(output: IndicatorVisualOutput): IndicatorVisualOutput {
+    const candles = chartEngine.getState().series.candles;
+    const from = Math.max(0, Math.min(candles.length - 1, viewport.visibleRange.from));
+    const to = Math.max(from, Math.min(candles.length - 1, viewport.visibleRange.to));
+    const fromTime = candles[from]?.time;
+    const toTime = candles[to]?.time;
+    const visibleTime = (time: number) =>
+      fromTime !== undefined && toTime !== undefined && time >= fromTime && time <= toTime;
+    if (output.type === "line") {
+      return { ...output, values: output.values.filter((point) => visibleTime(point.time)) };
+    }
+    if (output.type === "histogram") {
+      return { ...output, values: output.values.filter((point) => visibleTime(point.time)) };
+    }
+    if (output.type === "band") {
+      return {
+        ...output,
+        upper: output.upper.filter((point) => visibleTime(point.time)),
+        lower: output.lower.filter((point) => visibleTime(point.time))
+      };
+    }
+    return {
+      ...output,
+      marks: output.marks.filter((mark) =>
+        mark.index === undefined
+          ? visibleTime(mark.time)
+          : mark.index >= from && mark.index <= to
+      )
+    };
+  }
+
+  function automaticPanelScale(outputs: readonly IndicatorVisualOutput[]): PriceScale {
+    const range = mergeVisualAutoscaleRanges(outputs.map((output) =>
+      visualRegistry.require(output.type).getAutoscale(visibleVisualOutput(output))
+    ));
+    try {
+      const scale = createPriceScaleFromBounds(range ?? { min: 0, max: 1 }, 1, "linear");
+      return validPriceScale(scale)
+        ? scale
+        : createPriceScaleFromBounds({ min: 0, max: 1 }, 1, "linear");
+    } catch {
+      return createPriceScaleFromBounds({ min: 0, max: 1 }, 1, "linear");
+    }
+  }
+
+  function buildLayout(width: number, height: number): {
+    layout: typeof layout;
+    panels: typeof panels;
+  } {
+    const base = createChartLayout(
       width,
       height,
       intradayLocked() ? { leftPriceAxis: true } : {}
     );
+    const activeIds = paneOrder.filter((id) => {
+      const pane = paneLayouts.get(id);
+      return pane !== undefined && paneIsVisible(id) && !pane.collapsed;
+    });
+    const contentTop = base.plotArea.y;
+    const contentHeight = Math.max(0, base.timeAxisArea.y - contentTop);
+    const panelAreas = createPanelLayout({
+      width: base.plotArea.width + base.rightAxisWidth,
+      height: contentHeight,
+      rightAxisWidth: base.rightAxisWidth,
+      bottomAxisHeight: 0,
+      panels: activeIds.map((id) => ({
+        id,
+        kind: id === "main" ? "main" as const : "sub" as const,
+        label: paneTitle(id),
+        heightRatio: paneLayouts.get(id)!.heightRatio
+      }))
+    }).map((panel) => ({
+      ...panel,
+      plotArea: {
+        ...panel.plotArea,
+        x: panel.plotArea.x + base.plotArea.x,
+        y: panel.plotArea.y + contentTop
+      },
+      priceAxisArea: {
+        ...panel.priceAxisArea,
+        x: panel.priceAxisArea.x + base.plotArea.x,
+        y: panel.priceAxisArea.y + contentTop
+      }
+    }));
+    const mainGroup = panelAreas.find((panel) => panel.id === "main")!;
+    const baseGap = Math.max(
+      0,
+      base.volumeArea.y - base.plotArea.y - base.plotArea.height
+    );
+    const volumeRatio = contentHeight === 0
+      ? 0
+      : base.volumeArea.height / contentHeight;
+    const volumeHeight = Math.floor(mainGroup.plotArea.height * volumeRatio);
+    const volumeGap = volumeHeight > 0
+      ? Math.min(baseGap, Math.max(0, mainGroup.plotArea.height - volumeHeight - 1))
+      : 0;
+    const mainPlotHeight = Math.max(
+      0,
+      mainGroup.plotArea.height - volumeGap - volumeHeight
+    );
+    const mainPlotArea = { ...mainGroup.plotArea, height: mainPlotHeight };
+    const mainAxisArea = { ...mainGroup.priceAxisArea, height: mainPlotHeight };
+    const nextPanels = panelAreas.map((panel) => panel.id === "main"
+      ? { ...panel, plotArea: mainPlotArea, priceAxisArea: mainAxisArea }
+      : panel);
+    return {
+      layout: {
+        ...base,
+        leftPriceAxisArea: {
+          ...base.leftPriceAxisArea,
+          y: mainPlotArea.y,
+          height: mainPlotArea.height
+        },
+        plotArea: mainPlotArea,
+        priceAxisArea: mainAxisArea,
+        volumeArea: {
+          x: mainPlotArea.x,
+          y: mainPlotArea.y + mainPlotArea.height + volumeGap,
+          width: mainPlotArea.width,
+          height: volumeHeight
+        }
+      },
+      panels: nextPanels
+    };
+  }
+
+  function syncLayout(): void {
+    const width = Math.max(1, Math.floor(options.themeRoot.clientWidth || options.staticCanvas.clientWidth || 1));
+    const height = Math.max(1, Math.floor(options.themeRoot.clientHeight || options.staticCanvas.clientHeight || 1));
+    const next = buildLayout(width, height);
+    const nextLayout = next.layout;
     const changed =
       nextLayout.width !== layout.width ||
       nextLayout.height !== layout.height ||
       nextLayout.plotArea.x !== layout.plotArea.x ||
       nextLayout.plotArea.width !== layout.plotArea.width ||
-      nextLayout.plotArea.height !== layout.plotArea.height;
+      nextLayout.plotArea.height !== layout.plotArea.height ||
+      JSON.stringify(next.panels) !== JSON.stringify(panels);
+    if (changed && activePointerId !== undefined) {
+      cancelPointerInteraction("pointerCancel");
+    }
     layout = nextLayout;
+    panels = next.panels;
     const series = chartEngine.getState().series;
     if (changed) {
       timeCoordinates = materialized?.intradayDays === undefined
@@ -565,7 +844,12 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         ? { ...initialViewportFor(materialized), priceScaleMode: viewport.priceScaleMode }
         : constrainViewportToWidth(viewport, series.candles.length, layout.plotArea.width);
       chartEngine.setViewport(viewport);
+      const pointToRestore = crosshairPoint === undefined ? undefined : { ...crosshairPoint };
       rebuildInteraction();
+      if (pointToRestore !== undefined) {
+        crosshairPoint = pointToRestore;
+        refreshCrosshairAtPoint();
+      }
       options.onViewportChanged?.(viewport);
       emitVisibleRange();
       emitMaterializationDemand();
@@ -575,6 +859,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
 
   function updatePriceScale(): void {
     const state = chartEngine.getState();
+    const mainPane = paneLayouts.get("main")!;
     const intradayScale = materialized?.intradayScale;
     let drawingPrices = drawingAutoscalePrices(
       intradayScale === undefined ? viewport.priceScaleMode : "percentage",
@@ -604,6 +889,14 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       drawingPrices = acceptedPrices;
     }
     const automatic = createAutomaticScale(drawingPrices);
+    if (!mainPane.priceScale.autoScale && mainPane.priceScale.visibleRange !== undefined) {
+      manualPriceScale = scaleForRange(
+        mainPane.priceScale.visibleRange,
+        automatic.mode,
+        automatic.basePrice,
+        mainPane.priceScale.inverted
+      );
+    }
     if (intradayScale === undefined) {
       priceScale = manualPriceScale ?? automatic;
     } else if (manualPriceScale !== undefined) {
@@ -625,6 +918,28 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       priceScale =
         symmetricIntradayScale(automatic, intradayScale.previousClose) ??
         automatic;
+    }
+    priceScale = { ...priceScale, inverted: mainPane.priceScale.inverted };
+    panelPriceScales = new Map([["main", priceScale]]);
+    for (const id of paneOrder) {
+      if (id === "main") continue;
+      const pane = paneLayouts.get(id);
+      if (pane === undefined) continue;
+      const outputs = visualOutputs.filter((output) => (output.panelId ?? "main") === id);
+      panelPriceScales.set(
+        id,
+        pane.priceScale.autoScale
+          ? {
+              ...automaticPanelScale(outputs),
+              inverted: pane.priceScale.inverted
+            }
+          : scaleForRange(
+              pane.priceScale.visibleRange!,
+              "linear",
+              1,
+              pane.priceScale.inverted
+            )
+      );
     }
     interaction?.setPriceScale(priceScale);
     syncDrawings();
@@ -818,6 +1133,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   }
 
   function clearCrosshairState(): boolean {
+    crosshairPane = undefined;
     if (crosshair === undefined) return false;
     crosshair = undefined;
     crosshairPoint = undefined;
@@ -829,12 +1145,37 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
 
   function refreshCrosshairAtPoint(): void {
     if (crosshairPoint === undefined || interaction === undefined) return;
+    const mapped = mapCrosshairPoint(crosshairPoint);
+    crosshairPane = mapped.pane;
     interactionEventPoint = crosshairPoint;
     try {
-      interaction.handlePointerMove(crosshairPoint);
+      interaction.handlePointerMove(mapped.point);
     } finally {
       interactionEventPoint = undefined;
     }
+  }
+
+  function mapCrosshairPoint(point: { x: number; y: number }): {
+    point: { x: number; y: number };
+    pane?: { id: string; y: number };
+  } {
+    const panel = panels.find(({ plotArea }) =>
+      point.x >= plotArea.x &&
+      point.x <= plotArea.x + plotArea.width &&
+      point.y >= plotArea.y &&
+      point.y <= plotArea.y + plotArea.height
+    );
+    if (panel === undefined || panel.id === "main" || panel.plotArea.height <= 0) {
+      return { point };
+    }
+    const relativeY = (point.y - panel.plotArea.y) / panel.plotArea.height;
+    return {
+      point: {
+        x: point.x,
+        y: layout.plotArea.y + relativeY * layout.plotArea.height
+      },
+      pane: { id: panel.id, y: point.y }
+    };
   }
 
   function rebuildInteraction(): void {
@@ -950,11 +1291,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         theme,
         layout,
         panels,
+        panelPriceScales,
         visualOutputs: outputs,
         drawings: state.drawings,
         selectedDrawingIds: drawingEditor.getState().selectedDrawingIds,
         hoveredDrawingId,
         crosshair,
+        ...(crosshairPane === undefined ? {} : { crosshairPane }),
         ...(executionTooltip === undefined
           ? {}
           : { visualTooltip: options.onExecutionTooltipChanged === undefined
@@ -1004,31 +1347,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   }
 
   function createPanels() {
-    const subPanelIds = [...new Set(visualOutputs.map((output) => output.panelId).filter((id): id is string => id !== undefined && id !== "main"))];
-    return createPanelLayout({
-        width: layout.width,
-        height: layout.height,
-        rightAxisWidth: layout.rightAxisWidth,
-        bottomAxisHeight: layout.bottomAxisHeight,
-        panels: [
-          { id: "main", kind: "main", label: "Main", heightRatio: 3 },
-          ...subPanelIds.map((id) => {
-            const config = indicatorConfigs.find(
-              (candidate) => indicatorPanelId(candidate.instanceId) === id
-            );
-            return {
-              id,
-              kind: "sub" as const,
-              label: config === undefined
-                ? id
-                : options.studyTitleFor?.(config) ?? config.id,
-              heightRatio: 1
-            };
-          })
-        ]
-      }).map((panel) => panel.id === "main"
-        ? { ...panel, plotArea: { ...layout.plotArea }, priceAxisArea: { ...layout.priceAxisArea } }
-        : panel);
+    return panels;
   }
 
   function markerAt(output: IndicatorMarkerOutput | undefined, point: { x: number; y: number }) {
@@ -1096,9 +1415,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
             visualOutputs: activeOutputs,
             ...(timeCoordinates === undefined ? {} : { timeCoordinates })
           },
-          valueScale: panel.kind === "main"
-            ? priceScale
-            : createPriceScaleFromBounds(valueRange ?? { min: 0, max: 1 }, 1, "linear"),
+          valueScale: panelPriceScales.get(panel.id) ??
+            createPriceScaleFromBounds(valueRange ?? { min: 0, max: 1 }, 1, "linear"),
           valueRange
         }, point.x, point.y);
       });
@@ -1272,6 +1590,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     drawingEditor.cancel();
     drawingHandleDragOperation = undefined;
     drawingMoveDragOperation = undefined;
+    if (priceAxisDrag?.paneId === "main") manualPriceScale = undefined;
     priceAxisDrag = undefined;
     timeAxisDrag = undefined;
     hoveredDrawingId = undefined;
@@ -1350,7 +1669,10 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   }
 
   function initialViewportFor(input: MaterializedSeries): ViewportState {
-    const initial = createInitialViewport(input.series.candles.length, layout.plotArea.width);
+    const initial = {
+      ...createInitialViewport(input.series.candles.length, layout.plotArea.width),
+      priceScaleMode: viewport.priceScaleMode
+    };
     if (input.intradayDays === undefined) {
       return constrainViewportToWidth(
         initial,
@@ -1386,6 +1708,12 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   const isPrimaryActionPointer = (event: PointerEvent): boolean =>
     event.isPrimary !== false &&
     (typeof event.button !== "number" || event.button === 0);
+  const priceAxisPaneAt = (p: { x: number; y: number }) => panels.find((panel) =>
+    p.x >= panel.priceAxisArea.x &&
+    p.x <= panel.priceAxisArea.x + panel.priceAxisArea.width &&
+    p.y >= panel.priceAxisArea.y &&
+    p.y <= panel.priceAxisArea.y + panel.priceAxisArea.height
+  );
   const capture = (pointerId: number) => {
     activePointerId = pointerId;
     options.overlayCanvas.setPointerCapture?.(pointerId);
@@ -1425,12 +1753,21 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       return;
     }
     clearExecutionTooltip();
-    if (intradayLocked() && (p.x >= layout.priceAxisArea.x || p.y >= layout.timeAxisArea.y)) {
+    const priceAxisPane = priceAxisPaneAt(p);
+    if (intradayLocked() && (priceAxisPane !== undefined || p.y >= layout.timeAxisArea.y)) {
       return;
     }
-    if (p.x >= layout.priceAxisArea.x) {
+    if (priceAxisPane !== undefined) {
+      const paneScale = panelPriceScales.get(priceAxisPane.id);
+      if (paneScale === undefined) return;
       capture(event.pointerId);
-      priceAxisDrag = { pointerId: event.pointerId, startY: p.y, scale: { ...priceScale } };
+      priceAxisDrag = {
+        pointerId: event.pointerId,
+        paneId: priceAxisPane.id as ChartPaneId,
+        startY: p.y,
+        scale: { ...paneScale },
+        moved: false
+      };
       session.handleInput({ type: "pointerDown", point: p, mode: "resize" });
       return;
     }
@@ -1470,17 +1807,24 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       ? { type: "pointerMove", point: p }
       : { type: "pointerDrag", point: p });
     if (priceAxisDrag !== undefined && priceAxisDrag.pointerId === event.pointerId) {
+      if (Math.abs(p.y - priceAxisDrag.startY) <= 4) return;
       const span = priceAxisDrag.scale.max - priceAxisDrag.scale.min;
-      const center = (priceAxisDrag.scale.max + priceAxisDrag.scale.min) / 2;
+      const center = priceAxisDrag.scale.min + span / 2;
       const factor = Math.max(0.1, Math.min(10, Math.exp((p.y - priceAxisDrag.startY) / 160)));
-      manualPriceScale = {
+      const nextScale = {
         ...priceAxisDrag.scale,
         min: center - span * factor / 2,
         max: center + span * factor / 2
       };
-      priceScale = manualPriceScale;
-      interaction?.setPriceScale(priceScale);
-      syncDrawings();
+      if (!validPriceScale(nextScale)) return;
+      priceAxisDrag.moved = true;
+      panelPriceScales.set(priceAxisDrag.paneId, nextScale);
+      if (priceAxisDrag.paneId === "main") {
+        manualPriceScale = nextScale;
+        priceScale = nextScale;
+        interaction?.setPriceScale(priceScale);
+        syncDrawings();
+      }
       scheduler.invalidate({ layers: ["axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"], reason: "priceAxisScaled" });
       return;
     }
@@ -1501,9 +1845,11 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       );
       return;
     }
+    const mapped = mapCrosshairPoint(p);
+    crosshairPane = mapped.pane;
     interactionEventPoint = p;
     try {
-      interaction?.handlePointerMove(p);
+      interaction?.handlePointerMove(mapped.point);
     } finally {
       interactionEventPoint = undefined;
     }
@@ -1523,6 +1869,21 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       return;
     }
     if (priceAxisDrag !== undefined && priceAxisDrag.pointerId === event.pointerId) {
+      if (priceAxisDrag.moved) {
+        const pane = paneLayouts.get(priceAxisDrag.paneId);
+        const scale = panelPriceScales.get(priceAxisDrag.paneId);
+        if (pane !== undefined && scale !== undefined) {
+          paneLayouts.set(priceAxisDrag.paneId, {
+            ...pane,
+            priceScale: {
+              autoScale: false,
+              inverted: pane.priceScale.inverted,
+              visibleRange: rawRange(scale)
+            }
+          });
+          options.onPaneLayoutChanged?.();
+        }
+      }
       priceAxisDrag = undefined;
       session.handleInput({ type: "cursor", cursor: "crosshair" });
       return;
@@ -1573,10 +1934,21 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   }) as EventListener, { passive: false });
   listen("dblclick", ((raw: Event) => {
     const p = point(raw as MouseEvent);
-    if (p.x >= layout.priceAxisArea.x) {
-      manualPriceScale = undefined;
+    const pane = priceAxisPaneAt(p);
+    if (pane !== undefined && !intradayLocked()) {
+      const current = paneLayouts.get(pane.id as ChartPaneId);
+      if (current === undefined) return;
+      paneLayouts.set(pane.id as ChartPaneId, {
+        ...current,
+        priceScale: {
+          autoScale: true,
+          inverted: current.priceScale.inverted
+        }
+      });
+      if (pane.id === "main") manualPriceScale = undefined;
       updatePriceScale();
       scheduler.invalidate({ layers: ["axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"], reason: "priceAxisReset" });
+      options.onPaneLayoutChanged?.();
     } else if (p.y >= layout.timeAxisArea.y) {
       resetChartView();
     }
@@ -1679,9 +2051,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       visualOutputs = configs.flatMap((config) =>
         config.visible ? results.get(config.instanceId)?.outputs ?? [] : []
       );
+      if (reconcilePaneLayouts(configs)) syncLayout();
       syncVisualOutputs();
       updatePriceScale();
       refreshCrosshairAtPoint();
+      if (crosshair !== undefined && crosshairPoint !== undefined) {
+        queueCrosshairEvent(crosshair, crosshairPoint);
+      }
       lastDataWindowIndex = undefined;
       emitDataWindow(true);
       scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "crosshair"], reason: "indicatorsCalculated" });
@@ -1750,9 +2126,75 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     }
   }
 
+  function requirePane(id: ChartPaneId): ChartPaneLayout {
+    const pane = paneLayouts.get(id);
+    if (pane === undefined) {
+      throw new DOMException("Chart pane was not found", "NotFoundError");
+    }
+    return pane;
+  }
+
+  function getPaneLayouts(): ChartPaneLayout[] {
+    return paneOrder.map((id) => structuredClone(requirePane(id)));
+  }
+
+  function getPanes(): ChartPane[] {
+    return paneOrder.map((id) => {
+      const pane = requirePane(id);
+      return {
+        id,
+        kind: id === "main" ? "main" : "study",
+        title: paneTitle(id),
+        ...(id === "main" ? {} : { studyInstanceId: id.slice("study:".length) }),
+        visible: paneIsVisible(id),
+        heightRatio: pane.heightRatio,
+        collapsed: pane.collapsed,
+        priceScale: {
+          mode: id === "main"
+            ? intradayLocked() ? "percentage" : viewport.priceScaleMode
+            : "linear",
+          autoScale: pane.priceScale.autoScale,
+          inverted: pane.priceScale.inverted,
+          ...(pane.priceScale.visibleRange === undefined
+            ? {}
+            : { visibleRange: { ...pane.priceScale.visibleRange } })
+        }
+      };
+    });
+  }
+
+  function invalidatePane(reason: string, layoutRequired = false): void {
+    syncLayout();
+    updatePriceScale();
+    refreshCrosshairAtPoint();
+    scheduler.invalidate({
+      layers: ["grid", "axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"],
+      reason,
+      layoutRequired
+    });
+    options.onPaneLayoutChanged?.();
+  }
+
+  function setPaneScale(
+    id: ChartPaneId,
+    scale: ChartPaneLayout["priceScale"],
+    reason: string
+  ): void {
+    const pane = requirePane(id);
+    const next = { ...pane, priceScale: structuredClone(scale) };
+    validatePaneLayouts([next], viewport.priceScaleMode);
+    if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
+    paneLayouts.set(id, next);
+    if (id === "main") {
+      manualPriceScale = scale.autoScale ? undefined : manualPriceScale;
+    }
+    invalidatePane(reason);
+  }
+
   return {
     setMaterializedSeries(input, anchorTime) {
       if (destroyed) return;
+      if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
       pendingClick = undefined;
       const eventsWereSuspended = crosshairEventsSuspended;
       const previousMaterialized = materialized;
@@ -1770,7 +2212,18 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         previousMaterialized?.intradayScale?.previousClose !== input.intradayScale?.previousClose ||
         previousMaterialized?.intradayScale?.priceLimitPercent !== input.intradayScale?.priceLimitPercent ||
         previousMaterialized?.intradayDays !== input.intradayDays
-      ) manualPriceScale = undefined;
+      ) {
+        manualPriceScale = undefined;
+        for (const [id, pane] of paneLayouts) {
+          paneLayouts.set(id, {
+            ...pane,
+            priceScale: {
+              autoScale: true,
+              inverted: pane.priceScale.inverted
+            }
+          });
+        }
+      }
       clearCrosshairState();
       lastDataWindowIndex = undefined;
       visualOutputs = [];
@@ -1916,11 +2369,23 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     setIndicators(configs) {
       if (destroyed) return;
       if (pendingClick?.kind === "study") pendingClick = undefined;
-      indicatorConfigs = configs.map((config) => structuredClone(config));
+      const nextConfigs = configs.map((config) => structuredClone(config));
+      const visiblePaneIds = JSON.stringify(paneOrder.filter(paneIsVisible));
+      const paneSetChanged = reconcilePaneLayouts(nextConfigs);
+      indicatorConfigs = nextConfigs;
       visualOutputs = [];
       syncVisualOutputs();
+      if (
+        paneSetChanged ||
+        visiblePaneIds !== JSON.stringify(paneOrder.filter(paneIsVisible))
+      ) {
+        syncLayout();
+      }
       updatePriceScale();
       refreshCrosshairAtPoint();
+      if (crosshair !== undefined && crosshairPoint !== undefined) {
+        queueCrosshairEvent(crosshair, crosshairPoint);
+      }
       lastDataWindowIndex = undefined;
       emitDataWindow(true);
       scheduler.invalidate({
@@ -1933,7 +2398,100 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     setMarks(nextMarks) { if (destroyed) return; marks = nextMarks.map((mark) => ({ ...mark })); rebuildMarkOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair"], reason: "marksChanged" }); },
     setExecutions(nextExecutions) { if (destroyed) return; if (pendingClick?.kind === "execution") pendingClick = undefined; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionsChanged" }); },
     setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; if (pendingClick?.kind === "execution") pendingClick = undefined; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionVisibilityChanged" }); },
-    setPriceScaleMode(mode) { if (destroyed) return; manualPriceScale = undefined; viewport = { ...viewport, priceScaleMode: mode }; chartEngine.dispatch({ type: "setPriceScaleMode", mode }); rebuildInteraction(); scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"], reason: "priceScaleChanged" }); },
+    setPriceScaleMode(mode) {
+      if (destroyed) return;
+      if (viewport.priceScaleMode === mode) return;
+      if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
+      manualPriceScale = undefined;
+      const main = requirePane("main");
+      paneLayouts.set("main", {
+        ...main,
+        priceScale: {
+          autoScale: true,
+          inverted: main.priceScale.inverted
+        }
+      });
+      viewport = { ...viewport, priceScaleMode: mode };
+      chartEngine.dispatch({ type: "setPriceScaleMode", mode });
+      rebuildInteraction();
+      scheduler.invalidate({ layers: ["axis", "series", "indicators", "visuals", "drawings", "crosshair"], reason: "priceScaleChanged" });
+    },
+    getPanes: () => structuredClone(getPanes()),
+    getPaneLayouts: () => structuredClone(getPaneLayouts()),
+    setPaneHeightRatio(id, ratio) {
+      if (destroyed) return;
+      if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
+      const pane = requirePane(id);
+      paneLayouts.set(id, { ...pane, heightRatio: ratio });
+      invalidatePane("paneHeightChanged", true);
+    },
+    setPaneCollapsed(id, collapsed) {
+      if (destroyed) return;
+      if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
+      const pane = requirePane(id);
+      paneLayouts.set(id, { ...pane, collapsed });
+      invalidatePane("paneCollapsedChanged", true);
+    },
+    movePane(id, index) {
+      if (destroyed) return;
+      if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
+      requirePane(id);
+      paneOrder = paneOrder.filter((candidate) => candidate !== id);
+      paneOrder.splice(index, 0, id);
+      invalidatePane("paneOrderChanged", true);
+    },
+    setPaneAutoScale(id, enabled) {
+      if (destroyed) return;
+      if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
+      const pane = requirePane(id);
+      if (enabled) {
+        setPaneScale(id, {
+          autoScale: true,
+          inverted: pane.priceScale.inverted
+        }, "paneAutoScaleChanged");
+        return;
+      }
+      updatePriceScale();
+      const scale = panelPriceScales.get(id);
+      if (scale === undefined) {
+        throw new DOMException("Chart pane price scale is unavailable", "InvalidStateError");
+      }
+      setPaneScale(id, {
+        autoScale: false,
+        inverted: pane.priceScale.inverted,
+        visibleRange: rawRange(scale)
+      }, "paneAutoScaleChanged");
+    },
+    setPaneVisibleRange(id, range) {
+      if (destroyed) return;
+      const pane = requirePane(id);
+      setPaneScale(id, {
+        autoScale: false,
+        inverted: pane.priceScale.inverted,
+        visibleRange: { ...range }
+      }, "paneVisibleRangeChanged");
+    },
+    setPaneInverted(id, inverted) {
+      if (destroyed) return;
+      const pane = requirePane(id);
+      setPaneScale(id, {
+        ...pane.priceScale,
+        inverted
+      }, "paneInversionChanged");
+    },
+    validatePaneLayouts,
+    applyPaneLayouts(nextPanes) {
+      if (destroyed) return;
+      validatePaneLayouts(nextPanes, viewport.priceScaleMode);
+      if (activePointerId !== undefined) cancelPointerInteraction("pointerCancel");
+      paneOrder = nextPanes.map((pane) => pane.id);
+      paneLayouts.clear();
+      for (const pane of nextPanes) {
+        paneLayouts.set(pane.id, structuredClone(pane));
+      }
+      manualPriceScale = undefined;
+      invalidatePane("paneLayoutImported", true);
+    },
     setDrawings(drawings, selectedDrawingIds = []) {
       if (destroyed) return;
       if (pendingClick?.kind === "drawing") pendingClick = undefined;

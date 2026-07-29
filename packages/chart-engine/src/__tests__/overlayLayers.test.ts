@@ -303,6 +303,54 @@ describe("overlay layers", () => {
     ]);
   });
 
+  it("uses the active study pane geometry and scale for its crosshair guide and badge", () => {
+    const studyScale = {
+      mode: "linear" as const,
+      basePrice: 1,
+      min: 0,
+      max: 100,
+      inverted: true
+    };
+    const studyPanel = {
+      id: "study:rsi",
+      kind: "sub" as const,
+      label: "RSI",
+      plotArea: { x: 0, y: 60, width: 100, height: 60 },
+      priceAxisArea: { x: 100, y: 60, width: 40, height: 60 }
+    };
+    const renderContext = createRenderContext(createState({
+      crosshair: createCrosshair(),
+      crosshairPane: { id: studyPanel.id, y: 90 },
+      panels: [
+        {
+          id: "main",
+          kind: "main",
+          label: "Main",
+          plotArea: { x: 0, y: 0, width: 100, height: 60 },
+          priceAxisArea: { x: 100, y: 0, width: 40, height: 60 }
+        },
+        studyPanel
+      ],
+      panelPriceScales: new Map([[studyPanel.id, studyScale]]),
+      layout: {
+        ...createLayout(),
+        height: 140,
+        plotArea: { x: 0, y: 0, width: 100, height: 60 },
+        priceAxisArea: { x: 100, y: 0, width: 40, height: 60 },
+        volumeArea: { x: 0, y: 60, width: 100, height: 0 },
+        timeAxisArea: { x: 0, y: 120, width: 100, height: 20 }
+      }
+    }));
+
+    createCrosshairLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "moveTo")[1]?.args).toEqual([0, 90]);
+    expect(callsNamed(renderContext, "lineTo")[0]?.args[1]).toBe(120);
+    expect(callsNamed(renderContext, "fillRect")[0]?.args.slice(0, 4))
+      .toEqual([100, 80, 40, 20]);
+    expect(callsNamed(renderContext, "fillText")[0]?.args[0]).toBe("50");
+  });
+
   it.each(["linear", "log", "percentage"] as const)(
     "uses the shared %s scale for the crosshair",
     (priceScaleMode) => {

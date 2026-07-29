@@ -8,6 +8,12 @@ export function createGridLayer(): ChartLayer {
     id: "grid",
     render({ context, state }) {
       const { plotArea } = state.layout;
+      const plots = [
+        plotArea,
+        ...(state.panels ?? [])
+          .filter((panel) => panel.kind === "sub")
+          .map((panel) => panel.plotArea)
+      ];
 
       if (plotArea.width <= 0 || plotArea.height <= 0) {
         return;
@@ -21,11 +27,13 @@ export function createGridLayer(): ChartLayer {
         context.lineWidth = state.theme.lineWidths.grid;
         context.beginPath();
 
-        for (let step = 0; step <= horizontalLineCount; step += 1) {
-          const y = plotArea.y + (plotArea.height / horizontalLineCount) * step;
+        for (const panelPlot of plots) {
+          for (let step = 0; step <= horizontalLineCount; step += 1) {
+            const y = panelPlot.y + (panelPlot.height / horizontalLineCount) * step;
 
-          context.moveTo(plotArea.x, y);
-          context.lineTo(plotArea.x + plotArea.width, y);
+            context.moveTo(panelPlot.x, y);
+            context.lineTo(panelPlot.x + panelPlot.width, y);
+          }
         }
 
         const verticalXs = state.intradayDays !== undefined && state.intradayDays > 1 && state.timeCoordinates
@@ -36,7 +44,9 @@ export function createGridLayer(): ChartLayer {
             );
         for (const x of verticalXs) {
           context.moveTo(x, plotArea.y);
-          context.lineTo(x, plotArea.y + plotArea.height);
+          context.lineTo(x, Math.max(...plots.map(
+            (panelPlot) => panelPlot.y + panelPlot.height
+          )));
         }
 
         context.stroke();
