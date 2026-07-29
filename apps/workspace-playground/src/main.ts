@@ -171,7 +171,11 @@ if (params.get("nonElement") === "1") {
     chartId: invalid === "workspace" ? "" : "workspace-playground",
     persistenceScopeId: "fixture-user",
     dataContextId: invalid === "context" ? "" : "fixture-current",
-    initialSymbol: invalid === "symbol" ? { ...stock, id: "" } : stock,
+    initialSymbol: invalid === "symbol"
+      ? { ...stock, id: "" }
+      : invalid === "precision"
+        ? { ...stock, pricePrecision: 9 }
+        : stock,
     ...(executionTimeRange
       ? {
           initialTimeframe: "1m",

@@ -1,4 +1,5 @@
 import type { ChartDatafeed, ChartSymbol } from "../contracts";
+import { parseChartSymbol } from "./chartSymbol";
 
 export type SymbolSearchCoordinatorEvent =
   | { type: "results"; query: string; symbols: readonly Readonly<ChartSymbol>[] }
@@ -22,21 +23,10 @@ function cloneValidSymbols(symbols: readonly ChartSymbol[]): readonly Readonly<C
   const ids = new Set<string>();
   const cloned: Readonly<ChartSymbol>[] = [];
   for (const symbol of symbols) {
-    if (
-      typeof symbol.id !== "string" ||
-      symbol.id.trim().length === 0 ||
-      typeof symbol.code !== "string" ||
-      symbol.code.trim().length === 0 ||
-      typeof symbol.name !== "string" ||
-      symbol.name.trim().length === 0 ||
-      !(["stock", "index"] as const).includes(symbol.kind) ||
-      !(["SSE", "SZSE", "BSE"] as const).includes(symbol.exchange) ||
-      ids.has(symbol.id)
-    ) {
-      return undefined;
-    }
-    ids.add(symbol.id);
-    cloned.push(Object.freeze({ ...symbol }));
+    const parsed = parseChartSymbol(symbol);
+    if (parsed === undefined || ids.has(parsed.id)) return undefined;
+    ids.add(parsed.id);
+    cloned.push(Object.freeze(parsed));
   }
   return Object.freeze(cloned);
 }
@@ -54,6 +44,8 @@ export function createSymbolSearchCoordinator(
       generation += 1;
       const requestGeneration = generation;
       activeController?.abort();
+      activeController = undefined;
+      if (query.trim().length === 0) return;
       const controller = new AbortController();
       activeController = controller;
       try {

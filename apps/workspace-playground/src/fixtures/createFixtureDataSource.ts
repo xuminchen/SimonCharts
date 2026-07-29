@@ -11,6 +11,14 @@ export const stock = { id: "stock:SSE:600000", code: "600000", name: "浦发银�
 export const index = { id: "index:SSE:000001", code: "000001", name: "上证指数", exchange: "SSE" as const, kind: "index" as const };
 export const slowStock = { id: "stock:SSE:slow", code: "600001", name: "慢速股票", exchange: "SSE" as const, kind: "stock" as const };
 export const fastStock = { id: "stock:SSE:fast", code: "600002", name: "快速股票", exchange: "SSE" as const, kind: "stock" as const };
+export const precisionStock = {
+  id: "stock:SSE:precision",
+  code: "600008",
+  name: "八位精度标的",
+  exchange: "SSE" as const,
+  kind: "stock" as const,
+  pricePrecision: 8
+};
 
 export interface HostCounters {
   activeRequests: number;
@@ -28,6 +36,7 @@ export interface FixtureRequestLog extends Record<string, unknown> {
   symbolId: string;
   timeframe: string;
   adjustMode: string;
+  pricePrecision?: number;
   hasCursor: boolean;
   cursor?: string;
   status: "started" | "resolved" | "aborted" | "rejected";
@@ -46,6 +55,8 @@ export interface FixtureControls {
   million: boolean;
   emptyPage: boolean;
   capabilitySubset: boolean;
+  searchFailure: boolean;
+  terminalSearchFailure: boolean;
   dataSourceFailure?: "notConfigured" | "rateLimited";
 }
 
@@ -67,6 +78,8 @@ export function readFixtureControls(search: string): FixtureControls {
     million: params.get("million") === "1",
     emptyPage: params.get("emptyPage") === "1",
     capabilitySubset: params.get("capabilitySubset") === "1",
+    searchFailure: params.get("searchFailure") === "1",
+    terminalSearchFailure: params.get("searchFailure") === "terminal",
     ...(dataSourceFailure === "notConfigured" || dataSourceFailure === "rateLimited"
       ? { dataSourceFailure }
       : {})
@@ -112,8 +125,18 @@ function pageFor(request: SeriesRequest, controls: FixtureControls, version: str
   const count = controls.emptyPage ? 0 : controls.single ? 1 : 500;
   const nextStart = start - 500;
   const hasMoreBefore = controls.million ? nextStart >= 0 : controls.history && !historyRequest;
+  const candles = Array.from({ length: count }, (_, position) => candleAt(start + position));
   const page = {
-    candles: Array.from({ length: count }, (_, position) => candleAt(start + position)),
+    candles: request.symbol.id === precisionStock.id
+      ? candles.map((candle) => ({
+          ...candle,
+          open: candle.open * 1_000,
+          high: candle.high * 1_000,
+          low: candle.low * 1_000,
+          close: candle.close * 1_000,
+          turnover: candle.turnover * 1_000
+        }))
+      : candles,
     ...(hasMoreBefore ? { beforeCursor: controls.million ? `page:${nextStart}` : "page-1" } : {}),
     hasMoreBefore,
     dataVersion: version
@@ -133,7 +156,7 @@ export function createFixtureDataSource(
 ): ChartDatafeed {
   const initialAttempts = new Map<string, number>();
   let version = "fixture-v1";
-  const symbols: readonly ChartSymbol[] = [stock, index, slowStock, fastStock];
+  const symbols: readonly ChartSymbol[] = [stock, index, slowStock, fastStock, precisionStock];
 
   const tracked = async <T>(signal: AbortSignal, log: FixtureRequestLog, work: () => Promise<T>): Promise<T> => {
     requests.push(log);
@@ -181,7 +204,12 @@ export function createFixtureDataSource(
             })
           ),
           ...(symbol.kind === "stock"
-            ? { intradayScale: { previousClose: 100, priceLimitPercent: 10 } }
+            ? {
+                intradayScale: {
+                  previousClose: symbol.id === precisionStock.id ? 100_000 : 100,
+                  priceLimitPercent: 10
+                }
+              }
             : { intradayScale: { previousClose: 100 } })
         };
       } catch (error) {
@@ -195,6 +223,10 @@ export function createFixtureDataSource(
       const log: FixtureRequestLog = { symbolId: `search:${query}`, timeframe: "", adjustMode: "", hasCursor: false, status: "started" };
       return tracked(signal, log, async () => {
         await waitFor(signal, controls.latency);
+        if (controls.terminalSearchFailure) {
+          throw new ChartDatafeedError("NOT_CONFIGURED", "尚未配置授权标的搜索", false);
+        }
+        if (controls.searchFailure) throw new Error("fixture search failure");
         return symbols.filter((symbol) => `${symbol.code}${symbol.name}`.includes(query));
       });
     },
@@ -203,6 +235,9 @@ export function createFixtureDataSource(
         symbolId: request.symbol.id,
         timeframe: request.timeframe,
         adjustMode: request.adjustMode,
+        ...(request.symbol.pricePrecision === undefined
+          ? {}
+          : { pricePrecision: request.symbol.pricePrecision }),
         hasCursor: request.beforeCursor !== undefined,
         ...(request.dataCutoffTime === undefined ? {} : { dataCutoffTime: request.dataCutoffTime }),
         ...(request.beforeCursor === undefined ? {} : { cursor: request.beforeCursor }),

@@ -27,6 +27,7 @@ export interface ChartSymbol {
   name: string;
   exchange: Exchange;
   kind: SymbolKind;
+  pricePrecision?: number;
 }
 
 export interface Candle {

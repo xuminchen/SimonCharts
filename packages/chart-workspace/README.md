@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.38.tgz
+npm install ./simoncharts-charts-1.0.0-rc.39.tgz
 ```
 
 ## Embed the default chart
@@ -46,6 +46,25 @@ function destroyChart() {
   chart.destroy();
 }
 ```
+
+## Format symbol prices and search accessibly
+
+`ChartSymbol.pricePrecision` is optional. When present, it must be an integer from `0` through `8` and pads raw price displays to that many decimals. It applies to the main price axes, current and crosshair price labels, OHLC/change displays, the data window, and execution prices. Percentage values remain at two decimals, while volume, turnover, quantity, amount, fees, Study panes, and raw Candle/event values are unchanged. Omitting the field preserves the rc.38 formatter.
+
+```ts
+const symbol = {
+  id: "stock:SSE:600000",
+  code: "600000",
+  name: "浦发银行",
+  exchange: "SSE",
+  kind: "stock",
+  pricePrecision: 4
+} as const;
+```
+
+The field follows the host-owned symbol through `ChartState` and `SeriesRequest`; it is not stored in `ChartLayoutV3` or browser layout preferences. Calling `setSymbol()` with corrected metadata for the same `id` reloads that selection. The SDK validates and defensively clones initial, programmatic, and search-result symbols without changing their raw market values.
+
+Advanced symbol search uses the existing host `searchSymbols(query, signal)` method and a native ARIA combobox. Focus remains on the input while Arrow keys, Home/End, and Enter navigate or select; Escape closes without changing the selection, and Tab leaves normally. Search waits for IME composition to finish, does not call the host for a blank query, aborts stale requests, and announces loading, result count, empty, and error states. Results and failures are rendered as text only.
 
 ## Override the chart theme
 
@@ -464,4 +483,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.38 adds live Pane and per-pane Price Scale APIs plus `ChartLayoutV3`. Study panes have independent geometry and linear price scales, the main pane owns the existing scale mode, native axis drag/double-click shares the same state, and V2 layouts migrate to deterministic defaults. It preserves rc.37's typed Selection and semantic action events, rc.36's Theme Overrides, rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.
+Current rc.39 adds host-owned price precision and a keyboard/IME-safe ARIA symbol-search combobox. It preserves rc.38's Pane/Price Scale API and `ChartLayoutV3`, rc.37's typed Selection and semantic action events, rc.36's Theme Overrides, rc.35's programmable series properties, rc.34's chart-scoped Custom Studies, rc.33's execution time ranges, rc.32's live study handle, rc.31's Drawing controls, rc.30's frame-batched crosshair events, rc.29's independent study instances, rc.28's scope-safe Entity API, rc.26 execution marks, intraday scaling, and the real-data-only contract.

@@ -397,6 +397,19 @@ describe("overlay layers", () => {
     ]);
   });
 
+  it("uses the host price formatter for the main crosshair badge", () => {
+    const renderContext = createRenderContext(
+      createState({
+        crosshair: createCrosshair({ index: 1, time: 2, price: 100.1234 }),
+        formatPrice: (price) => price.toFixed(4)
+      })
+    );
+
+    createCrosshairLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "fillText")[0]?.args[0]).toBe("100.1234");
+  });
+
   it("clears complete neighboring time ticks before drawing the crosshair badge", () => {
     const layout: ChartLayout = {
       ...createLayout(),
@@ -508,6 +521,29 @@ describe("overlay layers", () => {
       "位置  100.0%",
       "量    32.25万",
       "额    8.94亿"
+    ]);
+  });
+
+  it("uses the host price formatter for candle prices and price change only", () => {
+    const renderContext = createRenderContext(createState({
+      locale: "zh-CN",
+      crosshair: createCrosshair(),
+      formatPrice: (price) => price.toFixed(4)
+    }));
+
+    createTooltipLayer().render(renderContext);
+
+    expect(callsNamed(renderContext, "fillText").map((call) => call.args[0])).toEqual([
+      "3 北京时间",
+      "开    12.0000",
+      "高    16.0000",
+      "低    10.0000",
+      "收    15.0000",
+      "涨跌  +3.0000 (+25.00%)",
+      "振幅  60.00%",
+      "位置  83.3%",
+      "量    90",
+      "额    1,350"
     ]);
   });
 

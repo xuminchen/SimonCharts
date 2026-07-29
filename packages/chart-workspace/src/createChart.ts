@@ -47,6 +47,7 @@ import type {
 import { defaultChartFeatures } from "./contracts";
 import { createChartController, type ChartController, type WorkspaceViewModel } from "./controller/chartController";
 import { createCalculationCheckpointStore } from "./data/calculationCheckpointStore";
+import { parseChartSymbol } from "./data/chartSymbol";
 import { createDataCoordinator } from "./data/dataCoordinator";
 import { createPagedSeriesStore } from "./data/pagedSeriesStore";
 import { createSymbolSearchCoordinator } from "./data/symbolSearchCoordinator";
@@ -183,19 +184,7 @@ function validSeriesProperties(properties: unknown): boolean {
 }
 
 function validSymbol(symbol: unknown): symbol is ChartSymbol {
-  return (
-    typeof symbol === "object" &&
-    symbol !== null &&
-    !Array.isArray(symbol) &&
-    typeof (symbol as ChartSymbol).id === "string" &&
-    (symbol as ChartSymbol).id.trim().length > 0 &&
-    typeof (symbol as ChartSymbol).code === "string" &&
-    (symbol as ChartSymbol).code.trim().length > 0 &&
-    typeof (symbol as ChartSymbol).name === "string" &&
-    (symbol as ChartSymbol).name.trim().length > 0 &&
-    ["SSE", "SZSE", "BSE"].includes((symbol as ChartSymbol).exchange) &&
-    ["stock", "index"].includes((symbol as ChartSymbol).kind)
-  );
+  return parseChartSymbol(symbol) !== undefined;
 }
 
 function validOptions(options: ChartOptions): boolean {
@@ -270,13 +259,24 @@ function layoutSnapshot(
     : { ...layout, panes: structuredClone(panes) };
 }
 
+function symbolKey(symbol: Readonly<ChartSymbol>) {
+  return [
+    symbol.id,
+    symbol.code,
+    symbol.name,
+    symbol.exchange,
+    symbol.kind,
+    symbol.pricePrecision ?? null
+  ] as const;
+}
+
 function layoutSelectionKey(state: Readonly<ChartState>): string {
-  return JSON.stringify([state.symbol.id, state.timeframe, state.adjustMode]);
+  return JSON.stringify([...symbolKey(state.symbol), state.timeframe, state.adjustMode]);
 }
 
 function presentationKey(state: Readonly<ChartState>): string {
   return JSON.stringify([
-    state.symbol.id,
+    ...symbolKey(state.symbol),
     state.timeframe,
     state.adjustMode,
     state.view,
@@ -692,11 +692,13 @@ export function createChart(
     studyDefinitions,
     reloadPage: (cursor) => dataCoordinator.reloadPage(cursor)
   });
+  let activePricePrecision = options.initialSymbol.pricePrecision;
   const runtime = createChartEngineRuntime({
     staticCanvas: shell.staticCanvas,
     overlayCanvas: shell.overlayCanvas,
     themeRoot: shell.chartRegion,
     calculationRuntime,
+    ...(activePricePrecision === undefined ? {} : { pricePrecision: activePricePrecision }),
     studyTitleFor,
     paneIdFor: (config) => paneIdForIndicator(config, studyDefinitions),
     devicePixelRatio: window.devicePixelRatio,
@@ -882,6 +884,10 @@ export function createChart(
         readySelectionKey !== undefined &&
         readySelectionKey !== layoutSelectionKey(viewModel.state)
       ) readySelectionKey = undefined;
+      if (activePricePrecision !== viewModel.state.symbol.pricePrecision) {
+        activePricePrecision = viewModel.state.symbol.pricePrecision;
+        runtime.setPricePrecision(activePricePrecision);
+      }
       shell.render(viewModel);
       emitEntityChanges(viewModel);
       if (destroyed || latestViewModelRevision !== revision) return;
@@ -1317,8 +1323,9 @@ export function createChart(
       runtime.refreshTheme();
     },
     setSymbol: (symbol: ChartSymbol) => {
-      if (!validSymbol(symbol)) throw new TypeError("Chart symbol is invalid");
-      controller!.setSymbol(structuredClone(symbol));
+      const parsed = parseChartSymbol(symbol);
+      if (parsed === undefined) throw new TypeError("Chart symbol is invalid");
+      controller!.setSymbol(parsed);
     },
     setTimeframe: (timeframe: Timeframe) => controller!.setTimeframe(timeframe),
     setView: (view: ChartView) => {

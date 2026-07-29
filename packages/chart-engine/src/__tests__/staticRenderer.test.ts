@@ -569,6 +569,34 @@ describe("static renderer", () => {
     expect(priceAxisLabels.every((call) => Number(call.args[2]) <= 74)).toBe(true);
   });
 
+  it("uses the host price formatter for raw prices but not percentage ticks", () => {
+    const series = { ...createSeries(), timeframe: "1m" as const };
+    const viewport = { ...createViewport(), priceScaleMode: "percentage" as const };
+    const renderContext = createRenderContext(
+      createState({
+        series,
+        viewport,
+        layout: {
+          ...createLayout(),
+          width: 380,
+          leftAxisWidth: 60,
+          leftPriceAxisArea: { x: 0, y: 0, width: 60, height: 80 },
+          plotArea: { x: 60, y: 0, width: 280, height: 80 },
+          priceAxisArea: { x: 340, y: 0, width: 40, height: 80 },
+          volumeArea: { x: 60, y: 80, width: 280, height: 0 },
+          timeAxisArea: { x: 60, y: 80, width: 280, height: 20 }
+        },
+        formatPrice: (price) => price.toFixed(4)
+      })
+    );
+
+    createAxisLayer().render(renderContext);
+
+    const labels = callsNamed(renderContext, "fillText").map((call) => String(call.args[0]));
+    expect(labels.some((label) => /^\d+\.\d{4}$/.test(label))).toBe(true);
+    expect(labels.some((label) => /^[+-]?\d+\.\d{2}%$/.test(label))).toBe(true);
+  });
+
   it("colors the current-price line from the previous close, not the current open", () => {
     const series = createSeries();
     series.candles[5] = {

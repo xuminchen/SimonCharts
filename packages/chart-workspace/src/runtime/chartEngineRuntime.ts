@@ -22,6 +22,7 @@ import {
   createStaticLayers,
   createVisualLayer,
   createVisualRendererRegistry,
+  defaultChartTheme,
   defaultDrawingHotkeyBindings,
   drawingPointFromPointer,
   finishDrawingHandleDrag,
@@ -96,6 +97,7 @@ import {
   executionsFromMark,
   executionTooltipRows
 } from "./executionMarks";
+import { priceFormatter } from "./priceFormatter";
 
 export interface WorkspaceRuntimeMetrics extends RenderMetrics {
   maxMaterializedCandleCount: number;
@@ -121,6 +123,7 @@ export interface DataWindowSnapshot {
   change: number;
   changePercent: number;
   indicatorRows: readonly DataWindowIndicatorRow[];
+  pricePrecision?: number;
   intradaySummary?: DataWindowIntradaySummary;
 }
 
@@ -166,6 +169,7 @@ export interface ChartEngineRuntime {
   setMarks(marks: readonly ChartMark[]): void;
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
+  setPricePrecision(precision: number | undefined): void;
   setPriceScaleMode(mode: PriceScaleMode): void;
   getPanes(): readonly ChartPane[];
   getPaneLayouts(): readonly ChartPaneLayout[];
@@ -200,6 +204,7 @@ export interface ChartEngineRuntimeOptions {
   overlayCanvas: HTMLCanvasElement;
   themeRoot: HTMLElement;
   calculationRuntime: CheckpointedCalculationRuntime;
+  pricePrecision?: number;
   studyTitleFor?: (config: Readonly<IndicatorConfig>) => string;
   paneIdFor?: (config: Readonly<IndicatorConfig>) => ChartPaneId | undefined;
   observer?: RuntimeResizeObserver;
@@ -312,6 +317,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let executionsVisible = true;
   let executionTooltip: Omit<ExecutionTooltipSnapshot, "pinned"> | undefined;
   let executionTooltipPinned = false;
+  let currentPricePrecision = options.pricePrecision;
+  let formatPrice: ((price: number) => string) | undefined = priceFormatter(currentPricePrecision);
   let indicatorConfigs: readonly IndicatorConfig[] = [];
   let seriesModel: SeriesRenderModel | undefined;
   let activeSeriesProperties: ChartSeriesProperties | undefined;
@@ -741,11 +748,69 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     layout: typeof layout;
     panels: typeof panels;
   } {
-    const base = createChartLayout(
-      width,
-      height,
-      intradayLocked() ? { leftPriceAxis: true } : {}
-    );
+    const intraday = intradayLocked();
+    const defaultLayout = createChartLayout(width, height, { leftPriceAxis: intraday });
+    const theme = currentTheme();
+    const rawLabels = formatPrice === undefined
+      ? []
+      : [
+          scaleValueToPrice(priceScale.min, priceScale),
+          scaleValueToPrice(priceScale.max, priceScale),
+          materialized?.series.candles.at(-1)?.close
+        ]
+          .filter((price): price is number => typeof price === "number" && Number.isFinite(price))
+          .map(formatPrice);
+    let rawAxisWidth = 64;
+    if (rawLabels.length > 0) {
+      let measuredWidths = rawLabels.map((label) => label.length * 7);
+      try {
+        const context = options.staticCanvas.getContext("2d");
+        context?.save();
+        if (context) {
+          context.font = `${theme.typography.fontSize}px ${theme.typography.fontFamily}`;
+          measuredWidths = rawLabels.map((label) => context.measureText(label).width);
+        }
+        context?.restore();
+      } catch {
+        // The render error boundary owns Canvas failures; label length remains a safe layout estimate.
+      }
+      rawAxisWidth = Math.max(
+        64,
+        Math.ceil(
+          Math.max(...measuredWidths) + theme.spacing.axisPadding + 4
+        )
+      );
+    }
+    const desiredRightAxisWidth = intraday || viewport.priceScaleMode === "percentage"
+      ? 64
+      : rawAxisWidth;
+    const rightAxisWidth = Math.min(desiredRightAxisWidth, Math.max(0, width));
+    const leftAxisWidth = intraday
+      ? Math.min(rawAxisWidth, Math.max(0, width - rightAxisWidth))
+      : 0;
+    const plotWidth = Math.max(0, width - leftAxisWidth - rightAxisWidth);
+    const base = {
+      ...defaultLayout,
+      leftAxisWidth,
+      rightAxisWidth,
+      leftPriceAxisArea: { ...defaultLayout.leftPriceAxisArea, width: leftAxisWidth },
+      plotArea: { ...defaultLayout.plotArea, x: leftAxisWidth, width: plotWidth },
+      priceAxisArea: {
+        ...defaultLayout.priceAxisArea,
+        x: leftAxisWidth + plotWidth,
+        width: rightAxisWidth
+      },
+      volumeArea: {
+        ...defaultLayout.volumeArea,
+        x: leftAxisWidth,
+        width: plotWidth
+      },
+      timeAxisArea: {
+        ...defaultLayout.timeAxisArea,
+        x: leftAxisWidth,
+        width: plotWidth
+      }
+    };
     const activeIds = paneOrder.filter((id) => {
       const pane = paneLayouts.get(id);
       return pane !== undefined && paneIsVisible(id) && !pane.collapsed;
@@ -816,6 +881,14 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       },
       panels: nextPanels
     };
+  }
+
+  function currentTheme() {
+    const style = options.getComputedStyle?.(options.themeRoot) ??
+      (typeof getComputedStyle === "function" ? getComputedStyle(options.themeRoot) : undefined);
+    return style === undefined
+      ? defaultChartTheme
+      : readWorkspaceChartTheme(options.themeRoot, style);
   }
 
   function syncLayout(): void {
@@ -1265,6 +1338,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       change,
       changePercent: previousClose === 0 ? 0 : (change / previousClose) * 100,
       indicatorRows,
+      ...(currentPricePrecision === undefined ? {} : { pricePrecision: currentPricePrecision }),
       ...(currentIntradaySummary === undefined
         ? {}
         : { intradaySummary: { ...currentIntradaySummary } })
@@ -1278,7 +1352,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     try {
       syncLayout();
       const state = chartEngine.getState();
-      const theme = readWorkspaceChartTheme(options.themeRoot, options.getComputedStyle?.(options.themeRoot));
+      const theme = currentTheme();
       const panels = createPanels();
       const outputs = activeVisualOutputs();
       const renderState = {
@@ -1288,6 +1362,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         viewport,
         priceScale,
         formatTime: formatShanghaiTime,
+        ...(formatPrice === undefined ? {} : { formatPrice }),
         theme,
         layout,
         panels,
@@ -1353,7 +1428,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   function markerAt(output: IndicatorMarkerOutput | undefined, point: { x: number; y: number }) {
     if (output === undefined) return undefined;
     const state = chartEngine.getState();
-    const theme = readWorkspaceChartTheme(options.themeRoot, options.getComputedStyle?.(options.themeRoot));
+    const theme = currentTheme();
     const panels = createPanels();
     const panel = panels.find((candidate) => candidate.id === "main");
     if (!panel) return undefined;
@@ -1384,7 +1459,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     if (visualOutputs.length === 0) return undefined;
     const state = chartEngine.getState();
     const panels = createPanels();
-    const theme = readWorkspaceChartTheme(options.themeRoot, options.getComputedStyle?.(options.themeRoot));
+    const theme = currentTheme();
     const panel = [...panels].reverse().find(({ plotArea }) =>
       point.x >= plotArea.x &&
       point.x <= plotArea.x + plotArea.width &&
@@ -1442,7 +1517,11 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       x: point.x,
       y: point.y,
       ...(mark.label === undefined ? {} : { title: mark.label }),
-      rows: executionTooltipRows(mark, options.themeRoot.lang === "en-US" ? "en-US" : "zh-CN")
+      rows: executionTooltipRows(
+        mark,
+        options.themeRoot.lang === "en-US" ? "en-US" : "zh-CN",
+        formatPrice
+      )
     };
     scheduler.invalidate({ layers: ["tooltip"], reason: "executionTooltipChanged" });
     return executionsFromMark(mark);
@@ -2398,6 +2477,18 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     setMarks(nextMarks) { if (destroyed) return; marks = nextMarks.map((mark) => ({ ...mark })); rebuildMarkOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair"], reason: "marksChanged" }); },
     setExecutions(nextExecutions) { if (destroyed) return; if (pendingClick?.kind === "execution") pendingClick = undefined; clearExecutionTooltip(); executions = nextExecutions.map((execution) => ({ ...execution })); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionsChanged" }); },
     setExecutionsVisible(visible) { if (destroyed || executionsVisible === visible) return; if (pendingClick?.kind === "execution") pendingClick = undefined; executionsVisible = visible; if (!visible) clearExecutionTooltip(); rebuildExecutionOutput(); updatePriceScale(); refreshCrosshairAtPoint(); scheduler.invalidate({ layers: ["axis", "visuals", "crosshair", "tooltip"], reason: "executionVisibilityChanged" }); },
+    setPricePrecision(precision) {
+      if (destroyed || currentPricePrecision === precision) return;
+      currentPricePrecision = precision;
+      formatPrice = priceFormatter(precision);
+      lastDataWindowIndex = undefined;
+      emitDataWindow(true);
+      scheduler.invalidate({
+        layers: ["grid", "axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"],
+        reason: "pricePrecisionChanged",
+        layoutRequired: true
+      });
+    },
     setPriceScaleMode(mode) {
       if (destroyed) return;
       if (viewport.priceScaleMode === mode) return;

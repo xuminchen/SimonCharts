@@ -9,6 +9,7 @@ import type {
   DataWindowSnapshot,
   ExecutionTooltipSnapshot
 } from "../runtime/chartEngineRuntime";
+import { formatPrice } from "../runtime/priceFormatter";
 import { createBottomPanel } from "./bottomPanel";
 import { createDrawingPalette } from "./drawingPalette";
 import { createErrorPanel } from "./errorPanel";
@@ -50,6 +51,10 @@ const toolbarFeatures = new Set<ChartFeature>([
 
 function number(value: number): string {
   return value.toLocaleString("zh-CN", { maximumFractionDigits: 4 });
+}
+
+function price(value: number, precision: number | undefined): string {
+  return precision === undefined ? number(value) : formatPrice(value, precision);
 }
 
 export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceShell {
@@ -215,7 +220,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         : { high: "H", open: "O", low: "L", close: "C" };
       for (const [field, element] of legendValues) {
         const value = values?.[field];
-        element.textContent = `${names[field]} ${value === undefined ? "--" : number(value)}`;
+        element.textContent = `${names[field]} ${value === undefined ? "--" : price(value, snapshot?.pricePrecision)}`;
         element.dataset.direction = value === undefined || previousClose === undefined || value === previousClose
           ? "flat"
           : value > previousClose ? "up" : "down";
@@ -225,7 +230,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         legendChange.hidden = !timeframe || snapshot === undefined;
         if (timeframe && snapshot) {
           const direction = snapshot.change > 0 ? "up" : snapshot.change < 0 ? "down" : "flat";
-          const change = `${snapshot.change > 0 ? "+" : ""}${number(snapshot.change)}`;
+          const change = `${snapshot.change > 0 ? "+" : ""}${price(snapshot.change, snapshot.pricePrecision)}`;
           const percent = `${snapshot.changePercent > 0 ? "+" : ""}${snapshot.changePercent.toFixed(2)}%`;
           const arrow = direction === "up" ? "▲" : direction === "down" ? "▼" : "•";
           legendChange.textContent = `${arrow} ${change} ${percent}`;
@@ -236,7 +241,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
     if (statusTime) statusTime.textContent = snapshot?.formattedTime ?? labels.shanghaiTime;
     if (statusOhlc) {
       statusOhlc.textContent = snapshot
-        ? `O ${number(snapshot.candle.open)}  H ${number(snapshot.candle.high)}  L ${number(snapshot.candle.low)}  C ${number(snapshot.candle.close)}  V ${number(snapshot.candle.volume)}`
+        ? `O ${price(snapshot.candle.open, snapshot.pricePrecision)}  H ${price(snapshot.candle.high, snapshot.pricePrecision)}  L ${price(snapshot.candle.low, snapshot.pricePrecision)}  C ${price(snapshot.candle.close, snapshot.pricePrecision)}  V ${number(snapshot.candle.volume)}`
         : "O --  H --  L --  C --  V --";
     }
     bottomPanel?.renderDataWindow(snapshot);

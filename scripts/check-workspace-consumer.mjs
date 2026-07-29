@@ -7,18 +7,14 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.38";
+const expectedVersion = "1.0.0-rc.39";
+const suppliedTarball = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
 let tempRoot;
 
 try {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "simoncharts-workspace-consumer-"));
-  const pack = run("npm", ["pack", "--json", "-w", packageName, "--pack-destination", tempRoot], projectRoot);
-  const artifacts = JSON.parse(pack.stdout);
-  const artifact = artifacts[0];
-  expect(Array.isArray(artifacts) && artifacts.length === 1, "expected one packed workspace artifact");
-  expect(artifact?.name === packageName, `package name must be ${packageName}`);
-  expect(artifact?.version === expectedVersion, `package version must be ${expectedVersion}`);
-  const tarball = path.join(tempRoot, path.basename(artifact.filename));
+  const tarball = suppliedTarball ?? packWorkspace(tempRoot);
+  await access(tarball);
   const hostRoot = path.join(tempRoot, "host");
   await mkdir(path.join(hostRoot, "src"), { recursive: true });
   await writeFile(path.join(hostRoot, "package.json"), JSON.stringify({ private: true, type: "module" }, null, 2));
@@ -58,6 +54,16 @@ try {
   process.exitCode = typeof error?.status === "number" ? error.status : 1;
 } finally {
   if (tempRoot) await rm(tempRoot, { recursive: true, force: true });
+}
+
+function packWorkspace(destination) {
+  const pack = run("npm", ["pack", "--json", "-w", packageName, "--pack-destination", destination], projectRoot);
+  const artifacts = JSON.parse(pack.stdout);
+  const artifact = artifacts[0];
+  expect(Array.isArray(artifacts) && artifacts.length === 1, "expected one packed workspace artifact");
+  expect(artifact?.name === packageName, `package name must be ${packageName}`);
+  expect(artifact?.version === expectedVersion, `package version must be ${expectedVersion}`);
+  return path.join(destination, path.basename(artifact.filename));
 }
 
 function run(command, args, cwd) {
@@ -153,7 +159,7 @@ function consumerSource() {
 } from "@simoncharts/charts";
 import "@simoncharts/charts/styles.css";
 
-const symbol = { id: "stock:SSE:600000", code: "600000", name: "浦发银行", exchange: "SSE", kind: "stock" } as const;
+const symbol = { id: "stock:SSE:600000", code: "600000", name: "浦发银行", exchange: "SSE", kind: "stock", pricePrecision: 4 } as const;
 const datafeed: ChartDatafeed = {
   async getCapabilities() {
     return { series: [
@@ -164,6 +170,7 @@ const datafeed: ChartDatafeed = {
   async searchSymbols() { return [symbol]; },
   async loadSeries(request) {
     if (request.dataCutoffTime !== 1_784_192_400_000) throw new Error("cutoff missing");
+    if (request.symbol.pricePrecision !== 4) throw new Error("symbol price precision missing");
     return {
       candles: [{ time: 1_784_192_400_000, open: 10, high: 11, low: 9, close: 10.5, volume: 100, turnover: 1_050 }],
       hasMoreBefore: false,
@@ -310,11 +317,15 @@ const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
 async function verifyConsumer(): Promise<void> {
 if (!await chart.dataReady()) throw new Error("initial chart presentation was not usable");
 const layoutBeforeTheme = chart.exportLayout();
+const priceLegend = document.querySelector<HTMLElement>('[data-testid="chart-ohlc-legend"]')?.textContent ?? "";
 if (
+  chart.getState().symbol.pricePrecision !== 4 ||
+  !priceLegend.includes("10.0000") ||
   chart.getTheme() !== "dark" ||
-  chart.getThemeOverrides().backgroundColor !== "#102030"
+  chart.getThemeOverrides().backgroundColor !== "#102030" ||
+  JSON.stringify(layoutBeforeTheme).includes("pricePrecision")
 ) {
-  throw new Error("initial theme overrides were not exposed by the packed package");
+  throw new Error("initial symbol formatting or theme contract was not exposed by the packed package");
 }
 chart.setThemeOverrides({ downColor: "#00ffff" });
 chart.setTheme("light");

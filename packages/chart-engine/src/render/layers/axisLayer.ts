@@ -1,10 +1,10 @@
 import type { ViewportState } from "../../model/runtime";
 import {
-  formatPriceScaleTick,
   priceToY,
   priceToScaleValue,
   yToPrice
 } from "../../viewport/priceScale";
+import { formatPriceScaleTickForRender } from "../internalPriceFormatting";
 import type { ChartLayer, RenderState } from "../renderTypes";
 import { getTimeAxisLabels } from "../timeAxisLabels";
 
@@ -61,7 +61,7 @@ export function createAxisLayer(): ChartLayer {
           if (priceScale.mode === "percentage" && leftPriceAxisArea.width > 0) {
             context.fillStyle = theme.colors.text;
             context.fillText(
-              formatRawPrice(price),
+              state.formatPrice?.(price) ?? formatRawPrice(price),
               leftPriceAxisArea.x + theme.spacing.axisPadding,
               labelY
             );
@@ -74,7 +74,7 @@ export function createAxisLayer(): ChartLayer {
               : theme.colors.bearishCandle;
 
           context.fillText(
-            formatPriceScaleTick(price, priceScale),
+            formatPriceScaleTickForRender(price, priceScale, state.formatPrice),
             priceAxisArea.x + theme.spacing.axisPadding,
             labelY
           );
@@ -118,7 +118,7 @@ function drawSubPanelPriceTicks(
     for (let step = 0; step <= count; step += 1) {
       const y = panel.plotArea.y + (panel.plotArea.height / count) * step;
       context.fillText(
-        formatPriceScaleTick(
+        formatPriceScaleTickForRender(
           yToPrice(y, scale, panel.plotArea.y, panel.plotArea.height),
           scale
         ),
@@ -192,7 +192,7 @@ function drawCurrentPrice(
   context.textAlign = "left";
   context.textBaseline = "middle";
   context.fillText(
-    formatPriceScaleTick(candle.close, priceScale),
+    formatPriceScaleTickForRender(candle.close, priceScale, state.formatPrice),
     priceAxisArea.x + Math.min(theme.spacing.axisPadding, priceAxisArea.width / 2),
     top + height / 2
   );

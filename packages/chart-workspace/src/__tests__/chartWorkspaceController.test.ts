@@ -39,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -53,6 +53,23 @@ function dependencies(): ChartControllerDependencies {
 }
 
 describe("chart workspace controller", () => {
+  it("clears search state and cancels work for an empty query", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+
+    controller.searchSymbols("浦发");
+    expect(controller.getViewModel().search).toMatchObject({ query: "浦发", loading: true });
+    controller.searchSymbols("");
+
+    expect(controller.getViewModel().search).toEqual({
+      query: "",
+      loading: false,
+      results: []
+    });
+    expect(deps.searchCoordinator.search).toHaveBeenNthCalledWith(1, "浦发");
+    expect(deps.searchCoordinator.search).toHaveBeenNthCalledWith(2, "");
+  });
+
   it("keeps the host-enabled execution switch visible by default", () => {
     const deps = dependencies();
     const controller = createChartController(deps);
@@ -73,6 +90,37 @@ describe("chart workspace controller", () => {
     expect(deps.runtime.setExecutions).toHaveBeenCalledWith([]);
     expect(deps.runtime.setMarks).toHaveBeenCalledWith([]);
     expect(controller.getViewModel().marks).toEqual([]);
+  });
+
+  it("keeps host marks and does not clear executions when metadata for the same symbol is corrected", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    const marks = [{ id: "m1", time: 2, price: 11, label: "Event" }];
+    controller.setMarks(marks);
+    vi.mocked(deps.runtime.setMarks).mockClear();
+    vi.mocked(deps.runtime.setExecutions).mockClear();
+
+    controller.setSymbol({ ...stock, pricePrecision: 4 });
+
+    expect(deps.runtime.setMarks).not.toHaveBeenCalled();
+    expect(deps.runtime.setExecutions).not.toHaveBeenCalled();
+    expect(controller.getViewModel().marks).toEqual(marks);
+  });
+
+  it("keeps programmatic drawings when metadata for the same symbol is corrected", async () => {
+    const deps = dependencies();
+    deps.drawingPersistenceEnabled = false;
+    const controller = createChartController(deps);
+    const drawings: DrawingObject[] = [
+      { id: "d1", type: "trendLine", anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }] }
+    ];
+    controller.setDrawings(drawings);
+
+    controller.setSymbol({ ...stock, pricePrecision: 4 });
+
+    expect(controller.getViewModel().drawings).toEqual(drawings);
+    await vi.waitFor(() => expect(deps.dataCoordinator.start).toHaveBeenCalled());
+    expect(controller.getViewModel().drawings).toEqual(drawings);
   });
 
   it("replaces programmable drawings and marks through the single controller state", () => {
@@ -602,6 +650,29 @@ describe("chart workspace controller", () => {
     const before = controller.getViewModel();
     controller.handleDataEvent({ type: "initialRequestFailed", error: new DOMException("aborted", "AbortError") });
     expect(controller.getViewModel()).toEqual(before);
+  });
+
+  it("publishes search failure even when the host error callback throws", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    controller.searchSymbols("x");
+    deps.onError.mockImplementationOnce(() => { throw new Error("host callback"); });
+
+    expect(() => controller.handleSearchEvent({
+      type: "searchFailed",
+      query: "x",
+      code: "SYMBOL_SEARCH_FAILED",
+      error: new Error("bad")
+    })).not.toThrow();
+
+    expect(controller.getViewModel().search).toMatchObject({
+      query: "x",
+      loading: false,
+      error: { code: "SYMBOL_SEARCH_FAILED" }
+    });
+    expect(deps.onViewModelChanged).toHaveBeenLastCalledWith(expect.objectContaining({
+      search: expect.objectContaining({ error: expect.any(Object) })
+    }), expect.any(Number));
   });
 
   it("materializes an accepted page and destroys dependencies once", () => {

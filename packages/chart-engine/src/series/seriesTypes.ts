@@ -68,6 +68,8 @@ export interface SeriesTooltipRow {
 
 export interface TooltipFormattingContext {
   formatTime: ChartTimeFormatter;
+  /** @internal */
+  formatPrice?: (price: number) => string;
   timeframe: Timeframe;
 }
 

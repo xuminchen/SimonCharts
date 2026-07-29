@@ -1,5 +1,14 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.39 - 2026-07-29
+
+- Added optional `ChartSymbol.pricePrecision` with strict integer validation from 0 through 8, defensive cloning across initial options, search, state, and `SeriesRequest`, and same-ID metadata replacement.
+- Applied explicit precision to main raw-price axes, current/crosshair labels, OHLC/change displays, the data window, and execution prices while preserving raw Candle/events, two-decimal percentages, non-price values, Study panes, Layout V3, and rc.38 defaults.
+- Expanded the main price-axis width for long formatted labels without changing sub-pane geometry or scale data.
+- Rebuilt advanced symbol search as a keyboard-operable ARIA combobox with active-descendant navigation, IME-safe debouncing, stale-request cancellation, loading/result/empty/error announcements, safe text rendering, retry focus, and 320 px reflow.
+- Kept the public surface to one optional symbol field, reused the existing datafeed/controller/render paths, and added no dependency, market rule, global formatter, second search system, or fabricated data.
+- Accepted the exact 8-file immutable package artifact after `70 files / 1,234 tests`, combined Chrome `148/148`, Charts `15 files / 225 tests`, Charts Chrome/Edge `97/97` per browser, and exact packed JavaScript/TypeScript Chrome/Edge consumer execution; SHA-256 is `fbe50bf9fcc31d5a775e09d8a81b8fdf52ea6ec25ef08c9dcad3007394f07e29`, SHA-512 is `cba7994f4fe351c6aa0d0d55d00f2f8f5a9ad5c8d82a2cbb5ffc945fd835b4b4cb245d386c0db607c5bbd6d5a5a3322d0e32c478382884c5947b265a42d44579`. Independent adversarial review found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.38 - 2026-07-29
 
 - Added live `getPanes()`, `getPaneById()`, and `getPaneApi()` contracts for the fixed main pane and existing separate Study panes, including height, collapse, ordering, and per-pane price-scale control.

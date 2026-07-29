@@ -30,6 +30,7 @@ import {
   selectSupportedAdjustMode,
   selectSupportedTimeframe
 } from "../data/capabilities";
+import { cloneChartSymbol } from "../data/chartSymbol";
 import type { DataCoordinator, DataCoordinatorEvent } from "../data/dataCoordinator";
 import { materializeSeriesAroundTime } from "../data/materializedSeries";
 import type { MaterializedSeries } from "../data/materializedSeries";
@@ -197,7 +198,18 @@ export interface ChartControllerDependencies {
 }
 
 function cloneSymbol(symbol: ChartSymbol): ChartSymbol {
-  return { ...symbol };
+  return cloneChartSymbol(symbol);
+}
+
+function sameSymbol(left: ChartSymbol, right: ChartSymbol): boolean {
+  return (
+    left.id === right.id &&
+    left.code === right.code &&
+    left.name === right.name &&
+    left.exchange === right.exchange &&
+    left.kind === right.kind &&
+    left.pricePrecision === right.pricePrecision
+  );
 }
 
 function normalizeAdjustMode(symbol: ChartSymbol, requested?: AdjustMode): AdjustMode {
@@ -881,6 +893,13 @@ export function createChartController(
     preferredAdjustMode: AdjustMode
   ): Promise<void> => {
     if (!active) return;
+    const retainedDrawings = symbol.id === state.symbol.id
+      ? viewModel.drawings
+      : undefined;
+    const retainedDrawingSelection = retainedDrawings === undefined
+      ? []
+      : viewModel.selectedDrawingIds;
+    const retainedAdjustMode = state.adjustMode;
     dependencies.runtime.clearCrosshair();
     const preferredView = state.view;
     requestedTimeframe = undefined;
@@ -905,8 +924,8 @@ export function createChartController(
       ...viewModel,
       status: { type: "loading" },
       dataWindow: undefined,
-      drawings: [],
-      selectedDrawingIds: []
+      drawings: retainedDrawings ?? [],
+      selectedDrawingIds: retainedDrawingSelection
     };
     retryTarget = undefined;
     publish();
@@ -952,6 +971,9 @@ export function createChartController(
       requestedTimeframe = undefined;
       requestedAdjustMode = undefined;
       requestedView = undefined;
+      const keepDrawings =
+        retainedDrawings !== undefined &&
+        retainedAdjustMode === adjustMode;
       state = {
         symbol: cloneSymbol(symbol),
         timeframe,
@@ -965,8 +987,8 @@ export function createChartController(
         ...viewModel,
         intradayView: view === "intraday",
         seriesType: view === "intraday" ? "line" : timeframeSeriesType,
-        drawings: loadDrawings(symbol, adjustMode),
-        selectedDrawingIds: []
+        drawings: keepDrawings ? retainedDrawings : loadDrawings(symbol, adjustMode),
+        selectedDrawingIds: keepDrawings ? retainedDrawingSelection : []
       };
       beginSelection();
     } catch (error) {
@@ -1014,10 +1036,12 @@ export function createChartController(
       return structuredClone(viewModel);
     },
     setSymbol(symbol) {
-      if (!active || symbol.id === state.symbol.id) return;
-      dependencies.runtime.setExecutions([]);
-      dependencies.runtime.setMarks([]);
-      viewModel = { ...viewModel, marks: [] };
+      if (!active || sameSymbol(symbol, state.symbol)) return;
+      if (symbol.id !== state.symbol.id) {
+        dependencies.runtime.setExecutions([]);
+        dependencies.runtime.setMarks([]);
+        viewModel = { ...viewModel, marks: [] };
+      }
       const preferredAdjust = normalizeAdjustMode(
         symbol,
         state.symbol.kind === "index" && symbol.kind === "stock" ? "forward" : state.adjustMode
@@ -1341,7 +1365,7 @@ export function createChartController(
       );
     },
     handleSearchEvent(event) {
-      if (!active) return;
+      if (!active || event.query !== viewModel.search.query) return;
       if (event.type === "results") {
         viewModel = {
           ...viewModel,
@@ -1360,7 +1384,11 @@ export function createChartController(
           ...viewModel,
           search: { ...viewModel.search, query: event.query, loading: false, error }
         };
-        dependencies.onError?.(error);
+        try {
+          dependencies.onError?.(error);
+        } catch {
+          // Host error handlers are isolated from chart state.
+        }
       }
       publish();
     },
@@ -1477,9 +1505,17 @@ export function createChartController(
     },
     searchSymbols(query) {
       if (!active) return;
-      viewModel = { ...viewModel, search: { query, loading: true, results: [] } };
+      const normalized = query.trim();
+      viewModel = {
+        ...viewModel,
+        search: {
+          query: normalized,
+          loading: normalized.length > 0,
+          results: []
+        }
+      };
       publish();
-      void dependencies.searchCoordinator.search(query);
+      void dependencies.searchCoordinator.search(normalized);
     },
     retrySearch() {
       if (!active || viewModel.search.query.length === 0) return;

@@ -18,6 +18,9 @@ export interface ChartLabels {
   readonly drawingCategories: Readonly<Record<DrawingToolCategory, string>>;
   readonly drawingTools: Readonly<Partial<Record<BuiltInDrawingType, string>>>;
   readonly searchSymbol: string;
+  readonly searchingSymbols: string;
+  readonly noSearchResults: string;
+  readonly searchResultCount: (count: number) => string;
   readonly indicators: string;
   readonly undo: string;
   readonly redo: string;
@@ -196,6 +199,9 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       drawingCategories: drawingCategories[locale],
       drawingTools: drawingTools[locale],
       searchSymbol: "Search symbol",
+      searchingSymbols: "Searching symbols",
+      noSearchResults: "No symbols found",
+      searchResultCount: (count) => `${count} symbol${count === 1 ? "" : "s"} found`,
       indicators: "Indicators",
       undo: "Undo",
       redo: "Redo",
@@ -229,6 +235,9 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     drawingCategories: drawingCategories[locale],
     drawingTools: drawingTools[locale],
     searchSymbol: "搜索标的",
+    searchingSymbols: "正在搜索标的",
+    noSearchResults: "没有找到标的",
+    searchResultCount: (count) => `找到 ${count} 个标的`,
     indicators: "指标",
     undo: "撤销",
     redo: "重做",

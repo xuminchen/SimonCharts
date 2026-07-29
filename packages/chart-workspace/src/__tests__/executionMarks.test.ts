@@ -205,6 +205,29 @@ describe("execution marks", () => {
     ]));
   });
 
+  it("uses the symbol price formatter only for execution prices", () => {
+    const candles = [candle(at("2026-07-17T01:30:00Z"))];
+    const output = createExecutionMarkerOutput([
+      execution({
+        id: "formatted",
+        time: at("2026-07-17T01:30:30Z"),
+        side: "buy",
+        price: 10.2,
+        quantity: 300,
+        amount: 3_060,
+        fee: 5
+      })
+    ], candles, "5m")!;
+
+    expect(executionTooltipRows(output.marks[0]!, "zh-CN", (value) => value.toFixed(4)))
+      .toEqual(expect.arrayContaining([
+        { label: "价格", value: "10.2000" },
+        { label: "数量", value: "300" },
+        { label: "金额", value: "3,060" },
+        { label: "费用", value: "5" }
+      ]));
+  });
+
   it("shows zero T quantity and the full ordinary quantity for an unmatched execution", () => {
     const candles = [candle(at("2026-07-17T01:30:00Z"))];
     const output = createExecutionMarkerOutput([

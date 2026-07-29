@@ -1,4 +1,5 @@
 import type { DataWindowSnapshot } from "../runtime/chartEngineRuntime";
+import { formatPrice } from "../runtime/priceFormatter";
 
 export interface DataWindow {
   readonly element: HTMLDivElement;
@@ -7,6 +8,12 @@ export interface DataWindow {
 
 function format(value: number | undefined): string {
   return value === undefined ? "--" : value.toLocaleString("zh-CN", { maximumFractionDigits: 4 });
+}
+
+function price(value: number | undefined, precision: number | undefined): string {
+  return value === undefined
+    ? "--"
+    : precision === undefined ? format(value) : formatPrice(value, precision);
 }
 
 export function createDataWindow(): DataWindow {
@@ -19,11 +26,11 @@ export function createDataWindow(): DataWindow {
       const rows: Array<[string, string, string?]> = snapshot
         ? [
             ["时间", snapshot.formattedTime],
-            ["开", format(snapshot.candle.open), "data-window-open"],
-            ["高", format(snapshot.candle.high)],
-            ["低", format(snapshot.candle.low)],
-            ["收", format(snapshot.candle.close)],
-            ["涨跌", format(snapshot.change)],
+            ["开", price(snapshot.candle.open, snapshot.pricePrecision), "data-window-open"],
+            ["高", price(snapshot.candle.high, snapshot.pricePrecision)],
+            ["低", price(snapshot.candle.low, snapshot.pricePrecision)],
+            ["收", price(snapshot.candle.close, snapshot.pricePrecision)],
+            ["涨跌", price(snapshot.change, snapshot.pricePrecision)],
             ["涨跌幅", `${format(snapshot.changePercent)}%`],
             ["成交量", format(snapshot.candle.volume)],
             ["成交额", format(snapshot.candle.turnover)],

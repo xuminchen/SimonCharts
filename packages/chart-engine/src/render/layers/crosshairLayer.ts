@@ -1,5 +1,6 @@
-import { formatPriceScaleTick, priceToY, yToPrice } from "../../viewport/priceScale";
+import { priceToY, yToPrice } from "../../viewport/priceScale";
 import { indexToX } from "../../viewport/viewport";
+import { formatPriceScaleTickForRender } from "../internalPriceFormatting";
 import type { ChartLayer, RenderState } from "../renderTypes";
 import { getTimeAxisLabels } from "../timeAxisLabels";
 
@@ -82,7 +83,11 @@ export function createCrosshairLayer(): ChartLayer {
         context.font = `${theme.typography.fontSize}px ${theme.typography.fontFamily}`;
         drawPriceBadge(
           context,
-          formatPriceScaleTick(displayedPrice, displayedScale),
+          formatPriceScaleTickForRender(
+            displayedPrice,
+            displayedScale,
+            activePane?.panel.kind === "sub" ? undefined : state.formatPrice
+          ),
           y,
           state,
           targetAxis

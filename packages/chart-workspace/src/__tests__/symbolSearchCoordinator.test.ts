@@ -64,4 +64,58 @@ describe("symbol search coordinator", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: "searchFailed" });
   });
+
+  it("aborts an active request and does not call the host for an empty query", async () => {
+    let signal: AbortSignal | undefined;
+    const dataSource: ChartDatafeed = {
+      getCapabilities: unusedCapabilities,
+      searchSymbols(_query, nextSignal) {
+        signal = nextSignal;
+        return new Promise(() => undefined);
+      },
+      async loadSeries() {
+        throw new Error("unused");
+      }
+    };
+    const events: SymbolSearchCoordinatorEvent[] = [];
+    const coordinator = createSymbolSearchCoordinator({ dataSource, onEvent: (event) => events.push(event) });
+
+    void coordinator.search("浦发");
+    await coordinator.search("");
+
+    expect(signal?.aborted).toBe(true);
+    expect(events).toEqual([]);
+  });
+
+  it("preserves valid price precision and rejects an invalid result batch", async () => {
+    const result = {
+      id: "stock",
+      code: "600000",
+      name: "浦发银行",
+      exchange: "SSE" as const,
+      kind: "stock" as const,
+      pricePrecision: 4
+    };
+    const dataSource: ChartDatafeed = {
+      getCapabilities: unusedCapabilities,
+      async searchSymbols(query) {
+        return query === "valid" ? [result] : [{ ...result, pricePrecision: 9 }];
+      },
+      async loadSeries() {
+        throw new Error("unused");
+      }
+    };
+    const events: SymbolSearchCoordinatorEvent[] = [];
+    const coordinator = createSymbolSearchCoordinator({ dataSource, onEvent: (event) => events.push(event) });
+
+    await coordinator.search("valid");
+    result.pricePrecision = 2;
+    expect(events[0]).toMatchObject({
+      type: "results",
+      symbols: [expect.objectContaining({ pricePrecision: 4 })]
+    });
+
+    await coordinator.search("invalid");
+    expect(events[1]).toMatchObject({ type: "searchFailed" });
+  });
 });

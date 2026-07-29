@@ -56,6 +56,8 @@ export interface RenderState {
   viewport: ViewportState;
   priceScale: PriceScale;
   formatTime: ChartTimeFormatter;
+  /** @internal */
+  formatPrice?: (price: number) => string;
   theme: ChartTheme;
   layout: ChartLayout;
   movingAverages?: MovingAveragePoint[][];

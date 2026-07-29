@@ -4,6 +4,7 @@
     "composite": true,
     "declaration": true,
     "emitDeclarationOnly": true,
+    "stripInternal": true,
     "rootDir": "src",
     "declarationDir": "dist",
     "tsBuildInfoFile": "../../node_modules/.cache/tsbuildinfo/chart-engine.tsbuildinfo"

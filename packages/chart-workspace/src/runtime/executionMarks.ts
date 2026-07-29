@@ -150,7 +150,11 @@ export function executionsFromMark(mark: ChartMark): readonly ChartExecution[] {
   return Array.isArray(rows) ? rows as ChartExecution[] : [];
 }
 
-export function executionTooltipRows(mark: ChartMark, locale: ChartLocale): VisualTooltipRow[] {
+export function executionTooltipRows(
+  mark: ChartMark,
+  locale: ChartLocale,
+  formatPrice?: (price: number) => string
+): VisualTooltipRow[] {
   const executions = executionsFromMark(mark);
   const zh = locale === "zh-CN";
   const number = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 4 });
@@ -166,7 +170,7 @@ export function executionTooltipRows(mark: ChartMark, locale: ChartLocale): Visu
     );
     const rows: VisualTooltipRow[] = [
       { label: `${prefix}${zh ? "时间" : "Time"}`, value: formattedTime },
-      { label: zh ? "价格" : "Price", value: number(execution.price) },
+      { label: zh ? "价格" : "Price", value: formatPrice?.(execution.price) ?? number(execution.price) },
       { label: zh ? "数量" : "Quantity", value: number(execution.quantity) }
     ];
     if (execution.amount !== undefined) rows.push({ label: zh ? "金额" : "Amount", value: number(execution.amount) });

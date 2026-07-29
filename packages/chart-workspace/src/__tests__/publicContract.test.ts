@@ -43,6 +43,7 @@ import type {
   ChartStateListener,
   ChartStudyApi,
   ChartStudyDefinitionId,
+  ChartSymbol,
   ChartTheme,
   ChartThemeOverrides,
   ChartView,
@@ -94,6 +95,10 @@ const customStudyDefinition = {
 } satisfies ChartCustomStudyDefinition;
 
 describe("charts public contract", () => {
+  it("exposes optional symbol-owned price precision", () => {
+    expectTypeOf<ChartSymbol["pricePrecision"]>().toEqualTypeOf<number | undefined>();
+  });
+
   it("keeps the approved datafeed signatures", () => {
     expectTypeOf<ChartDatafeed["searchSymbols"]>().toEqualTypeOf<(
       query: string,
