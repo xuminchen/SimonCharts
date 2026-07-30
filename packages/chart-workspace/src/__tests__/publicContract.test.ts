@@ -17,6 +17,10 @@ import type {
   ChartCustomStudyId,
   ChartDisplayMode,
   ChartDrawing,
+  ChartDrawingGroup,
+  ChartDrawingGroupId,
+  ChartDrawingGroupMove,
+  ChartDrawingGroupsApi,
   ChartDrawingTool,
   ChartEntity,
   ChartEntityId,
@@ -63,6 +67,7 @@ import type {
 } from "../index";
 import {
   fromEngineDrawings,
+  parseDrawingGroups,
   parseDrawings,
   mergeIndicatorInputs,
   parseStudyDefinitions,
@@ -390,6 +395,28 @@ describe("charts public contract", () => {
       .toEqualTypeOf<(indicators: readonly ChartIndicator[]) => void>();
     expectTypeOf<ChartInstance["setDrawings"]>()
       .toEqualTypeOf<(drawings: readonly ChartDrawing[]) => void>();
+    expectTypeOf<ChartDrawingGroupId>().toEqualTypeOf<`drawing-group:${string}`>();
+    expectTypeOf<ChartDrawingGroupMove>()
+      .toEqualTypeOf<"forward" | "backward" | "front" | "back">();
+    expectTypeOf<ChartDrawingGroup>().toEqualTypeOf<{
+      readonly id: ChartDrawingGroupId;
+      readonly name: string;
+      readonly drawingIds: readonly string[];
+    }>();
+    expectTypeOf<ChartInstance["getDrawingGroupsApi"]>()
+      .toEqualTypeOf<() => ChartDrawingGroupsApi>();
+    expectTypeOf<ChartDrawingGroupsApi["getAll"]>()
+      .toEqualTypeOf<() => readonly ChartDrawingGroup[]>();
+    expectTypeOf<ChartDrawingGroupsApi["create"]>()
+      .toEqualTypeOf<(
+        drawingIds: readonly string[],
+        name?: string
+      ) => ChartDrawingGroupId>();
+    expectTypeOf<ChartDrawingGroupsApi["setMembers"]>()
+      .toEqualTypeOf<(
+        id: ChartDrawingGroupId,
+        drawingIds: readonly string[]
+      ) => void>();
     expectTypeOf<Pick<ChartDrawing, "interactive" | "affectsPriceScale">>()
       .toEqualTypeOf<{
         readonly interactive?: boolean;
@@ -817,6 +844,71 @@ describe("charts public contract", () => {
     })).toThrow("unsupported fields");
   });
 
+  it("round-trips Drawing Groups in Layout V3 and keeps legacy layouts unchanged", () => {
+    const drawings = [
+      {
+        id: "a",
+        type: "trendLine",
+        anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }]
+      },
+      {
+        id: "b",
+        type: "trendLine",
+        anchors: [{ time: 1, price: 12 }, { time: 2, price: 13 }]
+      },
+      {
+        id: "c",
+        type: "trendLine",
+        anchors: [{ time: 1, price: 14 }, { time: 2, price: 15 }]
+      }
+    ] as const;
+    const legacy = {
+      schemaVersion: 3,
+      seriesType: "candles",
+      priceScaleMode: "linear",
+      indicators: [],
+      drawings,
+      gridVisible: true,
+      panes: [{
+        id: "main",
+        heightRatio: 3,
+        collapsed: false,
+        priceScale: { autoScale: true, inverted: false }
+      }]
+    } as const;
+    expect(parseLayout(legacy)).toEqual(legacy);
+
+    const grouped = {
+      ...legacy,
+      drawingGroups: [{
+        id: "drawing-group:plan",
+        name: "Plan",
+        drawingIds: ["a", "b"]
+      }]
+    } as const;
+    const parsed = parseLayout(grouped) as ChartLayoutV3;
+    expect(parsed).toEqual(grouped);
+    expect(parsed.drawingGroups).not.toBe(grouped.drawingGroups);
+
+    expect(() => parseLayout({
+      ...grouped,
+      drawingGroups: [{
+        id: "drawing-group:plan",
+        name: "Plan",
+        drawingIds: ["a", "c"]
+      }]
+    })).toThrow("contiguous");
+    expect(() => parseLayout({
+      ...grouped,
+      drawings: drawings.slice(1)
+    })).toThrow("unknown drawing");
+    expect(() => parseLayout({
+      ...grouped,
+      schemaVersion: 2,
+      panes: undefined
+    })).toThrow("unsupported fields");
+  });
+
   it("round-trips the pane id generated from the longest valid study instance id", () => {
     const instanceId = "x".repeat(256);
     const layout = {
@@ -992,6 +1084,54 @@ describe("charts public contract", () => {
     engine[0]!.anchors[0]!.price = 999;
     engine[0]!.interactive = true;
     expect(parsed[0]).toEqual(source[0]);
+  });
+
+  it("validates and defensively clones drawing groups", () => {
+    const drawings = parseDrawings([
+      {
+        id: "a",
+        type: "trendLine",
+        anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }]
+      },
+      {
+        id: "b",
+        type: "trendLine",
+        anchors: [{ time: 1, price: 12 }, { time: 2, price: 13 }]
+      }
+    ]);
+    const source = [{
+      id: "drawing-group:plan",
+      name: "Plan",
+      drawingIds: ["a", "b"]
+    }];
+    const parsed = parseDrawingGroups(source, drawings);
+
+    source[0]!.name = "Changed";
+    source[0]!.drawingIds.push("changed");
+    expect(parsed).toEqual([{
+      id: "drawing-group:plan",
+      name: "Plan",
+      drawingIds: ["a", "b"]
+    }]);
+
+    for (const invalid of [
+      [{ id: "group", name: "Plan", drawingIds: ["a"] }],
+      [{ id: "drawing-group:", name: "Plan", drawingIds: ["a"] }],
+      [{ id: "drawing-group:plan", name: "", drawingIds: ["a"] }],
+      [{ id: "drawing-group:plan", name: "Plan", drawingIds: [] }],
+      [{ id: "drawing-group:plan", name: "Plan", drawingIds: ["a", "a"] }],
+      [{ id: "drawing-group:plan", name: "Plan", drawingIds: ["missing"] }],
+      [
+        { id: "drawing-group:one", name: "One", drawingIds: ["a"] },
+        { id: "drawing-group:two", name: "Two", drawingIds: ["a"] }
+      ],
+      [
+        { id: "drawing-group:one", name: "One", drawingIds: ["a"] },
+        { id: "drawing-group:one", name: "Two", drawingIds: ["b"] }
+      ]
+    ]) {
+      expect(() => parseDrawingGroups(invalid, drawings)).toThrow();
+    }
   });
 
   it("keeps same-type study instances independent", () => {

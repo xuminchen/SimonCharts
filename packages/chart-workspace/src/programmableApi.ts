@@ -11,6 +11,8 @@ import type { CustomStudyCheckpoint } from "./data/calculationCheckpointStore";
 import type { SeriesSelection } from "./data/pagedSeriesStore";
 import type {
   ChartDrawing,
+  ChartDrawingGroup,
+  ChartDrawingGroupId,
   ChartDrawingStyle,
   ChartDrawingTool,
   ChartActionId,
@@ -1217,6 +1219,75 @@ export function parseDrawings(value: unknown): ChartDrawing[] {
   });
 }
 
+export function parseDrawingGroups(
+  value: unknown,
+  drawings: readonly Pick<ChartDrawing, "id">[],
+  requireContiguous = true
+): ChartDrawingGroup[] {
+  const source = denseDataArray(value, "Chart drawing groups", maxDrawings);
+  const drawingIndex = new Map(drawings.map((drawing, index) => [drawing.id, index]));
+  const groupIds = new Set<string>();
+  const memberIds = new Set<string>();
+
+  return source.map((candidate, index) => {
+    const item = record(candidate, `Chart drawing group ${index}`);
+    onlyKeys(item, ["id", "name", "drawingIds"], `Chart drawing group ${index}`);
+    const id = identifier(item.id, `Chart drawing group ${index} id`);
+    if (
+      !id.startsWith("drawing-group:") ||
+      id.length === "drawing-group:".length
+    ) {
+      throw new TypeError(`Chart drawing group ${index} id must include a drawing-group: suffix`);
+    }
+    if (groupIds.has(id)) throw new TypeError(`Chart drawing group ${id} is duplicated`);
+    groupIds.add(id);
+    const name = parseDrawingGroupName(item.name, `Chart drawing group ${id} name`);
+    const rawDrawingIds = denseDataArray(
+      item.drawingIds,
+      `Chart drawing group ${id} drawingIds`,
+      maxDrawings,
+      1
+    );
+    const drawingIds = rawDrawingIds.map((raw, drawingIndexInGroup) =>
+      identifier(raw, `Chart drawing group ${id} drawing ${drawingIndexInGroup}`)
+    );
+    if (new Set(drawingIds).size !== drawingIds.length) {
+      throw new TypeError(`Chart drawing group ${id} contains duplicate drawings`);
+    }
+    for (const drawingId of drawingIds) {
+      if (!drawingIndex.has(drawingId)) {
+        throw new TypeError(`Chart drawing group ${id} references an unknown drawing`);
+      }
+      if (memberIds.has(drawingId)) {
+        throw new TypeError(`Chart drawing ${drawingId} belongs to multiple groups`);
+      }
+      memberIds.add(drawingId);
+    }
+    if (requireContiguous) {
+      const indexes = drawingIds.map((drawingId) => drawingIndex.get(drawingId)!);
+      if (
+        indexes.some((drawingPosition, memberIndex) =>
+          memberIndex > 0 && drawingPosition !== indexes[memberIndex - 1]! + 1
+        )
+      ) {
+        throw new TypeError(`Chart drawing group ${id} members must be contiguous`);
+      }
+    }
+    return {
+      id: id as ChartDrawingGroupId,
+      name,
+      drawingIds: [...drawingIds]
+    };
+  });
+}
+
+export function parseDrawingGroupName(
+  value: unknown,
+  label = "Chart drawing group name"
+): string {
+  return identifier(value, label).trim();
+}
+
 export function parseMarks(value: unknown): ChartMark[] {
   if (!Array.isArray(value)) throw new TypeError("Chart marks must be an array");
   if (value.length > maxMarks) {
@@ -1485,6 +1556,7 @@ export function parseLayout(
       "priceScaleMode",
       "indicators",
       "drawings",
+      ...(version === 3 ? ["drawingGroups"] : []),
       "gridVisible",
       ...(version === 3 ? ["panes"] : [])
     ],
@@ -1496,6 +1568,7 @@ export function parseLayout(
   if (typeof layout.gridVisible !== "boolean") throw new TypeError("Chart layout grid visibility must be boolean");
   const priceScaleMode = parsePriceScaleMode(layout.priceScaleMode);
   const indicators = parseIndicators(layout.indicators, studyDefinitions);
+  const drawings = parseDrawings(layout.drawings);
   const common = {
     seriesType: parseSeriesType(layout.seriesType),
     ...(layout.seriesProperties === undefined
@@ -1506,7 +1579,7 @@ export function parseLayout(
       : { seriesVisualOverrides: parseSeriesVisualOverrides(layout.seriesVisualOverrides) }),
     priceScaleMode,
     indicators,
-    drawings: parseDrawings(layout.drawings),
+    drawings,
     gridVisible: layout.gridVisible
   };
   return version === 2
@@ -1514,6 +1587,9 @@ export function parseLayout(
     : {
         schemaVersion: 3,
         ...common,
+        ...(layout.drawingGroups === undefined
+          ? {}
+          : { drawingGroups: parseDrawingGroups(layout.drawingGroups, drawings) }),
         panes: parsePaneLayouts(
           layout.panes,
           indicators,

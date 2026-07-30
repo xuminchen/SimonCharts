@@ -2230,6 +2230,112 @@ describe("workspace engine runtime", () => {
     runtime.destroy();
   });
 
+  it("bridges drawing groups atomically and cancels an active drawing gesture", () => {
+    const overlayCanvas = new FakeCanvas();
+    const drawingUpdates = vi.fn();
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: overlayCanvas as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined,
+      onDrawingsChanged: drawingUpdates
+    });
+    runtime.setMaterializedSeries(materialized());
+    runtime.setDrawings([
+      { id: "a", type: "trendLine", anchors: [] },
+      { id: "b", type: "trendLine", anchors: [] },
+      { id: "c", type: "trendLine", anchors: [] }
+    ]);
+    runtime.setDrawingTool("trendLine");
+    overlayCanvas.dispatch("pointerdown", {
+      pointerId: 41,
+      clientX: 200,
+      clientY: 200
+    });
+    drawingUpdates.mockClear();
+
+    expect(() => runtime.createDrawingGroup(["a", "missing"], "Invalid")).toThrow();
+    expect(overlayCanvas.hasPointerCapture(41)).toBe(true);
+    expect(drawingUpdates).not.toHaveBeenCalled();
+
+    const groupId = runtime.createDrawingGroup(["a", "b"], "Plan");
+
+    expect(groupId).toBe("drawing-group:1");
+    expect(overlayCanvas.hasPointerCapture(41)).toBe(false);
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    expect(drawingUpdates).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "a" }),
+        expect.objectContaining({ id: "b" }),
+        expect.objectContaining({ id: "c" })
+      ]),
+      [],
+      [{ id: groupId, name: "Plan", drawingIds: ["a", "b"] }]
+    );
+
+    drawingUpdates.mockClear();
+    runtime.setDrawingGroupName(groupId, "Renamed");
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    expect(drawingUpdates.mock.calls[0]![2]).toEqual([
+      { id: groupId, name: "Renamed", drawingIds: ["a", "b"] }
+    ]);
+
+    drawingUpdates.mockClear();
+    runtime.setDrawingGroupMembers(groupId, ["b", "c"]);
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    expect(drawingUpdates.mock.calls[0]![2]).toEqual([
+      { id: groupId, name: "Renamed", drawingIds: ["b", "c"] }
+    ]);
+
+    drawingUpdates.mockClear();
+    runtime.setDrawingGroupVisible(groupId, false);
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    expect(drawingUpdates.mock.calls[0]![0]).toEqual([
+      expect.objectContaining({ id: "a" }),
+      expect.objectContaining({ id: "b", visible: false }),
+      expect.objectContaining({ id: "c", visible: false })
+    ]);
+
+    drawingUpdates.mockClear();
+    runtime.setDrawingGroupLocked(groupId, true);
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    runtime.setDrawingGroupLocked(groupId, false);
+    runtime.setDrawingGroupVisible(groupId, true);
+    drawingUpdates.mockClear();
+
+    runtime.moveDrawingGroup(groupId, "back");
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+
+    drawingUpdates.mockClear();
+    runtime.ungroupDrawingGroup(groupId);
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    expect(drawingUpdates.mock.calls[0]![2]).toEqual([]);
+
+    drawingUpdates.mockClear();
+    const secondGroupId = runtime.createDrawingGroup(["b", "c"], "Delete");
+    drawingUpdates.mockClear();
+    runtime.deleteDrawingGroupDrawings(secondGroupId);
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    expect(drawingUpdates).toHaveBeenLastCalledWith(
+      [expect.objectContaining({ id: "a" })],
+      [],
+      []
+    );
+    drawingUpdates.mockClear();
+    runtime.undoDrawing();
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+    expect(drawingUpdates.mock.calls[0]![2]).toEqual([
+      { id: secondGroupId, name: "Delete", drawingIds: ["b", "c"] }
+    ]);
+
+    runtime.destroy();
+    expect(() => runtime.setDrawingGroupName(secondGroupId, "late")).not.toThrow();
+    expect(drawingUpdates).toHaveBeenCalledTimes(1);
+  });
+
   it("wires dark A-share theme, isolates overlay frames, and destroys exactly once", async () => {
     const staticCanvas = new FakeCanvas();
     const overlayCanvas = new FakeCanvas();

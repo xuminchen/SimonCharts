@@ -161,6 +161,7 @@ describe("createChart comparison wiring", () => {
         priceScaleMode: "linear",
         indicators: [],
         drawings: [],
+        drawingGroups: [],
         marks: [],
         comparisons: structuredClone(value.initialComparisons ?? []),
         comparisonData: [],

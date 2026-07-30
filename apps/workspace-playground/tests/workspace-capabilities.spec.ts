@@ -27,9 +27,9 @@ test("edits drawing objects and shows the runtime data window in the bottom work
     const key = Object.keys(localStorage).find((candidate) => candidate.includes(":drawings:"));
     if (!key) return undefined;
     const stored = JSON.parse(localStorage.getItem(key) ?? "null") as {
-      value?: Array<{ style?: { color?: string } }>;
+      value?: { drawings?: Array<{ style?: { color?: string } }> };
     } | null;
-    return stored?.value?.[0]?.style?.color;
+    return stored?.value?.drawings?.[0]?.style?.color;
   })).toBe("#f04455");
 
   const redPixels = await page.locator("canvas.sc-static-canvas").evaluate((element) => {

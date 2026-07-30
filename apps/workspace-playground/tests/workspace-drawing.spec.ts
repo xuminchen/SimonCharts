@@ -6,8 +6,15 @@ async function persistedDrawingCount(page: Page): Promise<number> {
       candidate.startsWith("simoncharts:workspace:v1:workspace-playground:fixture-user:drawings:fixture-current:")
     );
     if (!key) return 0;
-    const envelope = JSON.parse(localStorage.getItem(key) ?? "null") as { value?: unknown[] } | null;
-    return Array.isArray(envelope?.value) ? envelope.value.length : 0;
+    const envelope = JSON.parse(localStorage.getItem(key) ?? "null") as {
+      value?: unknown[] | { drawings?: unknown[] };
+    } | null;
+    const value = envelope?.value;
+    return Array.isArray(value)
+      ? value.length
+      : Array.isArray(value?.drawings)
+        ? value.drawings.length
+        : 0;
   });
 }
 
@@ -231,8 +238,12 @@ test("creates, edits, serializes, and restores all 63 drawing tools", async ({ p
   }
   await expect.poll(() => page.evaluate(() => {
     const key = Object.keys(localStorage).find((candidate) => candidate.includes(":drawings:"));
-    const stored = key ? JSON.parse(localStorage.getItem(key) ?? "null") as { value?: Array<{ style?: { color?: string } }> } : null;
-    return stored?.value?.filter((drawing) => drawing.style?.color === "#f04455" || drawing.style?.color === "#00aa91").length ?? 0;
+    const stored = key ? JSON.parse(localStorage.getItem(key) ?? "null") as {
+      value?: { drawings?: Array<{ style?: { color?: string } }> };
+    } : null;
+    return stored?.value?.drawings?.filter(
+      (drawing) => drawing.style?.color === "#f04455" || drawing.style?.color === "#00aa91"
+    ).length ?? 0;
   })).toBe(63);
   await page.reload();
   await page.getByRole("tab", { name: "对象", exact: true }).click();

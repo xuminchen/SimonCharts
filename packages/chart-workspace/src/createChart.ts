@@ -9,6 +9,10 @@ import type {
   ChartEvent,
   ChartEventListener,
   ChartDrawing,
+  ChartDrawingGroup,
+  ChartDrawingGroupId,
+  ChartDrawingGroupMove,
+  ChartDrawingGroupsApi,
   ChartDrawingTool,
   ChartDisplayMode,
   ChartEntity,
@@ -73,6 +77,7 @@ import {
   parseIndicatorInput,
   parseDrawingTool,
   parseDrawings,
+  parseDrawingGroupName,
   parseIndicators,
   parseLayout,
   parseMarks,
@@ -273,6 +278,7 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     priceScaleMode: defaultPreferences.priceScaleMode,
     indicators: [],
     drawings: [],
+    drawingGroups: [],
     marks: [],
     comparisons: [],
     comparisonStatuses: [],
@@ -311,9 +317,15 @@ function layoutSnapshot(
         ...layout,
         seriesVisualOverrides: structuredClone(viewModel.seriesVisualOverrides)
       };
-  return panes === undefined
+  const grouped = viewModel.drawingGroups.length === 0
     ? configured
-    : { ...configured, panes: structuredClone(panes) };
+    : {
+        ...configured,
+        drawingGroups: structuredClone(viewModel.drawingGroups)
+      };
+  return panes === undefined
+    ? grouped
+    : { ...grouped, panes: structuredClone(panes) };
 }
 
 function symbolKey(symbol: Readonly<ChartSymbol>) {
@@ -653,6 +665,33 @@ export function createChart(
       fitContent: () => undefined,
       reset: () => undefined
     });
+    const drawingGroups = Object.freeze<ChartDrawingGroupsApi>({
+      getAll: () => [],
+      create: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      },
+      setName: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      },
+      setMembers: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      },
+      setVisible: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      },
+      setLocked: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      },
+      move: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      },
+      ungroup: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      },
+      deleteDrawings: () => {
+        throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+      }
+    });
     return Object.freeze({
       getState: () => structuredClone(state),
       getDisplayMode: () => displayMode,
@@ -681,6 +720,7 @@ export function createChart(
       getStudyById: () => undefined,
       getStudyApi: () => undefined,
       getAllStudies: () => [],
+      getDrawingGroupsApi: () => drawingGroups,
       removeStudy: () => false,
       createEntity: () => {
         throw new DOMException("Chart entity API is unavailable", "InvalidStateError");
@@ -1023,9 +1063,9 @@ export function createChart(
     onExecutionTooltipChanged: (snapshot) => shell.renderExecutionTooltip(snapshot),
     onExecutionClicked: (executions) => emitEvent({ type: "execution-clicked", executions }),
     onDataTableChanged: () => renderCurrentDataTable(),
-    onDrawingsChanged: (drawings, selectedDrawingIds) => {
+    onDrawingsChanged: (drawings, selectedDrawingIds, drawingGroups) => {
       if (selectedDrawingIds.length > 0) selectedStudyId = undefined;
-      controller?.handleDrawingsChanged(drawings, selectedDrawingIds);
+      controller?.handleDrawingsChanged(drawings, selectedDrawingIds, drawingGroups);
     },
     onDrawingClicked: (drawingId) => {
       if (controller === undefined) return;
@@ -1524,6 +1564,102 @@ export function createChart(
     }
     timeScale[actionId]();
   };
+  const parseDrawingGroupId = (value: ChartDrawingGroupId): ChartDrawingGroupId => {
+    if (
+      typeof value !== "string" ||
+      !value.startsWith("drawing-group:") ||
+      value.length === "drawing-group:".length
+    ) {
+      throw new TypeError("Chart drawing group id is invalid");
+    }
+    return value;
+  };
+  const parseDrawingGroupMembers = (
+    value: readonly string[],
+    minimum: number
+  ): string[] => {
+    if (
+      !Array.isArray(value) ||
+      value.length < minimum ||
+      value.some((id, index) =>
+        !Object.hasOwn(value, index) || typeof id !== "string" || id.length === 0
+      ) ||
+      new Set(value).size !== value.length
+    ) {
+      throw new TypeError(
+        `Chart drawing group must contain at least ${minimum} unique drawing${minimum === 1 ? "" : "s"}`
+      );
+    }
+    return [...value];
+  };
+  const requireDrawingGroupsReady = (): Readonly<WorkspaceViewModel> => {
+    if (destroyed) {
+      throw new DOMException("Chart drawing groups API is unavailable", "InvalidStateError");
+    }
+    const viewModel = controller!.getViewModel();
+    requireReadyLayout(viewModel, readySelectionKey);
+    return viewModel;
+  };
+  const requireDrawingGroup = (
+    value: ChartDrawingGroupId
+  ): Readonly<ChartDrawingGroup> => {
+    const id = parseDrawingGroupId(value);
+    const group = requireDrawingGroupsReady().drawingGroups.find((item) => item.id === id);
+    if (group === undefined) {
+      throw new DOMException("Chart drawing group was not found", "NotFoundError");
+    }
+    return group;
+  };
+  const drawingGroupsApi = Object.freeze<ChartDrawingGroupsApi>({
+    getAll: () => structuredClone(controller!.getViewModel().drawingGroups),
+    create: (drawingIds, name) => {
+      requireDrawingGroupsReady();
+      const members = parseDrawingGroupMembers(drawingIds, 2);
+      return controller!.createDrawingGroup(
+        members,
+        name === undefined ? undefined : parseDrawingGroupName(name)
+      );
+    },
+    setName: (value, name) => {
+      const group = requireDrawingGroup(value);
+      const nextName = parseDrawingGroupName(name);
+      if (group.name !== nextName) controller!.setDrawingGroupName(group.id, nextName);
+    },
+    setMembers: (value, drawingIds) => {
+      const group = requireDrawingGroup(value);
+      const members = parseDrawingGroupMembers(drawingIds, 1);
+      controller!.setDrawingGroupMembers(group.id, members);
+    },
+    setVisible: (value, visible) => {
+      const group = requireDrawingGroup(value);
+      if (typeof visible !== "boolean") {
+        throw new TypeError("Chart drawing group visibility must be boolean");
+      }
+      controller!.setDrawingGroupVisible(group.id, visible);
+    },
+    setLocked: (value, locked) => {
+      const group = requireDrawingGroup(value);
+      if (typeof locked !== "boolean") {
+        throw new TypeError("Chart drawing group lock state must be boolean");
+      }
+      controller!.setDrawingGroupLocked(group.id, locked);
+    },
+    move: (value, direction) => {
+      const group = requireDrawingGroup(value);
+      if (!["forward", "backward", "front", "back"].includes(direction)) {
+        throw new TypeError("Chart drawing group move direction is invalid");
+      }
+      controller!.moveDrawingGroup(group.id, direction as ChartDrawingGroupMove);
+    },
+    ungroup: (value) => {
+      const group = requireDrawingGroup(value);
+      controller!.ungroupDrawingGroup(group.id);
+    },
+    deleteDrawings: (value) => {
+      const group = requireDrawingGroup(value);
+      controller!.deleteDrawingGroupDrawings(group.id);
+    }
+  });
 
   return Object.freeze({
     getState: () => controller!.getState(),
@@ -1600,6 +1736,7 @@ export function createChart(
     },
     getStudyApi: (value: ChartIndicatorEntityId) => studyApi(value),
     getAllStudies: () => structuredClone(controller!.getViewModel().indicators),
+    getDrawingGroupsApi: () => drawingGroupsApi,
     removeStudy: (value: ChartIndicatorEntityId) => removeStudy(value),
     createEntity: (value: ChartEntityInput) => {
       if (destroyed) {
@@ -1615,9 +1752,13 @@ export function createChart(
         controller!.setIndicators(parseChartIndicators([...viewModel.indicators, entity.value]));
       } else if (entity.kind === "drawing") {
         requireReadyLayout(viewModel, readySelectionKey);
-        controller!.setDrawings(toEngineDrawings(
-          parseDrawings([...fromEngineDrawings(viewModel.drawings), entity.value])
-        ));
+        controller!.setDrawings(
+          toEngineDrawings(
+            parseDrawings([...fromEngineDrawings(viewModel.drawings), entity.value])
+          ),
+          [],
+          viewModel.drawingGroups
+        );
       } else {
         controller!.setMarks(parseMarks([...viewModel.marks, entity.value]));
       }
@@ -1678,7 +1819,8 @@ export function createChart(
               candidate.id === current.value.id ? entity.value : candidate
             )
           )),
-          viewModel.selectedDrawingIds
+          viewModel.selectedDrawingIds,
+          viewModel.drawingGroups
         );
       } else {
         controller!.setMarks(parseMarks(viewModel.marks.map((candidate) =>
@@ -1706,7 +1848,13 @@ export function createChart(
             fromEngineDrawings(viewModel.drawings)
               .filter((candidate) => candidate.id !== current.value.id)
           )),
-          viewModel.selectedDrawingIds.filter((id) => id !== current.value.id)
+          viewModel.selectedDrawingIds.filter((id) => id !== current.value.id),
+          viewModel.drawingGroups
+            .map((group) => ({
+              ...group,
+              drawingIds: group.drawingIds.filter((id) => id !== current.value.id)
+            }))
+            .filter((group) => group.drawingIds.length > 0)
         );
       } else {
         controller!.setMarks(parseMarks(
@@ -1825,7 +1973,11 @@ export function createChart(
         controller!.setPriceScaleMode(layout.priceScaleMode);
         controller!.setIndicators(layout.indicators);
         runtime.applyPaneLayouts(layout.panes);
-        controller!.setDrawings(toEngineDrawings(layout.drawings));
+        controller!.setDrawings(
+          toEngineDrawings(layout.drawings),
+          [],
+          layout.drawingGroups ?? []
+        );
         controller!.setGridVisible(layout.gridVisible);
       } finally {
         applyingLayout = false;

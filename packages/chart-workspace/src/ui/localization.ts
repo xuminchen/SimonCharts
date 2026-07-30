@@ -51,6 +51,17 @@ export interface ChartLabels {
   readonly exitFullscreen: string;
   readonly select: string;
   readonly objects: string;
+  readonly createDrawingGroup: string;
+  readonly renameDrawingGroup: string;
+  readonly selectDrawingGroup: string;
+  readonly showObject: string;
+  readonly hideObject: string;
+  readonly lockObject: string;
+  readonly unlockObject: string;
+  readonly moveObjectForward: string;
+  readonly moveObjectBackward: string;
+  readonly ungroupDrawingGroup: string;
+  readonly deleteDrawingGroupDrawings: string;
   readonly properties: string;
   readonly dataWindow: string;
   readonly dataTable: string;
@@ -255,6 +266,17 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       exitFullscreen: "Exit fullscreen",
       select: "Select",
       objects: "Objects",
+      createDrawingGroup: "Create group",
+      renameDrawingGroup: "Rename group",
+      selectDrawingGroup: "Select group",
+      showObject: "Show",
+      hideObject: "Hide",
+      lockObject: "Lock",
+      unlockObject: "Unlock",
+      moveObjectForward: "Move forward",
+      moveObjectBackward: "Move backward",
+      ungroupDrawingGroup: "Ungroup",
+      deleteDrawingGroupDrawings: "Delete drawings",
       properties: "Properties",
       dataWindow: "Data window",
       dataTable: "Data table",
@@ -314,6 +336,17 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     exitFullscreen: "退出全屏",
     select: "选择",
     objects: "对象",
+    createDrawingGroup: "新建组",
+    renameDrawingGroup: "重命名组",
+    selectDrawingGroup: "选择组",
+    showObject: "显示",
+    hideObject: "隐藏",
+    lockObject: "锁定",
+    unlockObject: "解锁",
+    moveObjectForward: "上移",
+    moveObjectBackward: "下移",
+    ungroupDrawingGroup: "解散组",
+    deleteDrawingGroupDrawings: "删除图形",
     properties: "属性",
     dataWindow: "数据窗口",
     dataTable: "数据表",

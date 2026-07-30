@@ -1,6 +1,7 @@
 import type { DrawingSelectionBounds } from "./drawingInteraction";
 import type { DrawingResizeOptions, DrawingRotateOptions } from "./drawingTransform";
 import type { DrawingObject, DrawingStyle, DrawingType } from "./drawingTypes";
+import type { DrawingGroup } from "./drawingEditState";
 
 export type DrawingEditorTool = DrawingType | "select";
 
@@ -10,6 +11,7 @@ export type DrawingEditorEvent =
   | { type: "drawingCreated"; drawing: DrawingObject }
   | { type: "drawingUpdated"; drawing: DrawingObject }
   | { type: "drawingDeleted"; drawingId: string }
+  | { type: "drawingGroupsChanged"; drawingGroups: DrawingGroup[] }
   | { type: "drawingPreviewChanged"; drawing?: DrawingObject }
   | { type: "creationCanceled" };
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.47 - 2026-07-30
+
+- Added a frozen `getDrawingGroupsApi()` controller for create, rename, membership, visibility, locking, block movement, ungroup, and grouped deletion.
+- Kept Drawing Groups inside the existing DrawingEditor snapshots, undo/redo history, z-order, state callback, renderer, and symbol/adjust lifecycle; no second Drawing engine or persistence model was added.
+- Added optional `ChartLayoutV3.drawingGroups` and upgraded the existing browser Drawing value to one atomic `{ drawings, drawingGroups }` document while continuing to read legacy Drawing arrays.
+- Added native Object Tree group management with semantic list/details controls, focus preservation, disabled UI for non-interactive Drawings, and bilingual labels.
+- Made invalid group commands atomic, bounded names to 256 characters at the public and engine boundaries, and prevented group compaction from crossing locked Drawings.
+- Added engine, public-contract, controller, persistence, runtime, performance, Chrome, and Edge coverage without changing market-data ownership or adding a dependency.
+- Accepted the exact 8-file immutable package after `79 files / 1,348 tests`, combined Chrome `160/160`, Charts `23 files / 326 tests`, Charts Chrome/Edge `109/109` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer execution; SHA-256 is `eb76edb81d270ba6d19d415f55b0b353932092770f6dfb2a9969d828d83cc17e`, SHA-512 is `eeed64700ac5da27cbddefaec53c9e2a3d1bc1d8806813d1b1b4d2c1f5dc8423453b8894c9a5cd7028742b9cf56287f9139a0ea8d3ce608a29d1818268ad7f7d`. Final adversarial review found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.46 - 2026-07-30
 
 - Added transient `ChartDisplayMode`, `getDisplayMode()`, `setDisplayMode()`, and `display-mode-changed`, with the advanced More menu and chart context menu sharing the same native Data Table action.

@@ -14,6 +14,7 @@ export interface BottomPanel {
 }
 
 function selectedDrawing(viewModel: WorkspaceViewModel): DrawingObject | undefined {
+  if (viewModel.selectedDrawingIds.length !== 1) return undefined;
   const selectedId = viewModel.selectedDrawingIds[0];
   return viewModel.drawings.find((drawing) => drawing.id === selectedId);
 }
@@ -55,6 +56,9 @@ export function createBottomPanel(labels: ChartLabels): BottomPanel {
   let currentViewModel: WorkspaceViewModel | undefined;
   let actions: WorkspaceUiActions | undefined;
   let currentDataWindow: DataWindowSnapshot | undefined;
+  let expandedGroupIds = new Set<string>();
+  let renderedGroupIds = new Set<string>();
+  let drawingScope: string | undefined;
 
   const select = (drawingId: string) => {
     actions?.setDrawingTool("select");
@@ -82,18 +86,101 @@ export function createBottomPanel(labels: ChartLabels): BottomPanel {
         });
       };
       const onObjectClick = (event: Event) => {
-        const target = (event.target as HTMLElement).closest<HTMLElement>("[data-drawing-id]");
-        const drawing = currentViewModel?.drawings.find((item) => item.id === target?.dataset.drawingId);
-        if (!drawing) return;
-        const command = (event.target as HTMLElement).closest<HTMLElement>("[data-object-command]")?.dataset.objectCommand as "visible" | "locked" | "forward" | "backward" | undefined;
-        if (command) commandFor(drawing, command);
-        else select(drawing.id);
+        const eventTarget = event.target as HTMLElement;
+        if (eventTarget.closest("[data-create-drawing-group]")) {
+          const drawingIds = currentViewModel?.selectedDrawingIds ?? [];
+          if (drawingIds.length >= 2) actions?.createDrawingGroup(drawingIds);
+          return;
+        }
+        const drawingTarget = eventTarget.closest<HTMLElement>("[data-drawing-id]");
+        const drawing = currentViewModel?.drawings.find(
+          (item) => item.id === drawingTarget?.dataset.drawingId
+        );
+        const objectCommand = eventTarget.closest<HTMLElement>("[data-object-command]")
+          ?.dataset.objectCommand as "visible" | "locked" | "forward" | "backward" | undefined;
+        if (drawing && objectCommand) {
+          commandFor(drawing, objectCommand);
+          return;
+        }
+        const groupTarget = eventTarget.closest<HTMLElement>("[data-drawing-group-id]");
+        const group = currentViewModel?.drawingGroups.find(
+          (item) => item.id === groupTarget?.dataset.drawingGroupId
+        );
+        const groupCommand = eventTarget.closest<HTMLElement>("[data-group-command]")
+          ?.dataset.groupCommand as
+            | "visible"
+            | "locked"
+            | "forward"
+            | "backward"
+            | "ungroup"
+            | "delete"
+            | undefined;
+        if (group && groupCommand) {
+          const members = currentViewModel?.drawings.filter((item) =>
+            group.drawingIds.includes(item.id)
+          ) ?? [];
+          if (groupCommand === "visible") {
+            actions?.setDrawingGroupVisible(
+              group.id,
+              !members.every((item) => item.visible !== false)
+            );
+          }
+          if (groupCommand === "locked") {
+            actions?.setDrawingGroupLocked(
+              group.id,
+              !members.every((item) => item.locked === true)
+            );
+          }
+          if (groupCommand === "forward" || groupCommand === "backward") {
+            actions?.moveDrawingGroup(group.id, groupCommand);
+          }
+          if (groupCommand === "ungroup") actions?.ungroupDrawingGroup(group.id);
+          if (groupCommand === "delete") actions?.deleteDrawingGroupDrawings(group.id);
+          return;
+        }
+        if (drawing) {
+          select(drawing.id);
+          return;
+        }
+        if (group && eventTarget.closest("[data-group-select]")) {
+          const details = eventTarget.closest<HTMLDetailsElement>(
+            "details[data-drawing-group-id]"
+          );
+          if (details) {
+            details.open = !details.open;
+            event.preventDefault();
+          }
+          actions?.setDrawingTool("select");
+          actions?.executeDrawingCommand({
+            type: "selectDrawings",
+            drawingIds: [...group.drawingIds]
+          });
+        }
+      };
+      const onObjectChange = (event: Event) => {
+        const input = (event.target as HTMLElement).closest<HTMLInputElement>(
+          "[data-group-name]"
+        );
+        const group = currentViewModel?.drawingGroups.find(
+          (item) => item.id === input?.closest<HTMLElement>("[data-drawing-group-id]")
+            ?.dataset.drawingGroupId
+        );
+        if (!input || !group) return;
+        const name = input.value.trim();
+        if (!name) {
+          input.value = group.name;
+          return;
+        }
+        if (document.activeElement === input) delete input.dataset.focusKey;
+        actions?.setDrawingGroupName(group.id, name);
       };
       tabList.addEventListener("click", onTabClick);
       objects.addEventListener("click", onObjectClick);
+      objects.addEventListener("change", onObjectChange);
       return () => {
         tabList.removeEventListener("click", onTabClick);
         objects.removeEventListener("click", onObjectClick);
+        objects.removeEventListener("change", onObjectChange);
         actions = undefined;
       };
     },
@@ -109,31 +196,161 @@ export function createBottomPanel(labels: ChartLabels): BottomPanel {
         button.setAttribute("aria-selected", String(selected));
       }
       title.textContent = tabs.find((tab) => tab.id === viewModel.bottomPanel.activeTab)?.label ?? "";
+      let focusedKey = objects.contains(document.activeElement)
+        ? (document.activeElement as HTMLElement).dataset.focusKey
+        : undefined;
+      const nextDrawingScope = `${viewModel.state.symbol.id}:${viewModel.state.adjustMode}`;
+      if (drawingScope === nextDrawingScope) {
+        for (const details of objects.querySelectorAll<HTMLDetailsElement>(
+          "details[data-drawing-group-id]"
+        )) {
+          const groupId = details.dataset.drawingGroupId;
+          if (!groupId) continue;
+          if (details.open) expandedGroupIds.add(groupId);
+          else expandedGroupIds.delete(groupId);
+        }
+      } else {
+        drawingScope = nextDrawingScope;
+        focusedKey = undefined;
+        expandedGroupIds.clear();
+        renderedGroupIds.clear();
+      }
       objects.replaceChildren();
-      for (const drawing of viewModel.drawings) {
-        const row = document.createElement("div");
+      const groupedDrawingIds = new Set(
+        viewModel.drawingGroups.flatMap((group) => [...group.drawingIds])
+      );
+      const selectedDrawings = viewModel.drawings.filter((drawing) =>
+        viewModel.selectedDrawingIds.includes(drawing.id)
+      );
+      const createGroup = document.createElement("button");
+      createGroup.type = "button";
+      createGroup.className = "sc-object-create-group";
+      createGroup.dataset.createDrawingGroup = "";
+      createGroup.dataset.focusKey = "create-group";
+      createGroup.textContent = labels.createDrawingGroup;
+      createGroup.disabled =
+        selectedDrawings.length < 2 ||
+        selectedDrawings.some(
+          (drawing) =>
+            drawing.interactive === false ||
+            drawing.locked === true ||
+            groupedDrawingIds.has(drawing.id)
+        );
+      const list = document.createElement("ul");
+      list.className = "sc-object-list";
+      const drawingById = new Map(viewModel.drawings.map((drawing) => [drawing.id, drawing]));
+      const groupByDrawingId = new Map(
+        viewModel.drawingGroups.flatMap((group) =>
+          group.drawingIds.map((drawingId) => [drawingId, group] as const)
+        )
+      );
+      const appendedGroupIds = new Set<string>();
+
+      const drawingRow = (drawing: DrawingObject) => {
+        const row = document.createElement("li");
         row.className = "sc-object-row";
         row.dataset.drawingId = drawing.id;
         row.dataset.selected = String(viewModel.selectedDrawingIds.includes(drawing.id));
         const selectButton = document.createElement("button");
         selectButton.type = "button";
+        selectButton.dataset.focusKey = `drawing:${drawing.id}:select`;
         selectButton.textContent = `${drawing.type} ${drawing.id}`;
         const controls = [
-          ["visible", drawing.visible === false ? "显示" : "隐藏"],
-          ["locked", drawing.locked ? "解锁" : "锁定"],
-          ["forward", "上移"],
-          ["backward", "下移"]
+          ["visible", drawing.visible === false ? labels.showObject : labels.hideObject],
+          ["locked", drawing.locked ? labels.unlockObject : labels.lockObject],
+          ["forward", labels.moveObjectForward],
+          ["backward", labels.moveObjectBackward]
         ] as const;
         row.append(selectButton);
         for (const [command, label] of controls) {
           const button = document.createElement("button");
           button.type = "button";
           button.dataset.objectCommand = command;
+          button.dataset.focusKey = `drawing:${drawing.id}:${command}`;
           button.setAttribute("aria-label", label);
           button.textContent = label;
+          button.disabled =
+            drawing.interactive === false ||
+            (drawing.locked === true && command !== "locked");
           row.append(button);
         }
-        objects.append(row);
+        selectButton.disabled = drawing.interactive === false;
+        return row;
+      };
+
+      for (const drawing of viewModel.drawings) {
+        const group = groupByDrawingId.get(drawing.id);
+        if (!group) {
+          list.append(drawingRow(drawing));
+          continue;
+        }
+        if (appendedGroupIds.has(group.id)) continue;
+        appendedGroupIds.add(group.id);
+        const item = document.createElement("li");
+        item.className = "sc-object-group";
+        const details = document.createElement("details");
+        details.dataset.drawingGroupId = group.id;
+        details.open =
+          !renderedGroupIds.has(group.id) || expandedGroupIds.has(group.id);
+        const summary = document.createElement("summary");
+        summary.dataset.groupSelect = "";
+        summary.dataset.focusKey = `group:${group.id}:select`;
+        summary.setAttribute("aria-label", `${labels.selectDrawingGroup}: ${group.name}`);
+        summary.textContent = group.name;
+        const members = group.drawingIds.flatMap((drawingId) => {
+          const member = drawingById.get(drawingId);
+          return member ? [member] : [];
+        });
+        const hasNonInteractive = members.some((member) => member.interactive === false);
+        const hasLocked = members.some((member) => member.locked === true);
+        const allVisible = members.every((member) => member.visible !== false);
+        const allLocked = members.every((member) => member.locked === true);
+        const controls = document.createElement("div");
+        controls.className = "sc-object-group-controls";
+        const name = document.createElement("input");
+        name.type = "text";
+        name.maxLength = 256;
+        name.value = group.name;
+        name.dataset.groupName = "";
+        name.dataset.focusKey = `group:${group.id}:name`;
+        name.setAttribute("aria-label", labels.renameDrawingGroup);
+        name.disabled = hasNonInteractive;
+        controls.append(name);
+        const groupControls = [
+          ["visible", allVisible ? labels.hideObject : labels.showObject],
+          ["locked", allLocked ? labels.unlockObject : labels.lockObject],
+          ["forward", labels.moveObjectForward],
+          ["backward", labels.moveObjectBackward],
+          ["ungroup", labels.ungroupDrawingGroup],
+          ["delete", labels.deleteDrawingGroupDrawings]
+        ] as const;
+        for (const [command, label] of groupControls) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.groupCommand = command;
+          button.dataset.focusKey = `group:${group.id}:${command}`;
+          button.setAttribute("aria-label", label);
+          button.textContent = label;
+          button.disabled =
+            hasNonInteractive ||
+            (hasLocked &&
+              command !== "locked" &&
+              command !== "ungroup");
+          controls.append(button);
+        }
+        const membersList = document.createElement("ul");
+        membersList.className = "sc-object-group-members";
+        for (const member of members) membersList.append(drawingRow(member));
+        details.append(summary, controls, membersList);
+        item.append(details);
+        list.append(item);
+      }
+      renderedGroupIds = new Set(viewModel.drawingGroups.map(({ id }) => id));
+      objects.append(createGroup, list);
+      if (focusedKey) {
+        [...objects.querySelectorAll<HTMLElement>("[data-focus-key]")]
+          .find((candidate) => candidate.dataset.focusKey === focusedKey)
+          ?.focus();
       }
       const active = viewModel.bottomPanel.activeTab;
       objects.hidden = active !== "objects";

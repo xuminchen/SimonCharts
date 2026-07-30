@@ -70,6 +70,9 @@ import type {
   Candle,
   ChartCrosshairStudyOutput,
   ChartExecution,
+  ChartDrawingGroup,
+  ChartDrawingGroupId,
+  ChartDrawingGroupMove,
   ChartIndicator,
   ChartMark,
   ChartPane,
@@ -225,8 +228,20 @@ export interface ChartEngineRuntime {
     mainMode: PriceScaleMode
   ): void;
   applyPaneLayouts(panes: readonly ChartPaneLayout[]): void;
-  setDrawings(drawings: readonly DrawingObject[], selectedDrawingIds?: readonly string[]): void;
+  setDrawings(
+    drawings: readonly DrawingObject[],
+    selectedDrawingIds?: readonly string[],
+    drawingGroups?: readonly ChartDrawingGroup[]
+  ): void;
   selectDrawings(ids: readonly string[]): void;
+  createDrawingGroup(drawingIds: readonly string[], name: string): ChartDrawingGroupId;
+  setDrawingGroupName(id: ChartDrawingGroupId, name: string): void;
+  setDrawingGroupMembers(id: ChartDrawingGroupId, drawingIds: readonly string[]): void;
+  setDrawingGroupVisible(id: ChartDrawingGroupId, visible: boolean): void;
+  setDrawingGroupLocked(id: ChartDrawingGroupId, locked: boolean): void;
+  moveDrawingGroup(id: ChartDrawingGroupId, direction: ChartDrawingGroupMove): void;
+  ungroupDrawingGroup(id: ChartDrawingGroupId): void;
+  deleteDrawingGroupDrawings(id: ChartDrawingGroupId): void;
   setDrawingTool(tool: DrawingEditorTool): void;
   executeDrawingCommand(command: DrawingEditorCommand): void;
   undoDrawing(): void;
@@ -269,7 +284,11 @@ export interface ChartEngineRuntimeOptions {
   onDrawingClicked?: (drawingId: string) => void;
   onStudyClicked?: (instanceId: string) => void;
   onBlankClicked?: () => void;
-  onDrawingsChanged?: (drawings: readonly DrawingObject[], selectedDrawingIds: readonly string[]) => void;
+  onDrawingsChanged?: (
+    drawings: readonly DrawingObject[],
+    selectedDrawingIds: readonly string[],
+    drawingGroups: readonly ChartDrawingGroup[]
+  ) => void;
   onDrawingHistoryChanged?: (state: { canUndo: boolean; canRedo: boolean }) => void;
   onCalculationError?: (kind: "indicator" | "series", error: unknown) => void;
   onRenderError?: (error: unknown) => void;
@@ -568,13 +587,26 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const state = drawingEditor.getState();
     options.onDrawingsChanged?.(
       state.drawings.map((drawing) => structuredClone(drawing)),
-      state.selectedDrawingIds
+      state.selectedDrawingIds,
+      state.drawingGroups.map((group) => ({
+        id: group.id as ChartDrawingGroupId,
+        name: group.name,
+        drawingIds: [...group.drawingIds]
+      }))
     );
     emitDrawingHistoryState();
   };
-  const createEditor = (drawings: readonly DrawingObject[]): DrawingEditor =>
+  const createEditor = (
+    drawings: readonly DrawingObject[],
+    drawingGroups: readonly ChartDrawingGroup[] = []
+  ): DrawingEditor =>
     createDrawingEditor({
       drawings: drawings.map((drawing) => structuredClone(drawing)),
+      drawingGroups: drawingGroups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        drawingIds: [...group.drawingIds]
+      })),
       coordinateAdapter: {
         toScreen: (drawing) => projectDrawingObject(drawing, coordinateContext()),
         toDomain: (drawing) => unprojectDrawingObject(drawing, coordinateContext())
@@ -583,7 +615,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         if (
           event.type === "drawingCreated" ||
           event.type === "drawingUpdated" ||
-          event.type === "drawingDeleted"
+          event.type === "drawingDeleted" ||
+          event.type === "drawingGroupsChanged"
         ) refreshDrawingScale("drawingChanged");
         else syncDrawings();
         if (!suppressDrawingState) emitDrawingState();
@@ -1966,6 +1999,22 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     invalidateDrawingInteraction(input);
   }
 
+  function applyDrawingGroupMutation<T>(mutate: () => T): T {
+    if (activePointerId === undefined && !drawingEditor.getState().isCreating) {
+      return mutate();
+    }
+    suppressDrawingState = true;
+    let result: T;
+    try {
+      result = mutate();
+      cancelPointerInteraction("pointerCancel");
+    } finally {
+      suppressDrawingState = false;
+    }
+    emitDrawingState();
+    return result;
+  }
+
   function handleKeyboard(event: KeyboardEvent): boolean {
     const modifier = event.metaKey || event.ctrlKey;
     if (event.altKey && event.key.toLowerCase() === "r") {
@@ -2995,13 +3044,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       manualPriceScale = undefined;
       invalidatePane("paneLayoutImported", true);
     },
-    setDrawings(drawings, selectedDrawingIds = []) {
+    setDrawings(drawings, selectedDrawingIds = [], drawingGroups = []) {
       if (destroyed) return;
       if (pendingClick?.kind === "drawing") pendingClick = undefined;
       drawingHandleDragOperation = undefined;
       drawingMoveDragOperation = undefined;
       hoveredDrawingId = undefined;
-      drawingEditor = createEditor(drawings);
+      drawingEditor = createEditor(drawings, drawingGroups);
       suppressDrawingState = true;
       try {
         drawingEditor.selectDrawings([...selectedDrawingIds]);
@@ -3015,10 +3064,66 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (destroyed) return;
       drawingEditor.selectDrawings([...ids]);
     },
+    createDrawingGroup(drawingIds, name) {
+      if (destroyed) {
+        throw new DOMException("Chart runtime has been destroyed", "InvalidStateError");
+      }
+      return applyDrawingGroupMutation(
+        () => drawingEditor.createGroup([...drawingIds], name) as ChartDrawingGroupId
+      );
+    },
+    setDrawingGroupName(id, name) {
+      if (destroyed) return;
+      applyDrawingGroupMutation(() => drawingEditor.setGroupName(id, name));
+    },
+    setDrawingGroupMembers(id, drawingIds) {
+      if (destroyed) return;
+      applyDrawingGroupMutation(() => drawingEditor.setGroupDrawings(id, [...drawingIds]));
+    },
+    setDrawingGroupVisible(id, visible) {
+      if (destroyed) return;
+      applyDrawingGroupMutation(() => drawingEditor.setGroupVisible(id, visible));
+    },
+    setDrawingGroupLocked(id, locked) {
+      if (destroyed) return;
+      applyDrawingGroupMutation(() => drawingEditor.setGroupLocked(id, locked));
+    },
+    moveDrawingGroup(id, direction) {
+      if (destroyed) return;
+      applyDrawingGroupMutation(() => drawingEditor.moveGroup(id, direction));
+    },
+    ungroupDrawingGroup(id) {
+      if (destroyed) return;
+      applyDrawingGroupMutation(() => drawingEditor.removeGroup(id));
+    },
+    deleteDrawingGroupDrawings(id) {
+      if (destroyed) return;
+      applyDrawingGroupMutation(() => drawingEditor.deleteGroupDrawings(id));
+    },
     setDrawingTool(tool) { if (destroyed) return; drawingEditor.setTool(tool); },
     executeDrawingCommand(command) { if (destroyed) return; drawingEditor.executeCommand(command); },
-    undoDrawing() { if (destroyed) return; drawingEditor.undo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
-    redoDrawing() { if (destroyed) return; drawingEditor.redo(); refreshDrawingScale("drawingHistoryChanged"); emitDrawingState(); },
+    undoDrawing() {
+      if (destroyed) return;
+      suppressDrawingState = true;
+      try {
+        drawingEditor.undo();
+      } finally {
+        suppressDrawingState = false;
+      }
+      refreshDrawingScale("drawingHistoryChanged");
+      emitDrawingState();
+    },
+    redoDrawing() {
+      if (destroyed) return;
+      suppressDrawingState = true;
+      try {
+        drawingEditor.redo();
+      } finally {
+        suppressDrawingState = false;
+      }
+      refreshDrawingScale("drawingHistoryChanged");
+      emitDrawingState();
+    },
     setGridVisible(visible) { if (destroyed) return; if (chartEngine.getState().settings.gridVisible !== visible) { chartEngine.dispatch({ type: "toggleGrid" }); scheduler.invalidate({ layers: ["grid"], reason: "gridVisibilityChanged" }); } },
     refreshTheme() {
       if (destroyed) return;

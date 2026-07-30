@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ChartActionId,
   ChartDisplayMode,
+  ChartDrawingGroup,
   ChartIndicator,
   ChartOptions,
   ChartSeriesVisualOverrides,
@@ -23,6 +24,14 @@ const mocks = vi.hoisted(() => ({
     resetToLatest: vi.fn(),
     setIndicators: vi.fn(),
     setSeriesVisualOverrides: vi.fn(),
+    createDrawingGroup: vi.fn(() => "drawing-group:1" as const),
+    setDrawingGroupName: vi.fn(),
+    setDrawingGroupMembers: vi.fn(),
+    setDrawingGroupVisible: vi.fn(),
+    setDrawingGroupLocked: vi.fn(),
+    moveDrawingGroup: vi.fn(),
+    ungroupDrawingGroup: vi.fn(),
+    deleteDrawingGroupDrawings: vi.fn(),
     undoDrawing: vi.fn(),
     redoDrawing: vi.fn()
   },
@@ -188,6 +197,7 @@ describe("createChart rc.44 time-scale and action API", () => {
         priceScaleMode: "linear",
         indicators: [] as ChartIndicator[],
         drawings: [],
+        drawingGroups: [] as ChartDrawingGroup[],
         marks: [],
         comparisons: [],
         comparisonData: [],
@@ -224,6 +234,27 @@ describe("createChart rc.44 time-scale and action API", () => {
           ];
           mocks.controller.setSeriesVisualOverrides(overrides);
         },
+        createDrawingGroup: (drawingIds: readonly string[], name?: string) => {
+          const id = mocks.controller.createDrawingGroup(drawingIds, name);
+          viewModel.drawingGroups.push({
+            id,
+            name: name ?? "Group 1",
+            drawingIds: [...drawingIds]
+          });
+          return id;
+        },
+        setDrawingGroupName: (id: `drawing-group:${string}`, name: string) => {
+          viewModel.drawingGroups = viewModel.drawingGroups.map((group) =>
+            group.id === id ? { ...group, name } : group
+          );
+          mocks.controller.setDrawingGroupName(id, name);
+        },
+        setDrawingGroupMembers: mocks.controller.setDrawingGroupMembers,
+        setDrawingGroupVisible: mocks.controller.setDrawingGroupVisible,
+        setDrawingGroupLocked: mocks.controller.setDrawingGroupLocked,
+        moveDrawingGroup: mocks.controller.moveDrawingGroup,
+        ungroupDrawingGroup: mocks.controller.ungroupDrawingGroup,
+        deleteDrawingGroupDrawings: mocks.controller.deleteDrawingGroupDrawings,
         setVisibleRange: mocks.controller.setVisibleRange,
         resetToLatest: mocks.controller.resetToLatest,
         undoDrawing: mocks.controller.undoDrawing,
@@ -260,6 +291,56 @@ describe("createChart rc.44 time-scale and action API", () => {
     expect(mocks.controller.setVisibleRange.mock.calls).toEqual([
       [{ from: 120, to: 180 }],
       [{ from: 130, to: 170 }]
+    ]);
+  });
+
+  it("exposes one validated drawing-groups controller without a second state store", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    );
+    const first = chart.getDrawingGroupsApi();
+
+    expect(chart.getDrawingGroupsApi()).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(() => first.create(["a"], "One")).toThrow();
+    expect(() => first.create(["a", "a"], "Duplicate")).toThrow();
+    expect(() => first.create(["a", "b"], " ")).toThrow();
+    expect(() => first.create(["a", "b"], "x".repeat(257))).toThrow();
+    expect(mocks.controller.createDrawingGroup).not.toHaveBeenCalled();
+
+    const id = first.create(["a", "b"], "Plan");
+    expect(id).toBe("drawing-group:1");
+    expect(first.getAll()).toEqual([
+      { id, name: "Plan", drawingIds: ["a", "b"] }
+    ]);
+    const snapshot = first.getAll() as Array<{ name: string; drawingIds: string[] }>;
+    snapshot[0]!.name = "Changed";
+    snapshot[0]!.drawingIds.push("changed");
+    expect(first.getAll()[0]).toEqual({ id, name: "Plan", drawingIds: ["a", "b"] });
+
+    first.setName(id, "Renamed");
+    expect(() => first.setName(id, "x".repeat(257))).toThrow();
+    first.setMembers(id, ["b"]);
+    first.setVisible(id, false);
+    first.setLocked(id, true);
+    first.move(id, "front");
+    first.ungroup(id);
+    first.deleteDrawings(id);
+
+    expect(mocks.controller.setDrawingGroupName).toHaveBeenCalledWith(id, "Renamed");
+    expect(mocks.controller.setDrawingGroupName).toHaveBeenCalledTimes(1);
+    expect(mocks.controller.setDrawingGroupMembers).toHaveBeenCalledWith(id, ["b"]);
+    expect(mocks.controller.setDrawingGroupVisible).toHaveBeenCalledWith(id, false);
+    expect(mocks.controller.setDrawingGroupLocked).toHaveBeenCalledWith(id, true);
+    expect(mocks.controller.moveDrawingGroup).toHaveBeenCalledWith(id, "front");
+    expect(mocks.controller.ungroupDrawingGroup).toHaveBeenCalledWith(id);
+    expect(mocks.controller.deleteDrawingGroupDrawings).toHaveBeenCalledWith(id);
+    expect(() => first.setVisible(id, "yes" as never)).toThrow();
+    expect(() => first.setLocked(id, 1 as never)).toThrow();
+    expect(() => first.move(id, "sideways" as never)).toThrow();
+    expect(chart.exportLayout().drawingGroups).toEqual([
+      { id, name: "Renamed", drawingIds: ["a", "b"] }
     ]);
   });
 
@@ -386,6 +467,10 @@ describe("createChart rc.44 time-scale and action API", () => {
     expect(() => timeScale.setBarSpacing(0)).toThrow();
     expect(() => timeScale.scrollByBars(1.5)).toThrow();
     expect(() => chart.executeActionById("unknown" as ChartActionId)).toThrow();
+    expect(chart.getDrawingGroupsApi().getAll()).toEqual([]);
+    expect(() => chart.getDrawingGroupsApi().create(["a", "b"])).toThrowError(
+      expect.objectContaining({ name: "InvalidStateError" })
+    );
 
     expect(timeScale.getVisibleRange()).toBeUndefined();
     expect(timeScale.timeToCoordinate(1)).toBeUndefined();

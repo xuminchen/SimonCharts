@@ -11,6 +11,9 @@ import type {
   Candle,
   ChartComparison,
   ChartDataCapabilities,
+  ChartDrawingGroup,
+  ChartDrawingGroupId,
+  ChartDrawingGroupMove,
   ChartMark,
   ChartReplaySpeed,
   ChartReplayState,
@@ -105,6 +108,7 @@ export interface WorkspaceViewModel {
   priceScaleMode: PriceScaleMode;
   indicators: readonly IndicatorConfig[];
   drawings: readonly DrawingObject[];
+  drawingGroups: readonly ChartDrawingGroup[];
   marks: readonly ChartMark[];
   comparisons: readonly ChartComparison[];
   comparisonStatuses: readonly WorkspaceComparisonStatus[];
@@ -143,8 +147,17 @@ export interface WorkspaceUiActions {
   setIndicators(configs: readonly IndicatorConfig[]): void;
   setDrawings(
     drawings: readonly DrawingObject[],
-    selectedDrawingIds?: readonly string[]
+    selectedDrawingIds?: readonly string[],
+    drawingGroups?: readonly ChartDrawingGroup[]
   ): void;
+  createDrawingGroup(drawingIds: readonly string[], name?: string): ChartDrawingGroupId;
+  setDrawingGroupName(id: ChartDrawingGroupId, name: string): void;
+  setDrawingGroupMembers(id: ChartDrawingGroupId, drawingIds: readonly string[]): void;
+  setDrawingGroupVisible(id: ChartDrawingGroupId, visible: boolean): void;
+  setDrawingGroupLocked(id: ChartDrawingGroupId, locked: boolean): void;
+  moveDrawingGroup(id: ChartDrawingGroupId, direction: ChartDrawingGroupMove): void;
+  ungroupDrawingGroup(id: ChartDrawingGroupId): void;
+  deleteDrawingGroupDrawings(id: ChartDrawingGroupId): void;
   setMarks(marks: readonly ChartMark[]): void;
   setComparisons(comparisons: readonly ChartComparison[]): void;
   setDrawingTool(tool: DrawingEditorTool): void;
@@ -191,7 +204,11 @@ export interface ChartController extends WorkspaceUiActions {
   handleCalculationStatus(status: CalculationStatus): void;
   handleDataWindow(snapshot: DataWindowSnapshot | undefined): void;
   handleComparisonData(snapshots: readonly ComparisonDataSnapshot[]): void;
-  handleDrawingsChanged(drawings: readonly DrawingObject[], selectedDrawingIds?: readonly string[]): void;
+  handleDrawingsChanged(
+    drawings: readonly DrawingObject[],
+    selectedDrawingIds?: readonly string[],
+    drawingGroups?: readonly ChartDrawingGroup[]
+  ): void;
   handleDrawingHistoryChanged(state: { canUndo: boolean; canRedo: boolean }): void;
   handleRenderError(error: unknown, calculationKind?: "indicator" | "series"): void;
   handleRenderRecovered(): void;
@@ -309,10 +326,10 @@ export function createChartController(
   dependencies: ChartControllerDependencies
 ): ChartController {
   const parseIndicatorConfigs = dependencies.parseIndicators ?? parseIndicators;
-  const loadDrawings = (symbol: ChartSymbol, adjustMode: AdjustMode): readonly DrawingObject[] =>
+  const loadDrawingState = (symbol: ChartSymbol, adjustMode: AdjustMode) =>
     dependencies.drawingPersistenceEnabled
-      ? dependencies.persistence.loadDrawings(symbol, adjustMode)
-      : [];
+      ? dependencies.persistence.loadDrawingState(symbol, adjustMode)
+      : { drawings: [], drawingGroups: [] };
   const preferences = dependencies.persistence.loadPreferences();
   const persistedSeriesType = preferences.seriesType;
   const persistedSeriesProperties = parseSeriesProperties(preferences.seriesProperties);
@@ -357,6 +374,7 @@ export function createChartController(
     ),
     loading: true
   };
+  const initialDrawingState = loadDrawingState(state.symbol, state.adjustMode);
   let viewModel: WorkspaceViewModel = {
     state,
     status: { type: "loading" },
@@ -367,7 +385,8 @@ export function createChartController(
     favoriteTimeframes: [...preferences.favoriteTimeframes.slice(0, maxFavoriteTimeframes)],
     priceScaleMode: initialComparisons.length === 0 ? preferences.priceScaleMode : "percentage",
     indicators: dependencies.persistence.loadIndicators(),
-    drawings: loadDrawings(state.symbol, state.adjustMode),
+    drawings: initialDrawingState.drawings,
+    drawingGroups: initialDrawingState.drawingGroups,
     marks: [],
     comparisons: initialComparisons,
     comparisonStatuses: initialComparisons.map((comparison) => ({
@@ -498,6 +517,7 @@ export function createChartController(
     viewModel = {
       ...viewModel,
       drawings: [],
+      drawingGroups: [],
       marks: [],
       selectedDrawingIds: [],
       dataWindow: undefined,
@@ -933,7 +953,11 @@ export function createChartController(
     );
     dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
     dependencies.runtime.setIndicators(viewModel.indicators);
-    dependencies.runtime.setDrawings(viewModel.drawings, viewModel.selectedDrawingIds);
+    dependencies.runtime.setDrawings(
+      viewModel.drawings,
+      viewModel.selectedDrawingIds,
+      viewModel.drawingGroups
+    );
     dependencies.runtime.setGridVisible(viewModel.gridVisible);
     if (result.series.candles.length === 0) {
       transientCandles.clear();
@@ -1168,6 +1192,9 @@ export function createChartController(
     const retainedDrawingSelection = retainedDrawings === undefined
       ? []
       : viewModel.selectedDrawingIds;
+    const retainedDrawingGroups = retainedDrawings === undefined
+      ? []
+      : viewModel.drawingGroups;
     const retainedAdjustMode = state.adjustMode;
     dependencies.runtime.clearCrosshair();
     const preferredView = state.view;
@@ -1194,6 +1221,7 @@ export function createChartController(
       status: { type: "loading" },
       dataWindow: undefined,
       drawings: retainedDrawings ?? [],
+      drawingGroups: retainedDrawingGroups,
       selectedDrawingIds: retainedDrawingSelection
     };
     retryTarget = undefined;
@@ -1243,6 +1271,9 @@ export function createChartController(
       const keepDrawings =
         retainedDrawings !== undefined &&
         retainedAdjustMode === adjustMode;
+      const drawingState = keepDrawings
+        ? { drawings: retainedDrawings, drawingGroups: retainedDrawingGroups }
+        : loadDrawingState(symbol, adjustMode);
       state = {
         symbol: cloneSymbol(symbol),
         timeframe,
@@ -1256,7 +1287,8 @@ export function createChartController(
         ...viewModel,
         intradayView: view === "intraday",
         seriesType: view === "intraday" ? "line" : timeframeSeriesType,
-        drawings: keepDrawings ? retainedDrawings : loadDrawings(symbol, adjustMode),
+        drawings: drawingState.drawings,
+        drawingGroups: drawingState.drawingGroups,
         selectedDrawingIds: keepDrawings ? retainedDrawingSelection : []
       };
       beginSelection();
@@ -1353,9 +1385,11 @@ export function createChartController(
       state = { ...state, timeframe, view: "timeframe", adjustMode };
       viewModel = { ...viewModel, intradayView: false, seriesType: timeframeSeriesType };
       if (adjustMode !== viewModel.state.adjustMode) {
+        const drawingState = loadDrawingState(state.symbol, adjustMode);
         viewModel = {
           ...viewModel,
-          drawings: loadDrawings(state.symbol, adjustMode),
+          drawings: drawingState.drawings,
+          drawingGroups: drawingState.drawingGroups,
           selectedDrawingIds: []
         };
       }
@@ -1487,9 +1521,11 @@ export function createChartController(
       api.stopReplay();
       cancelVisibleRangeCommand();
       state = { ...state, adjustMode: normalized };
+      const drawingState = loadDrawingState(state.symbol, normalized);
       viewModel = {
         ...viewModel,
-        drawings: loadDrawings(state.symbol, normalized),
+        drawings: drawingState.drawings,
+        drawingGroups: drawingState.drawingGroups,
         selectedDrawingIds: []
       };
       beginSelection();
@@ -1760,15 +1796,23 @@ export function createChartController(
       dependencies.runtime.setComparisonData(snapshots);
       publish();
     },
-    handleDrawingsChanged(drawings, selectedDrawingIds = []) {
+    handleDrawingsChanged(
+      drawings,
+      selectedDrawingIds = [],
+      drawingGroups = viewModel.drawingGroups
+    ) {
       if (!active) return;
       viewModel = {
         ...viewModel,
         drawings: drawings.map((drawing) => structuredClone(drawing)),
+        drawingGroups: structuredClone(drawingGroups),
         selectedDrawingIds: [...selectedDrawingIds]
       };
       if (dependencies.drawingPersistenceEnabled) {
-        dependencies.persistence.saveDrawings(state.symbol, state.adjustMode, viewModel.drawings);
+        dependencies.persistence.saveDrawingState(state.symbol, state.adjustMode, {
+          drawings: viewModel.drawings,
+          drawingGroups: viewModel.drawingGroups
+        });
       }
       publish();
     },
@@ -1964,7 +2008,7 @@ export function createChartController(
       dependencies.persistence.saveIndicators(viewModel.indicators);
       publish();
     },
-    setDrawings(drawings, selectedDrawingIds = []) {
+    setDrawings(drawings, selectedDrawingIds = [], drawingGroups = []) {
       if (!active) return;
       const drawingIds = new Set(
         drawings
@@ -1976,17 +2020,48 @@ export function createChartController(
       viewModel = {
         ...viewModel,
         drawings: drawings.map((drawing) => structuredClone(drawing)),
+        drawingGroups: structuredClone(drawingGroups),
         selectedDrawingIds: selection
       };
-      if (selection.length > 0) {
-        dependencies.runtime.setDrawings(viewModel.drawings, selection);
-      } else {
-        dependencies.runtime.setDrawings(viewModel.drawings);
-      }
+      dependencies.runtime.setDrawings(
+        viewModel.drawings,
+        selection,
+        viewModel.drawingGroups
+      );
       if (dependencies.drawingPersistenceEnabled) {
-        dependencies.persistence.saveDrawings(state.symbol, state.adjustMode, viewModel.drawings);
+        dependencies.persistence.saveDrawingState(state.symbol, state.adjustMode, {
+          drawings: viewModel.drawings,
+          drawingGroups: viewModel.drawingGroups
+        });
       }
       publish();
+    },
+    createDrawingGroup(drawingIds, name = `Group ${viewModel.drawingGroups.length + 1}`) {
+      if (!active) {
+        throw new DOMException("Drawing groups are unavailable", "InvalidStateError");
+      }
+      return dependencies.runtime.createDrawingGroup([...drawingIds], name) as ChartDrawingGroupId;
+    },
+    setDrawingGroupName(id, name) {
+      if (active) dependencies.runtime.setDrawingGroupName(id, name);
+    },
+    setDrawingGroupMembers(id, drawingIds) {
+      if (active) dependencies.runtime.setDrawingGroupMembers(id, [...drawingIds]);
+    },
+    setDrawingGroupVisible(id, visible) {
+      if (active) dependencies.runtime.setDrawingGroupVisible(id, visible);
+    },
+    setDrawingGroupLocked(id, locked) {
+      if (active) dependencies.runtime.setDrawingGroupLocked(id, locked);
+    },
+    moveDrawingGroup(id, direction) {
+      if (active) dependencies.runtime.moveDrawingGroup(id, direction);
+    },
+    ungroupDrawingGroup(id) {
+      if (active) dependencies.runtime.ungroupDrawingGroup(id);
+    },
+    deleteDrawingGroupDrawings(id) {
+      if (active) dependencies.runtime.deleteDrawingGroupDrawings(id);
     },
     setMarks(marks) {
       if (!active) return;
@@ -2129,7 +2204,11 @@ export function createChartController(
   dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
   dependencies.runtime.setIndicators(viewModel.indicators);
   dependencies.runtime.setComparisonData([]);
-  dependencies.runtime.setDrawings(viewModel.drawings);
+  dependencies.runtime.setDrawings(
+    viewModel.drawings,
+    viewModel.selectedDrawingIds,
+    viewModel.drawingGroups
+  );
   dependencies.runtime.setMarks(viewModel.marks);
   dependencies.runtime.setGridVisible(viewModel.gridVisible);
   dependencies.runtime.setExecutionsVisible(viewModel.executionsVisible);

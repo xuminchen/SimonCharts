@@ -141,14 +141,63 @@ describe("browser persistence", () => {
   it("isolates drawings by workspace, persistence scope, data context, symbol, and adjustment but not timeframe", () => {
     const storage = new MemoryStorage();
     const persistence = createBrowserPersistence("trs", "user-1", "cutoff:2026-07-16", storage, vi.fn());
-    persistence.saveDrawings(stock, "forward", drawings);
+    const state = {
+      drawings,
+      drawingGroups: [{
+        id: "drawing-group:plan" as const,
+        name: "Plan",
+        drawingIds: ["d1"]
+      }]
+    };
+    persistence.saveDrawingState(stock, "forward", state);
 
-    expect(persistence.loadDrawings(stock, "forward")).toEqual(drawings);
-    expect(persistence.loadDrawings(stock, "backward")).toEqual([]);
-    expect(persistence.loadDrawings({ ...stock, id: "stock:SZSE:000001" }, "forward")).toEqual([]);
-    expect(createBrowserPersistence("trs", "user-2", "cutoff:2026-07-16", storage, vi.fn()).loadDrawings(stock, "forward")).toEqual([]);
-    expect(createBrowserPersistence("trs", "user-1", "cutoff:2026-07-15", storage, vi.fn()).loadDrawings(stock, "forward")).toEqual([]);
+    expect(persistence.loadDrawingState(stock, "forward")).toEqual(state);
+    expect(persistence.loadDrawingState(stock, "backward")).toEqual({
+      drawings: [],
+      drawingGroups: []
+    });
+    expect(persistence.loadDrawingState(
+      { ...stock, id: "stock:SZSE:000001" },
+      "forward"
+    )).toEqual({ drawings: [], drawingGroups: [] });
+    expect(createBrowserPersistence(
+      "trs",
+      "user-2",
+      "cutoff:2026-07-16",
+      storage,
+      vi.fn()
+    ).loadDrawingState(stock, "forward")).toEqual({
+      drawings: [],
+      drawingGroups: []
+    });
+    expect(createBrowserPersistence(
+      "trs",
+      "user-1",
+      "cutoff:2026-07-15",
+      storage,
+      vi.fn()
+    ).loadDrawingState(stock, "forward")).toEqual({
+      drawings: [],
+      drawingGroups: []
+    });
     expect(storage.entries().map(([key]) => key).join(" ")).not.toContain("1m");
+  });
+
+  it("loads the legacy drawing array as an ungrouped drawing document", () => {
+    const storage = new MemoryStorage();
+    const key = "simoncharts:workspace:v1:trs:user-1:drawings:current:stock%3ASSE%3A600000:forward";
+    storage.setItem(key, JSON.stringify({ schemaVersion: 1, value: drawings }));
+
+    expect(createBrowserPersistence(
+      "trs",
+      "user-1",
+      "current",
+      storage,
+      vi.fn()
+    ).loadDrawingState(stock, "forward")).toEqual({
+      drawings,
+      drawingGroups: []
+    });
   });
 
   it("discards only a corrupted namespace and reports a safe read error", () => {
@@ -173,17 +222,19 @@ describe("browser persistence", () => {
       { instanceId: "ma-primary", id: "MA", params: { period: 5 }, visible: true },
       { instanceId: "ma-primary", id: "MA", params: { period: 10 }, visible: true }
     ]);
-    persistence.saveDrawings(stock, "forward", [drawings[0]!, drawings[0]!]);
+    expect(() => persistence.saveDrawingState(stock, "forward", {
+      drawings: [drawings[0]!, drawings[0]!],
+      drawingGroups: []
+    })).toThrow();
 
     expect(persistence.loadIndicators()).toEqual([]);
-    expect(persistence.loadDrawings(stock, "forward")).toEqual([]);
-    expect(onError).toHaveBeenCalledTimes(2);
+    expect(persistence.loadDrawingState(stock, "forward")).toEqual({
+      drawings: [],
+      drawingGroups: []
+    });
+    expect(onError).toHaveBeenCalledTimes(1);
     expect(onError).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ code: "STORAGE_READ_FAILED" })
-    );
-    expect(onError).toHaveBeenNthCalledWith(
-      2,
       expect.objectContaining({ code: "STORAGE_READ_FAILED" })
     );
   });

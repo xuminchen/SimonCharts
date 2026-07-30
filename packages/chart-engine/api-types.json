@@ -75,6 +75,7 @@
   "DrawingEditorPoint",
   "DrawingEditorState",
   "DrawingEditorTool",
+  "DrawingGroup",
   "DrawingHandleDragKind",
   "DrawingHandleDragOperation",
   "DrawingHandleDragOptions",

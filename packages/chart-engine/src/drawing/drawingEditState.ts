@@ -2,6 +2,12 @@ import type { DrawingObject } from "./drawingTypes";
 
 export type DrawingHandleKind = "anchor" | "rotate" | "resize";
 
+export interface DrawingGroup {
+  id: string;
+  name: string;
+  drawingIds: string[];
+}
+
 export interface DrawingActiveHandle {
   drawingId: string;
   kind: DrawingHandleKind;

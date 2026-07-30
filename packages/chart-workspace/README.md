@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.46.tgz
+npm install ./simoncharts-charts-1.0.0-rc.47.tgz
 ```
 
 ## Embed the default chart
@@ -321,17 +321,34 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
       params: { period: 5 },
       visible: true
     }]);
-    chart.setDrawings([{
-      id: "planned-entry-range",
-      type: "datePriceRange",
-      anchors: [
-        { time: planStartCandleTime, price: planLowPrice },
-        { time: planEndCandleTime, price: planHighPrice }
-      ],
-      interactive: false,
-      affectsPriceScale: true,
-      locked: true
-    }]);
+    chart.setDrawings([
+      {
+        id: "planned-entry-range",
+        type: "datePriceRange",
+        anchors: [
+          { time: planStartCandleTime, price: planLowPrice },
+          { time: planEndCandleTime, price: planHighPrice }
+        ],
+        interactive: false,
+        affectsPriceScale: true
+      },
+      {
+        id: "planned-exit-range",
+        type: "datePriceRange",
+        anchors: [
+          { time: planStartCandleTime, price: targetLowPrice },
+          { time: planEndCandleTime, price: targetHighPrice }
+        ],
+        interactive: false,
+        affectsPriceScale: true
+      }
+    ]);
+    const groups = chart.getDrawingGroupsApi();
+    const planGroupId = groups.create(
+      ["planned-entry-range", "planned-exit-range"],
+      "交易计划"
+    );
+    groups.setLocked(planGroupId, true);
     chart.setMarks(marks);
     chart.setDrawingTool("trendLine");
     chart.undoDrawing();
@@ -363,6 +380,10 @@ Ordinary timeframe views also support native right-axis drag for manual scaling 
 `interactive` defaults to `true`. Setting it to `false` keeps the Drawing visible and available to `setDrawings()`, `getDrawings()`, Entity API, and layout export/import, but removes it from hover, hit testing, handles, selection, pointer capture, drag, and keyboard edits. It therefore cannot change the crosshair cursor or block chart pan, zoom, crosshair, execution-mark, or host-mark interaction. `locked` is separate: a locked Drawing remains interactive unless `interactive: false` is also set.
 
 `affectsPriceScale` defaults to `false`. For `datePriceRange` and `priceRange`, setting it to `true` extends the automatic main price scale only while the Drawing is visible, both price anchors are finite and valid for the active scale, and its time interval intersects the visible real candle interval. Hidden, off-window, invalid, and default Drawings do not affect the axis. Manual price-axis scaling remains host/user controlled.
+
+`getDrawingGroupsApi()` returns one stable controller over the existing Drawing editor. `create()` requires at least two unique, unlocked, ungrouped Drawing IDs; `setMembers()` keeps at least one member. A Drawing belongs to at most one group, group members stay contiguous in the shared z-order, and locked Drawings are not crossed while compacting or moving a group. Visibility and lock commands update member Drawings rather than storing a second group-level value. Group commands use the same Drawing undo/redo history and state callback, and invalid commands are atomic without cancelling an active Drawing or chart gesture. `interactive: false` Drawings remain programmatically manageable but are disabled in the Objects inspector.
+
+`ChartLayoutV3.drawingGroups` is optional. Missing or empty groups preserve legacy layouts; valid groups round-trip with Drawings. Browser Drawing persistence writes `{ drawings, drawingGroups }` through the existing symbol/adjust-scoped key in one operation and still reads the legacy Drawing-array shape.
 
 Because drawings are inside the portable layout, host storage must scope each saved layout by `dataContextId + symbol.id + adjustMode`; recompute that key after changing symbol or adjustment and ignore stale async loads. Intraday is always a line view, so importing a non-line layout or selecting a non-line series while intraday is active is rejected instead of partially applying.
 
@@ -652,7 +673,7 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.46 adds the transient native Data Table View over the existing rendered series,
-Study outputs, and comparison snapshots. The public display-mode switch does not add a
-second market-data or persistence model, and the advanced More/context-menu entry shares
-that same action. rc.46 preserves rc.45 and every earlier RC contract.
+Current rc.47 adds native Drawing Groups and Object Tree controls over the existing Drawing
+editor, history, Layout V3, and browser Drawing document. It adds no second Drawing store,
+history, renderer, dependency, or persistence key. rc.47 preserves rc.46 and every earlier
+RC contract.

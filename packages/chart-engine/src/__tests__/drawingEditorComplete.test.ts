@@ -14,6 +14,7 @@ describe("complete drawing editor", () => {
 
     expect(editor.getState()).toEqual({
       drawings: [],
+      drawingGroups: [],
       selectedDrawingIds: [],
       activeTool: "select",
       isCreating: false,

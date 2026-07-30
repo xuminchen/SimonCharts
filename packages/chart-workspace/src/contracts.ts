@@ -490,6 +490,27 @@ export interface ChartDrawing {
   readonly metadata?: Readonly<Record<string, ChartJsonValue>>;
 }
 
+export type ChartDrawingGroupId = `drawing-group:${string}`;
+export type ChartDrawingGroupMove = "forward" | "backward" | "front" | "back";
+
+export interface ChartDrawingGroup {
+  readonly id: ChartDrawingGroupId;
+  readonly name: string;
+  readonly drawingIds: readonly string[];
+}
+
+export interface ChartDrawingGroupsApi {
+  getAll(): readonly ChartDrawingGroup[];
+  create(drawingIds: readonly string[], name?: string): ChartDrawingGroupId;
+  setName(id: ChartDrawingGroupId, name: string): void;
+  setMembers(id: ChartDrawingGroupId, drawingIds: readonly string[]): void;
+  setVisible(id: ChartDrawingGroupId, visible: boolean): void;
+  setLocked(id: ChartDrawingGroupId, locked: boolean): void;
+  move(id: ChartDrawingGroupId, direction: ChartDrawingGroupMove): void;
+  ungroup(id: ChartDrawingGroupId): void;
+  deleteDrawings(id: ChartDrawingGroupId): void;
+}
+
 export type ChartJsonValue =
   | string
   | number
@@ -705,6 +726,7 @@ export interface ChartLayoutV3 {
   readonly priceScaleMode: ChartPriceScaleMode;
   readonly indicators: readonly ChartIndicator[];
   readonly drawings: readonly ChartDrawing[];
+  readonly drawingGroups?: readonly ChartDrawingGroup[];
   readonly gridVisible: boolean;
   readonly panes: readonly ChartPaneLayout[];
 }
@@ -771,6 +793,7 @@ export interface ChartInstance {
   getStudyById(entityId: ChartIndicatorEntityId): ChartIndicator | undefined;
   getStudyApi(entityId: ChartIndicatorEntityId): ChartStudyApi | undefined;
   getAllStudies(): readonly ChartIndicator[];
+  getDrawingGroupsApi(): ChartDrawingGroupsApi;
   removeStudy(entityId: ChartIndicatorEntityId): boolean;
   createEntity(entity: ChartEntityInput): ChartEntityId;
   getEntity(entityId: ChartEntityId): ChartEntity | undefined;

@@ -9,6 +9,7 @@ import {
 } from "@simoncharts/chart-engine";
 import type {
   AdjustMode,
+  ChartDrawingGroup,
   ChartSeriesProperties,
   ChartSeriesVisualOverrides,
   ChartSymbol,
@@ -17,6 +18,7 @@ import type {
 import { createChartError, type ChartError } from "../errors";
 import {
   fromEngineDrawings,
+  parseDrawingGroups,
   parseIndicators,
   parseSeriesProperties,
   parseSeriesVisualOverrides,
@@ -78,6 +80,11 @@ export const defaultPreferences: WorkspacePreferences = Object.freeze({
 
 export type BrowserPersistenceErrorHandler = (error: ChartError) => void;
 
+export interface DrawingDocument {
+  readonly drawings: readonly DrawingObject[];
+  readonly drawingGroups: readonly ChartDrawingGroup[];
+}
+
 export interface BrowserPersistence {
   loadLayout(): WorkspaceLayoutState;
   saveLayout(value: WorkspaceLayoutState): void;
@@ -85,8 +92,8 @@ export interface BrowserPersistence {
   savePreferences(value: WorkspacePreferences): void;
   loadIndicators(): readonly IndicatorConfig[];
   saveIndicators(value: readonly IndicatorConfig[]): void;
-  loadDrawings(symbol: ChartSymbol, adjustMode: AdjustMode): readonly DrawingObject[];
-  saveDrawings(symbol: ChartSymbol, adjustMode: AdjustMode, value: readonly DrawingObject[]): void;
+  loadDrawingState(symbol: ChartSymbol, adjustMode: AdjustMode): DrawingDocument;
+  saveDrawingState(symbol: ChartSymbol, adjustMode: AdjustMode, value: DrawingDocument): void;
 }
 
 interface Envelope {
@@ -253,16 +260,35 @@ export function createBrowserPersistence(
       indicatorsKey,
       value.filter((indicator) => !indicator.id.startsWith("custom:"))
     ),
-    loadDrawings(symbol, adjustMode) {
-      const serialized = read(
+    loadDrawingState(symbol, adjustMode) {
+      const stored = read<unknown>(
         drawingKey(symbol.id, adjustMode),
-        [] as readonly unknown[],
-        Array.isArray
+        [],
+        (_value): _value is unknown => true
       );
       try {
-        return toEngineDrawings(fromEngineDrawings(
-          serialized.map((item) => deserializeDrawingObject(item))
+        const serializedDrawings = Array.isArray(stored)
+          ? stored
+          : isRecord(stored) &&
+              Array.isArray(stored.drawings) &&
+              Array.isArray(stored.drawingGroups)
+            ? stored.drawings
+            : undefined;
+        const rawDrawingGroups = Array.isArray(stored)
+          ? []
+          : isRecord(stored) && Array.isArray(stored.drawingGroups)
+            ? stored.drawingGroups
+            : undefined;
+        if (serializedDrawings === undefined || rawDrawingGroups === undefined) {
+          throw new TypeError("Stored drawing document is invalid");
+        }
+        const drawings = toEngineDrawings(fromEngineDrawings(
+          serializedDrawings.map((item) => deserializeDrawingObject(item))
         ));
+        return {
+          drawings,
+          drawingGroups: parseDrawingGroups(rawDrawingGroups, fromEngineDrawings(drawings))
+        };
       } catch {
         try {
           storage.removeItem(drawingKey(symbol.id, adjustMode));
@@ -270,13 +296,20 @@ export function createBrowserPersistence(
           // The invalid drawing namespace is already isolated from runtime state.
         }
         reportReadError();
-        return [];
+        return { drawings: [], drawingGroups: [] };
       }
     },
-    saveDrawings(symbol, adjustMode, value) {
+    saveDrawingState(symbol, adjustMode, value) {
+      const drawingGroups = parseDrawingGroups(
+        value.drawingGroups,
+        fromEngineDrawings(value.drawings)
+      );
       write(
         drawingKey(symbol.id, adjustMode),
-        value.map((drawing) => serializeDrawingObject(drawing))
+        {
+          drawings: value.drawings.map((drawing) => serializeDrawingObject(drawing)),
+          drawingGroups
+        }
       );
     }
   };

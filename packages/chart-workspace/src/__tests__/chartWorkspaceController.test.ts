@@ -39,13 +39,17 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), getBarSpacing: vi.fn(() => 8), setBarSpacing: vi.fn(), getWidth: vi.fn(() => 800), timeToCoordinate: vi.fn(), coordinateToTime: vi.fn(), scrollByBars: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn(), fitContent: vi.fn(), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setSeriesVisualOverrides: vi.fn(), setIndicators: vi.fn(), setComparisonData: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), getBarSpacing: vi.fn(() => 8), setBarSpacing: vi.fn(), getWidth: vi.fn(() => 800), timeToCoordinate: vi.fn(), coordinateToTime: vi.fn(), scrollByBars: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn(), fitContent: vi.fn(), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setSeriesVisualOverrides: vi.fn(), setIndicators: vi.fn(), setComparisonData: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), createDrawingGroup: vi.fn(() => "drawing-group:1"), setDrawingGroupName: vi.fn(), setDrawingGroupMembers: vi.fn(), setDrawingGroupVisible: vi.fn(), setDrawingGroupLocked: vi.fn(), moveDrawingGroup: vi.fn(), ungroupDrawingGroup: vi.fn(), deleteDrawingGroupDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
       loadPreferences: vi.fn(() => structuredClone(defaultPreferences)), savePreferences: vi.fn(),
       loadIndicators: vi.fn(() => []), saveIndicators: vi.fn(),
-      loadDrawings: vi.fn(() => [] as DrawingObject[]), saveDrawings: vi.fn()
+      loadDrawingState: vi.fn(() => ({
+        drawings: [] as DrawingObject[],
+        drawingGroups: []
+      })),
+      saveDrawingState: vi.fn()
     },
     onError: vi.fn(),
     onViewModelChanged: vi.fn()
@@ -210,10 +214,63 @@ describe("chart workspace controller", () => {
       marks
     });
     expect(deps.runtime.setDrawings).toHaveBeenLastCalledWith(
-      expect.arrayContaining([expect.objectContaining({ id: "d1" })])
+      expect.arrayContaining([expect.objectContaining({ id: "d1" })]),
+      [],
+      []
     );
     expect(deps.runtime.setMarks).toHaveBeenLastCalledWith(marks);
-    expect(deps.persistence.saveDrawings).toHaveBeenCalledWith(stock, "forward", expect.any(Array));
+    expect(deps.persistence.saveDrawingState).toHaveBeenCalledWith(
+      stock,
+      "forward",
+      expect.objectContaining({ drawings: expect.any(Array), drawingGroups: [] })
+    );
+  });
+
+  it("keeps drawing groups in the same runtime state and persistence document", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    const drawings: DrawingObject[] = [
+      { id: "a", type: "trendLine", anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }] },
+      { id: "b", type: "trendLine", anchors: [{ time: 2, price: 11 }, { time: 3, price: 12 }] }
+    ];
+    const groups = [{
+      id: "drawing-group:1" as const,
+      name: "Plan",
+      drawingIds: ["a", "b"]
+    }];
+
+    controller.setDrawings(drawings, ["a"], groups);
+    expect(deps.runtime.setDrawings).toHaveBeenLastCalledWith(drawings, ["a"], groups);
+
+    controller.handleDrawingsChanged(drawings, ["a"], groups);
+    groups[0]!.name = "Changed";
+    expect(controller.getViewModel().drawingGroups[0]?.name).toBe("Plan");
+    expect(deps.persistence.saveDrawingState).toHaveBeenLastCalledWith(
+      stock,
+      "forward",
+      expect.objectContaining({
+        drawings: expect.any(Array),
+        drawingGroups: [{ id: "drawing-group:1", name: "Plan", drawingIds: ["a", "b"] }]
+      })
+    );
+
+    expect(controller.createDrawingGroup(["a", "b"], "Group")).toBe("drawing-group:1");
+    controller.setDrawingGroupName("drawing-group:1", "Renamed");
+    controller.setDrawingGroupMembers("drawing-group:1", ["a"]);
+    controller.setDrawingGroupVisible("drawing-group:1", false);
+    controller.setDrawingGroupLocked("drawing-group:1", true);
+    controller.moveDrawingGroup("drawing-group:1", "front");
+    controller.ungroupDrawingGroup("drawing-group:1");
+    controller.deleteDrawingGroupDrawings("drawing-group:1");
+
+    expect(deps.runtime.createDrawingGroup).toHaveBeenCalledWith(["a", "b"], "Group");
+    expect(deps.runtime.setDrawingGroupName).toHaveBeenCalledWith("drawing-group:1", "Renamed");
+    expect(deps.runtime.setDrawingGroupMembers).toHaveBeenCalledWith("drawing-group:1", ["a"]);
+    expect(deps.runtime.setDrawingGroupVisible).toHaveBeenCalledWith("drawing-group:1", false);
+    expect(deps.runtime.setDrawingGroupLocked).toHaveBeenCalledWith("drawing-group:1", true);
+    expect(deps.runtime.moveDrawingGroup).toHaveBeenCalledWith("drawing-group:1", "front");
+    expect(deps.runtime.ungroupDrawingGroup).toHaveBeenCalledWith("drawing-group:1");
+    expect(deps.runtime.deleteDrawingGroupDrawings).toHaveBeenCalledWith("drawing-group:1");
   });
 
   it("keeps drawing selection when the same presentation rematerializes", async () => {
@@ -249,7 +306,8 @@ describe("chart workspace controller", () => {
 
     expect(deps.runtime.setDrawings).toHaveBeenLastCalledWith(
       expect.any(Array),
-      ["d1"]
+      ["d1"],
+      []
     );
   });
 
@@ -273,10 +331,10 @@ describe("chart workspace controller", () => {
     deps.drawingPersistenceEnabled = false;
     const controller = createChartController(deps);
 
-    expect(deps.persistence.loadDrawings).not.toHaveBeenCalled();
+    expect(deps.persistence.loadDrawingState).not.toHaveBeenCalled();
     controller.start();
     await vi.waitFor(() => expect(deps.dataCoordinator.start).toHaveBeenCalledTimes(1));
-    expect(deps.persistence.loadDrawings).not.toHaveBeenCalled();
+    expect(deps.persistence.loadDrawingState).not.toHaveBeenCalled();
 
     controller.handleDrawingsChanged([
       {
@@ -287,7 +345,7 @@ describe("chart workspace controller", () => {
         affectsPriceScale: true
       }
     ]);
-    expect(deps.persistence.saveDrawings).not.toHaveBeenCalled();
+    expect(deps.persistence.saveDrawingState).not.toHaveBeenCalled();
   });
 
   it("keeps drawing persistence active when a drawing surface is enabled", () => {
@@ -297,9 +355,12 @@ describe("chart workspace controller", () => {
       { id: "d1", type: "trendLine", anchors: [{ time: 1, price: 10 }, { time: 2, price: 11 }] }
     ];
 
-    expect(deps.persistence.loadDrawings).toHaveBeenCalledWith(stock, "forward");
+    expect(deps.persistence.loadDrawingState).toHaveBeenCalledWith(stock, "forward");
     controller.handleDrawingsChanged(drawings);
-    expect(deps.persistence.saveDrawings).toHaveBeenCalledWith(stock, "forward", drawings);
+    expect(deps.persistence.saveDrawingState).toHaveBeenCalledWith(stock, "forward", {
+      drawings,
+      drawingGroups: []
+    });
   });
 
   it("keeps minimal series presets transient while advanced charts retain their preference", () => {
