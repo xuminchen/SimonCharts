@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.44.tgz
+npm install ./simoncharts-charts-1.0.0-rc.45.tgz
 ```
 
 ## Embed the default chart
@@ -95,6 +95,42 @@ chart.setThemeOverrides({}); // reset to the active base theme
 ```
 
 The public override keys are `backgroundColor`, `surfaceColor`, `surfaceHoverColor`, `borderColor`, `gridColor`, `textColor`, `mutedTextColor`, `accentColor`, `upColor`, `downColor`, and `intradayAverageColor`. Values must be bounded concrete CSS colors; indirect `var(...)`, `currentColor`, CSS-wide keywords, accessors, unknown fields, and invalid colors are rejected before any token changes.
+
+## Override series and Study visuals
+
+Main-series overrides are sparse and scoped by series type. Passing only `type` clears that type's override. The active type repaints immediately; inactive types are retained until selected.
+
+```ts
+chart.setSeriesVisualOverrides({
+  type: "candles",
+  upColor: "#f04455",
+  downColor: "#00aa91",
+  lineWidth: 2
+});
+chart.getSeriesVisualOverrides("candles");
+chart.setSeriesVisualOverrides({ type: "candles" }); // reset
+```
+
+Series overrides may also be supplied in `ChartOptions.seriesVisualOverrides`. They round-trip through `ChartLayoutV3` and browser preferences without changing Candle data, calculations, or the price scale. The fixed intraday close-line view ignores ordinary series overrides.
+
+Each Study output uses its declared output id and type. Style-only changes reuse the current calculation; hiding an output removes it from rendering, auto-scale, hit testing, crosshair values, and the data window.
+
+```ts
+const study = chart.getStudyApi(studyEntityId);
+study?.setVisualOverrides([
+  {
+    outputId: "MA",
+    type: "line",
+    color: "#7c3aed",
+    lineWidth: 3
+  }
+]);
+study?.setVisualOverrides([
+  { outputId: "MA", type: "line", visible: false }
+]);
+```
+
+Unknown fields, duplicate output ids, wrong output types, indirect colors, invalid visibility values, and line widths outside `0.5` through `10` are rejected atomically.
 
 ## Control the view and visible range
 
@@ -590,4 +626,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.44 adds a frozen `ChartTimeScaleApi` and finite `ChartActionId` command surface over the existing native viewport, bounded paging, and Drawing history paths. It exposes visible ranges, bar spacing, plot width, exact loaded-time coordinate conversion, Bar-based scrolling, zoom, bounded fit, time-scale reset, and chart reset without publishing the internal engine dispatcher. Fixed intraday remains immutable, and viewport state stays outside Layout V3 and browser persistence. rc.44 preserves rc.43 and every earlier RC contract.
+Current rc.45 adds sparse main-series visual overrides and per-output Study visual overrides over the existing renderer. Series styles remain isolated by type and persist through Layout V3 and preferences; Study styles and visibility use the existing Study API and calculation outputs without a second renderer or recalculation on style-only changes. rc.45 preserves rc.44 and every earlier RC contract.

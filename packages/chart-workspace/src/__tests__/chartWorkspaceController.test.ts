@@ -39,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), getBarSpacing: vi.fn(() => 8), setBarSpacing: vi.fn(), getWidth: vi.fn(() => 800), timeToCoordinate: vi.fn(), coordinateToTime: vi.fn(), scrollByBars: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn(), fitContent: vi.fn(), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setComparisonData: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), getBarSpacing: vi.fn(() => 8), setBarSpacing: vi.fn(), getWidth: vi.fn(() => 800), timeToCoordinate: vi.fn(), coordinateToTime: vi.fn(), scrollByBars: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn(), fitContent: vi.fn(), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setSeriesVisualOverrides: vi.fn(), setIndicators: vi.fn(), setComparisonData: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -446,6 +446,132 @@ describe("chart workspace controller", () => {
     expect(controller.getViewModel().seriesProperties).toEqual([
       { type: "lineBreak", lineCount: 4 }
     ]);
+  });
+
+  it("stores sparse series visual overrides and applies only the active series type", () => {
+    const deps = dependencies();
+    const controller = createChartController(deps);
+    vi.mocked(deps.runtime.setSeriesVisualOverrides).mockClear();
+    vi.mocked(deps.persistence.savePreferences).mockClear();
+
+    controller.setSeriesVisualOverrides({
+      type: "line",
+      color: "#2962ff",
+      lineWidth: 2
+    });
+    expect(controller.getViewModel().seriesVisualOverrides).toEqual([
+      { type: "line", color: "#2962ff", lineWidth: 2 }
+    ]);
+    expect(deps.runtime.setSeriesVisualOverrides).not.toHaveBeenCalled();
+
+    const candles = {
+      type: "candles" as const,
+      upColor: "#ef4444",
+      downColor: "#22c55e"
+    };
+    controller.setSeriesVisualOverrides(candles);
+    candles.upColor = "#000000";
+
+    expect(controller.getViewModel().seriesVisualOverrides).toEqual([
+      { type: "line", color: "#2962ff", lineWidth: 2 },
+      { type: "candles", upColor: "#ef4444", downColor: "#22c55e" }
+    ]);
+    expect(deps.runtime.setSeriesVisualOverrides).toHaveBeenLastCalledWith({
+      type: "candles",
+      upColor: "#ef4444",
+      downColor: "#22c55e"
+    });
+    expect(deps.persistence.savePreferences).toHaveBeenLastCalledWith({
+      ...defaultPreferences,
+      seriesVisualOverrides: [
+        { type: "line", color: "#2962ff", lineWidth: 2 },
+        { type: "candles", upColor: "#ef4444", downColor: "#22c55e" }
+      ]
+    });
+
+    vi.mocked(deps.runtime.setSeriesVisualOverrides).mockClear();
+    controller.setSeriesType("line");
+    expect(deps.runtime.setSeriesVisualOverrides).toHaveBeenLastCalledWith({
+      type: "line",
+      color: "#2962ff",
+      lineWidth: 2
+    });
+
+    controller.setSeriesVisualOverrides({ type: "line" });
+    expect(controller.getViewModel().seriesVisualOverrides).toEqual([
+      { type: "candles", upColor: "#ef4444", downColor: "#22c55e" }
+    ]);
+    expect(deps.runtime.setSeriesVisualOverrides).toHaveBeenLastCalledWith({
+      type: "line"
+    });
+
+    vi.mocked(deps.runtime.setSeriesVisualOverrides).mockClear();
+    controller.setSeriesType("area");
+    expect(deps.runtime.setSeriesVisualOverrides).toHaveBeenCalledWith(undefined);
+  });
+
+  it("gives explicit series visual overrides precedence and preserves saved values when persistence is disabled", () => {
+    const deps = dependencies();
+    deps.seriesTypePersistenceEnabled = false;
+    deps.persistence.loadPreferences = vi.fn(() => ({
+      ...structuredClone(defaultPreferences),
+      seriesType: "line",
+      seriesVisualOverrides: [
+        { type: "line", color: "#111111" },
+        { type: "candles", upColor: "#222222" }
+      ]
+    }));
+    deps.initialSeriesVisualOverrides = [
+      { type: "candles", upColor: "#ef4444", downColor: "#22c55e" }
+    ];
+
+    const controller = createChartController(deps);
+    expect(controller.getViewModel().seriesVisualOverrides).toEqual([
+      { type: "candles", upColor: "#ef4444", downColor: "#22c55e" }
+    ]);
+    expect(deps.runtime.setSeriesVisualOverrides).toHaveBeenLastCalledWith({
+      type: "candles",
+      upColor: "#ef4444",
+      downColor: "#22c55e"
+    });
+
+    controller.setGridVisible(false);
+    expect(deps.persistence.savePreferences).toHaveBeenLastCalledWith({
+      seriesType: "line",
+      favoriteTimeframes: defaultPreferences.favoriteTimeframes,
+      priceScaleMode: "linear",
+      gridVisible: false,
+      seriesVisualOverrides: [
+        { type: "line", color: "#111111" },
+        { type: "candles", upColor: "#222222" }
+      ]
+    });
+  });
+
+  it("merges persisted series visual overrides behind explicit options by series type", () => {
+    const deps = dependencies();
+    deps.persistence.loadPreferences = vi.fn(() => ({
+      ...structuredClone(defaultPreferences),
+      seriesVisualOverrides: [
+        { type: "line", color: "#111111" },
+        { type: "candles", upColor: "#222222" }
+      ]
+    }));
+    deps.initialSeriesVisualOverrides = [
+      { type: "candles", upColor: "#ef4444", downColor: "#22c55e" }
+    ];
+
+    const controller = createChartController(deps);
+
+    expect(controller.getViewModel().seriesVisualOverrides).toEqual([
+      { type: "line", color: "#111111" },
+      { type: "candles", upColor: "#ef4444", downColor: "#22c55e" }
+    ]);
+    expect(deps.runtime.setSeriesVisualOverrides).toHaveBeenLastCalledWith({
+      type: "candles",
+      upColor: "#ef4444",
+      downColor: "#22c55e"
+    });
   });
 
   it("caps timeframe favorites at four without changing the active market selection", () => {

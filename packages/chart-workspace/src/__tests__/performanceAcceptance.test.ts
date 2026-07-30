@@ -101,6 +101,63 @@ function materialized(start = 1, count = 100): MaterializedSeries {
 }
 
 describe("workspace engine runtime", () => {
+  it("applies series visual overrides only to the active timeframe series layer", async () => {
+    const staticCanvas = new FakeCanvas();
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => frames.delete(id),
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration
+    });
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    runtime.setMaterializedSeries(materialized());
+    runtime.setSeriesType("candles");
+    runtime.setSeriesVisualOverrides({
+      type: "candles",
+      upColor: "#ff00aa",
+      downColor: "#00ffaa",
+      lineWidth: 3
+    });
+    flushFrames();
+    expect(staticCanvas.strokeStyles).toContain("#ff00aa");
+
+    staticCanvas.strokeStyles.splice(0);
+    runtime.setSeriesType("line");
+    runtime.setSeriesVisualOverrides({ type: "line", color: "#1234ff", lineWidth: 4 });
+    flushFrames();
+    expect(staticCanvas.strokeStyles).toContain("#1234ff");
+
+    runtime.setSeriesType("renko");
+    expect(() => runtime.setSeriesVisualOverrides({
+      type: "renko",
+      upColor: "#ff5500",
+      downColor: "#00aa55"
+    })).not.toThrow();
+    await Promise.resolve();
+
+    staticCanvas.strokeStyles.splice(0);
+    runtime.setMaterializedSeries({
+      ...materialized(),
+      intradayDays: 1,
+      intradayScale: { previousClose: 100, priceLimitPercent: 10 }
+    });
+    flushFrames();
+    expect(staticCanvas.strokeStyles).not.toContain("#1234ff");
+    runtime.destroy();
+  });
+
   it("renders comparison data on the native percentage scale and publishes exact crosshair values", () => {
     const staticCanvas = new FakeCanvas();
     const overlayCanvas = new FakeCanvas();
@@ -771,6 +828,29 @@ describe("workspace engine runtime", () => {
     ]);
     expect(events.at(-1)?.studies[2]?.outputs).toEqual([
       { id: "SAR", title: "SAR", type: "marker", value: 80 + targetIndex }
+    ]);
+
+    runtime.setIndicators([
+      {
+        instanceId: "macd-a",
+        id: "MACD",
+        params: { fast: 12, slow: 26, signal: 9 },
+        visible: true,
+        visualOverrides: [{
+          outputId: "MACD-DEA",
+          type: "line",
+          visible: false
+        }]
+      },
+      { instanceId: "boll-a", id: "BOLL", params: { period: 20, deviation: 2 }, visible: true },
+      { instanceId: "sar-a", id: "SAR", params: { step: 0.02, max: 0.2 }, visible: true },
+      { instanceId: "hidden-a", id: "MA", params: { period: 5 }, visible: false }
+    ]);
+    flushFrames();
+    expect(calculateIndicators).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)?.studies[0]?.outputs.map((output) => output.id)).toEqual([
+      "MACD-DIF",
+      "MACD-HISTOGRAM"
     ]);
 
     deferNextCalculation = true;
@@ -1891,6 +1971,105 @@ describe("workspace engine runtime", () => {
     expect(Math.max(...numericLabels)).toBeLessThan(1_000);
     expect(staticCanvas.texts).not.toContain("NaN");
     expect(staticCanvas.texts).not.toContain("Infinity");
+    runtime.destroy();
+  });
+
+  it("removes hidden study outputs from pane autoscale without recalculating", async () => {
+    const staticCanvas = new FakeCanvas();
+    const snapshots: Array<import("../runtime/chartEngineRuntime").DataWindowSnapshot | undefined> = [];
+    const frames = new Map<number, () => void>();
+    let nextFrame = 1;
+    const source = materialized(1, 100);
+    const calculateIndicators = vi.fn(async ({ configs }) =>
+      new Map(configs.map((config) => [config.instanceId, {
+        outputs: [
+          {
+            id: indicatorOutputId(config.instanceId, "RSI"),
+            label: "RSI",
+            type: "line" as const,
+            panelId: indicatorPanelId(config.instanceId),
+            values: source.series.candles.map((candle) => ({
+              time: candle.time,
+              value: 50
+            }))
+          },
+          {
+            id: indicatorOutputId(config.instanceId, "RSI-EXTREME"),
+            label: "Extreme",
+            type: "line" as const,
+            panelId: indicatorPanelId(config.instanceId),
+            values: source.series.candles.map((candle) => ({
+              time: candle.time,
+              value: 1_000_000_000
+            }))
+          }
+        ]
+      }]))
+    );
+    const runtime = createChartEngineRuntime({
+      staticCanvas: staticCanvas as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime: {
+        calculateIndicators,
+        async calculateSeries(input) {
+          return { type: input.type, source: source.series, sourceIndexOffset: 0, points: [] };
+        }
+      },
+      requestFrame(callback) { const id = nextFrame++; frames.set(id, callback); return id; },
+      cancelFrame: (id) => frames.delete(id),
+      paneIdFor: (config) => indicatorPanelId(config.instanceId),
+      getComputedStyle: () => ({ getPropertyValue: () => "" }) as CSSStyleDeclaration,
+      onDataWindowChanged: (snapshot) => snapshots.push(snapshot)
+    });
+    const flushFrames = () => {
+      while (frames.size > 0) {
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback();
+      }
+    };
+    runtime.setMaterializedSeries(source);
+    runtime.setIndicators([{
+      instanceId: "rsi-hidden-output",
+      id: "RSI",
+      params: { period: 14 },
+      visible: true
+    }]);
+    await vi.waitFor(() => expect(calculateIndicators).toHaveBeenCalledTimes(1));
+    flushFrames();
+
+    staticCanvas.texts.splice(0);
+    runtime.setIndicators([{
+      instanceId: "rsi-hidden-output",
+      id: "RSI",
+      params: { period: 14 },
+      visible: true,
+      visualOverrides: [{
+        outputId: "RSI-EXTREME",
+        type: "line",
+        visible: false
+      }]
+    }]);
+    flushFrames();
+    expect(calculateIndicators).toHaveBeenCalledTimes(1);
+    const numericLabels = staticCanvas.texts.map(Number).filter(Number.isFinite);
+    expect(Math.max(...numericLabels)).toBeLessThan(1_000);
+
+    runtime.setIndicators([{
+      instanceId: "rsi-hidden-output",
+      id: "RSI",
+      params: { period: 14 },
+      visible: true,
+      visualOverrides: [
+        { outputId: "RSI", type: "line", visible: false },
+        { outputId: "RSI-EXTREME", type: "line", visible: false }
+      ]
+    }]);
+    flushFrames();
+    expect(calculateIndicators).toHaveBeenCalledTimes(1);
+    expect(snapshots.at(-1)?.indicatorRows).toEqual([]);
     runtime.destroy();
   });
 

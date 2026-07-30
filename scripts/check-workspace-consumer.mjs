@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.44";
+const expectedVersion = "1.0.0-rc.45";
 const suppliedTarball = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
 let tempRoot;
 
@@ -154,8 +154,10 @@ function consumerSource() {
   type ChartReplaySpeed,
   type ChartReplayState,
   type ChartSeriesProperties,
+  type ChartSeriesVisualOverrides,
   type ChartSelectableEntityId,
   type ChartStudyApi,
+  type ChartStudyOutputVisualOverride,
   type ChartThemeOverrides,
   type ChartTimeScaleApi,
   type ChartVisibleRange,
@@ -394,23 +396,33 @@ chart.setExecutionsVisible(false);
 chart.setExecutionsVisible(true);
 const renkoProperties: ChartSeriesProperties = { type: "renko", brickSize: 2 };
 chart.setSeriesProperties(renkoProperties);
+const renkoVisualOverrides: ChartSeriesVisualOverrides<"renko"> = {
+  type: "renko",
+  upColor: "#ff00ff",
+  downColor: "#00ffff",
+  lineWidth: 2
+};
+chart.setSeriesVisualOverrides(renkoVisualOverrides);
 chart.setSeriesType("renko");
 if (!await chart.dataReady()) throw new Error("configured Renko presentation was not usable");
 const seriesLayout = chart.exportLayout();
 if (
   chart.getSeriesProperties("renko").brickSize !== 2 ||
-  seriesLayout.seriesProperties?.[0]?.type !== "renko"
+  seriesLayout.seriesProperties?.[0]?.type !== "renko" ||
+  chart.getSeriesVisualOverrides("renko").upColor !== "#ff00ff" ||
+  seriesLayout.seriesVisualOverrides?.[0]?.type !== "renko"
 ) {
-  throw new Error("series properties were not exported from the packed package");
+  throw new Error("series properties or visual overrides were not exported from the packed package");
 }
 chart.setSeriesType("area");
 chart.importLayout(seriesLayout);
 if (
   !await chart.dataReady() ||
   chart.getSeriesType() !== "renko" ||
-  chart.getSeriesProperties("renko").brickSize !== 2
+  chart.getSeriesProperties("renko").brickSize !== 2 ||
+  chart.getSeriesVisualOverrides("renko").downColor !== "#00ffff"
 ) {
-  throw new Error("series properties did not round-trip through the packed package");
+  throw new Error("series properties or visual overrides did not round-trip through the packed package");
 }
 chart.setSeriesType("area");
 chart.setPriceScaleMode("percentage");
@@ -432,6 +444,16 @@ if (
 }
 customStudyApi.setInputs({ factor: 2 });
 if (!await chart.dataReady()) throw new Error("custom study recalculation did not become usable");
+const studyVisualOverrides: readonly ChartStudyOutputVisualOverride[] = [{
+  outputId: "range",
+  type: "histogram",
+  color: "#ffaa00"
+}];
+customStudyApi.setVisualOverrides(studyVisualOverrides);
+const appliedStudyVisual = customStudyApi.getVisualOverrides()[0];
+if (appliedStudyVisual?.type !== "histogram" || appliedStudyVisual.color !== "#ffaa00") {
+  throw new Error("study visual overrides were not usable from the packed package");
+}
 const customPane = chart.getPaneApi("study:consumer-range");
 if (!customPane) throw new Error("custom study pane handle was not created");
 customPane.setHeightRatio(2);
@@ -457,12 +479,15 @@ if (chart.getSelection().length !== 0) {
   throw new Error("selection API did not clear");
 }
 const customLayout = chart.exportLayout();
-if (!customLayout.indicators.some((study) =>
-  study.id === "custom:consumer.range" &&
-  study.definitionVersion === "1" &&
-  study.params.factor === 2
-) || customLayout.schemaVersion !== 3) {
-  throw new Error("custom study version or inputs were not exported");
+if (!customLayout.indicators.some((study) => {
+  const visual = study.visualOverrides?.[0];
+  return study.id === "custom:consumer.range" &&
+    study.definitionVersion === "1" &&
+    study.params.factor === 2 &&
+    visual?.type === "histogram" &&
+    visual.color === "#ffaa00";
+}) || customLayout.schemaVersion !== 3) {
+  throw new Error("custom study version, inputs, or visual overrides were not exported");
 }
 const customPaneLayout = customLayout.panes.find((pane) => pane.id === "study:consumer-range");
 if (

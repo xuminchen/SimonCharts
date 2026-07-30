@@ -44,9 +44,12 @@ import type {
   ChartReplaySpeed,
   ChartReplayState,
   ChartSeriesProperties,
+  ChartSeriesType,
+  ChartSeriesVisualOverrides,
   ChartSelectableEntityId,
   ChartStateListener,
   ChartStudyApi,
+  ChartStudyOutputVisualOverride,
   ChartStudyDefinitionId,
   ChartSymbol,
   ChartTheme,
@@ -65,6 +68,7 @@ import {
   parseIndicatorInput,
   parseIndicators,
   parseLayout,
+  parseSeriesVisualOverrides,
   toLayoutV3,
   parseSeriesProperties,
   resolveSeriesProperties,
@@ -165,6 +169,57 @@ describe("charts public contract", () => {
       .toEqualTypeOf<readonly ChartComparison[] | undefined>();
     expectTypeOf<ChartInstance["setSeriesProperties"]>()
       .toEqualTypeOf<(properties: ChartSeriesProperties) => void>();
+  });
+
+  it("exposes strict sparse series and study visual override contracts", () => {
+    expectTypeOf<ChartOptions["seriesVisualOverrides"]>()
+      .toEqualTypeOf<readonly ChartSeriesVisualOverrides[] | undefined>();
+    expectTypeOf<ChartInstance["getSeriesVisualOverrides"]>()
+      .toEqualTypeOf<<T extends ChartSeriesType>(
+        type: T
+      ) => Readonly<ChartSeriesVisualOverrides<T>>>();
+    expectTypeOf<ChartInstance["setSeriesVisualOverrides"]>()
+      .toEqualTypeOf<(overrides: ChartSeriesVisualOverrides) => void>();
+    expectTypeOf<ChartIndicator["visualOverrides"]>()
+      .toEqualTypeOf<readonly ChartStudyOutputVisualOverride[] | undefined>();
+    expectTypeOf<ChartStudyApi["getVisualOverrides"]>()
+      .toEqualTypeOf<() => readonly ChartStudyOutputVisualOverride[]>();
+    expectTypeOf<ChartStudyApi["setVisualOverrides"]>()
+      .toEqualTypeOf<(overrides: readonly ChartStudyOutputVisualOverride[]) => void>();
+  });
+
+  it("parses series visual overrides as one strict defensive table", () => {
+    const source = [
+      { type: "candles", upColor: "#ff3355", downColor: "#00aa88", lineWidth: 2 },
+      { type: "line", color: "#5566ff", lineWidth: 3 },
+      { type: "area", lineColor: "#112233", fillColor: "rgba(1, 2, 3, 0.2)", lineWidth: 2 },
+      { type: "baseline", upColor: "#ff0000", downColor: "#00ff00", lineWidth: 2 },
+      { type: "columns", upColor: "#aa0000", downColor: "#00aa00" }
+    ] satisfies readonly ChartSeriesVisualOverrides[];
+    const parsed = parseSeriesVisualOverrides(source);
+    expect(parsed).toEqual(source);
+    expect(parsed).not.toBe(source);
+
+    for (const invalid of [
+      [{ type: "line", color: "#fff" }, { type: "line", color: "#000" }],
+      [{ type: "line", color: "var(--host-color)" }],
+      [{ type: "line", lineWidth: 0 }],
+      [{ type: "line", lineWidth: Number.NaN }],
+      [{ type: "line", lineWidth: Number.POSITIVE_INFINITY }],
+      [{ type: "line", lineWidth: 11 }],
+      [{ type: "columns", color: "#fff" }],
+      [{ type: "area", upColor: "#fff" }],
+      [{ type: "unknown" }]
+    ]) {
+      expect(() => parseSeriesVisualOverrides(invalid)).toThrow();
+    }
+    expect(() => parseSeriesVisualOverrides(Array(1))).toThrow("dense");
+    const accessor = { type: "line" };
+    Object.defineProperty(accessor, "color", {
+      enumerable: true,
+      get: () => "#ffffff"
+    });
+    expect(() => parseSeriesVisualOverrides([accessor])).toThrow("only data properties");
   });
 
   it("exposes strict host-owned theme overrides", () => {
@@ -717,6 +772,11 @@ describe("charts public contract", () => {
 
     const source = {
       ...migrated,
+      seriesVisualOverrides: [{
+        type: "candles",
+        upColor: "#ff3355",
+        downColor: "#00aa88"
+      }],
       panes: migrated.panes.map((pane) => pane.id === "main"
         ? {
             ...pane,
@@ -733,6 +793,11 @@ describe("charts public contract", () => {
     expect(parsed).toEqual(source);
     expect(parsed.panes).not.toBe(source.panes);
     expect(parsed.panes[0]?.priceScale).not.toBe(source.panes[0]?.priceScale);
+    expect(parsed.seriesVisualOverrides).not.toBe(source.seriesVisualOverrides);
+    expect(() => parseLayout({
+      ...v2,
+      seriesVisualOverrides: source.seriesVisualOverrides
+    })).toThrow("unsupported fields");
   });
 
   it("round-trips the pane id generated from the longest valid study instance id", () => {
@@ -1005,6 +1070,68 @@ describe("charts public contract", () => {
     }, parseStudyDefinitions([independentFastSlow]))).toMatchObject({
       params: { fast: 10, slow: 5 }
     });
+  });
+
+  it("validates sparse study output visual overrides against output metadata", () => {
+    const definitions = parseStudyDefinitions([customStudyDefinition]);
+    const parsed = parseIndicatorInput({
+      id: "custom:acme.spread",
+      definitionVersion: "1",
+      params: {},
+      visible: true,
+      visualOverrides: [{
+        outputId: "spread",
+        type: "histogram",
+        visible: false,
+        color: "#ff3355"
+      }]
+    }, definitions);
+    expect(parsed.visualOverrides).toEqual([{
+      outputId: "spread",
+      type: "histogram",
+      visible: false,
+      color: "#ff3355"
+    }]);
+
+    const validMa = {
+      id: "MA",
+      params: { period: 5 },
+      visible: true,
+      visualOverrides: [{
+        outputId: "MA",
+        type: "line",
+        color: "#5566ff",
+        lineWidth: 3
+      }]
+    } as const;
+    expect(parseIndicatorInput(validMa)).toEqual(validMa);
+
+    for (const visualOverrides of [
+      [{ outputId: "missing", type: "histogram", color: "#fff" }],
+      [{ outputId: "spread", type: "line", color: "#fff" }],
+      [
+        { outputId: "spread", type: "histogram", color: "#fff" },
+        { outputId: "spread", type: "histogram", visible: false }
+      ],
+      [{ outputId: "spread", type: "histogram", color: "var(--host-color)" }],
+      [{ outputId: "spread", type: "histogram", lineWidth: 2 }],
+      [{ outputId: "spread", type: "histogram", visible: "no" }]
+    ]) {
+      expect(() => parseIndicatorInput({
+        id: "custom:acme.spread",
+        definitionVersion: "1",
+        params: {},
+        visible: true,
+        visualOverrides
+      }, definitions)).toThrow();
+    }
+    expect(() => parseIndicatorInput({
+      id: "custom:acme.spread",
+      definitionVersion: "1",
+      params: {},
+      visible: true,
+      visualOverrides: Array(1)
+    }, definitions)).toThrow("dense");
   });
 
   it("keeps custom study versions in Layout V2 and rejects missing definitions", () => {

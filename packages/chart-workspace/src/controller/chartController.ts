@@ -15,6 +15,7 @@ import type {
   ChartReplaySpeed,
   ChartReplayState,
   ChartSeriesProperties,
+  ChartSeriesVisualOverrides,
   ChartState,
   ChartSymbol,
   ChartView,
@@ -30,6 +31,7 @@ import { parseComparisons } from "../data/comparisons";
 import {
   parseIndicators,
   parseSeriesProperties,
+  parseSeriesVisualOverrides,
   resolveSeriesProperties
 } from "../programmableApi";
 import {
@@ -98,6 +100,7 @@ export interface WorkspaceViewModel {
   intradayView: boolean;
   seriesType: SeriesType;
   seriesProperties: readonly ChartSeriesProperties[];
+  seriesVisualOverrides: readonly ChartSeriesVisualOverrides[];
   favoriteTimeframes: readonly FavoriteTimeframe[];
   priceScaleMode: PriceScaleMode;
   indicators: readonly IndicatorConfig[];
@@ -134,6 +137,7 @@ export interface WorkspaceUiActions {
   setSeriesProperties(
     properties: ChartSeriesProperties | readonly ChartSeriesProperties[]
   ): void;
+  setSeriesVisualOverrides(overrides: ChartSeriesVisualOverrides): void;
   setFavoriteTimeframe(timeframe: FavoriteTimeframe, favorite: boolean): boolean;
   setPriceScaleMode(mode: PriceScaleMode): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
@@ -203,6 +207,7 @@ export interface ChartControllerDependencies {
   initialTimeframe?: Timeframe;
   initialAdjustMode?: AdjustMode;
   initialSeriesProperties?: readonly ChartSeriesProperties[];
+  initialSeriesVisualOverrides?: readonly ChartSeriesVisualOverrides[];
   initialComparisons?: readonly ChartComparison[];
   getCapabilities(symbol: ChartSymbol, signal: AbortSignal): Promise<ChartDataCapabilities>;
   store: PagedSeriesStore;
@@ -276,6 +281,14 @@ function withoutDefaultSeriesProperties(
   );
 }
 
+function withoutDefaultSeriesVisualOverrides(
+  overrides: readonly ChartSeriesVisualOverrides[]
+): ChartSeriesVisualOverrides[] {
+  return overrides.filter((override) =>
+    Object.keys(override).some((key) => key !== "type")
+  );
+}
+
 function materializedThrough(
   input: Readonly<MaterializedSeries>,
   cursorTime: number
@@ -311,6 +324,23 @@ export function createChartController(
       : []),
     ...optionSeriesProperties
   ]);
+  const persistedSeriesVisualOverrides = parseSeriesVisualOverrides(
+    preferences.seriesVisualOverrides
+  );
+  const optionSeriesVisualOverrides = parseSeriesVisualOverrides(
+    dependencies.initialSeriesVisualOverrides
+  );
+  const optionSeriesVisualOverrideTypes = new Set(
+    optionSeriesVisualOverrides.map((override) => override.type)
+  );
+  const initialSeriesVisualOverrides = withoutDefaultSeriesVisualOverrides([
+    ...(dependencies.seriesTypePersistenceEnabled
+      ? persistedSeriesVisualOverrides.filter(
+          (override) => !optionSeriesVisualOverrideTypes.has(override.type)
+        )
+      : []),
+    ...optionSeriesVisualOverrides
+  ]);
   const layout = dependencies.persistence.loadLayout();
   const initialComparisons = parseComparisons(
     dependencies.initialComparisons ?? [],
@@ -333,6 +363,7 @@ export function createChartController(
     intradayView: false,
     seriesType: dependencies.seriesTypePersistenceEnabled ? persistedSeriesType : "candles",
     seriesProperties: initialSeriesProperties,
+    seriesVisualOverrides: initialSeriesVisualOverrides,
     favoriteTimeframes: [...preferences.favoriteTimeframes.slice(0, maxFavoriteTimeframes)],
     priceScaleMode: initialComparisons.length === 0 ? preferences.priceScaleMode : "percentage",
     indicators: dependencies.persistence.loadIndicators(),
@@ -361,6 +392,9 @@ export function createChartController(
     const seriesProperties = dependencies.seriesTypePersistenceEnabled
       ? viewModel.seriesProperties
       : persistedSeriesProperties;
+    const seriesVisualOverrides = dependencies.seriesTypePersistenceEnabled
+      ? viewModel.seriesVisualOverrides
+      : persistedSeriesVisualOverrides;
     dependencies.persistence.savePreferences({
       seriesType: dependencies.seriesTypePersistenceEnabled ? timeframeSeriesType : persistedSeriesType,
       favoriteTimeframes: viewModel.favoriteTimeframes,
@@ -368,13 +402,20 @@ export function createChartController(
       gridVisible: viewModel.gridVisible,
       ...(seriesProperties.length === 0
         ? {}
-        : { seriesProperties: structuredClone(seriesProperties) })
+        : { seriesProperties: structuredClone(seriesProperties) }),
+      ...(seriesVisualOverrides.length === 0
+        ? {}
+        : { seriesVisualOverrides: structuredClone(seriesVisualOverrides) })
     });
   };
   const activeSeriesProperties = (type: SeriesType): ChartSeriesProperties | undefined =>
     type === "renko" || type === "lineBreak" || type === "kagi" || type === "pointAndFigure"
       ? resolveSeriesProperties(type, viewModel.seriesProperties)
       : undefined;
+  const activeSeriesVisualOverrides = (
+    type: SeriesType
+  ): ChartSeriesVisualOverrides | undefined =>
+    viewModel.seriesVisualOverrides.find((override) => override.type === type);
   const applySeriesConfiguration = (
     type: SeriesType,
     properties: readonly ChartSeriesProperties[]
@@ -397,6 +438,7 @@ export function createChartController(
       (type !== previousType || JSON.stringify(previousActive) !== JSON.stringify(nextActive))
     ) {
       dependencies.runtime.setSeriesType(type, nextActive);
+      dependencies.runtime.setSeriesVisualOverrides(activeSeriesVisualOverrides(type));
     }
     if (dependencies.seriesTypePersistenceEnabled) savePreferences();
     publish();
@@ -885,6 +927,9 @@ export function createChartController(
     dependencies.runtime.setSeriesType(
       viewModel.seriesType,
       activeSeriesProperties(viewModel.seriesType)
+    );
+    dependencies.runtime.setSeriesVisualOverrides(
+      activeSeriesVisualOverrides(viewModel.seriesType)
     );
     dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
     dependencies.runtime.setIndicators(viewModel.indicators);
@@ -1826,6 +1871,31 @@ export function createChartController(
             )
       );
     },
+    setSeriesVisualOverrides(overrides) {
+      if (!active) return;
+      const parsed = parseSeriesVisualOverrides([overrides])[0]!;
+      const existingIndex = viewModel.seriesVisualOverrides.findIndex(
+        (candidate) => candidate.type === parsed.type
+      );
+      const isDefault = Object.keys(parsed).every((key) => key === "type");
+      const next = existingIndex < 0
+        ? (isDefault ? viewModel.seriesVisualOverrides : [
+            ...viewModel.seriesVisualOverrides,
+            parsed
+          ])
+        : (isDefault
+            ? viewModel.seriesVisualOverrides.filter((_, index) => index !== existingIndex)
+            : viewModel.seriesVisualOverrides.map((candidate, index) =>
+                index === existingIndex ? parsed : candidate
+              ));
+      if (JSON.stringify(next) === JSON.stringify(viewModel.seriesVisualOverrides)) return;
+      viewModel = { ...viewModel, seriesVisualOverrides: next };
+      if (parsed.type === viewModel.seriesType) {
+        dependencies.runtime.setSeriesVisualOverrides(parsed);
+      }
+      if (dependencies.seriesTypePersistenceEnabled) savePreferences();
+      publish();
+    },
     setSeriesConfiguration(type, properties) {
       if (!active || (state.view === "intraday" && type !== "line")) return;
       applySeriesConfiguration(type, properties);
@@ -1887,7 +1957,9 @@ export function createChartController(
     },
     setIndicators(configs) {
       if (!active) return;
-      viewModel = { ...viewModel, indicators: parseIndicatorConfigs(configs) };
+      const indicators = parseIndicatorConfigs(configs);
+      if (JSON.stringify(indicators) === JSON.stringify(viewModel.indicators)) return;
+      viewModel = { ...viewModel, indicators };
       dependencies.runtime.setIndicators(viewModel.indicators);
       dependencies.persistence.saveIndicators(viewModel.indicators);
       publish();
@@ -2050,6 +2122,9 @@ export function createChartController(
   dependencies.runtime.setSeriesType(
     viewModel.seriesType,
     activeSeriesProperties(viewModel.seriesType)
+  );
+  dependencies.runtime.setSeriesVisualOverrides(
+    activeSeriesVisualOverrides(viewModel.seriesType)
   );
   dependencies.runtime.setPriceScaleMode(viewModel.priceScaleMode);
   dependencies.runtime.setIndicators(viewModel.indicators);

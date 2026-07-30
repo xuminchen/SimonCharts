@@ -98,6 +98,46 @@ describe("browser persistence", () => {
     );
   });
 
+  it("round-trips validated sparse series visual overrides", () => {
+    const storage = new MemoryStorage();
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, vi.fn());
+    const seriesVisualOverrides = [
+      { type: "candles" as const, upColor: "#ef4444", downColor: "#22c55e" },
+      { type: "line" as const, color: "#2962ff", lineWidth: 2 }
+    ];
+
+    persistence.savePreferences({
+      ...defaultPreferences,
+      seriesVisualOverrides
+    });
+    seriesVisualOverrides[0]!.upColor = "#000000";
+
+    expect(persistence.loadPreferences().seriesVisualOverrides).toEqual([
+      { type: "candles", upColor: "#ef4444", downColor: "#22c55e" },
+      { type: "line", color: "#2962ff", lineWidth: 2 }
+    ]);
+  });
+
+  it("fails closed on invalid persisted series visual overrides", () => {
+    const storage = new MemoryStorage();
+    const onError = vi.fn<BrowserPersistenceErrorHandler>();
+    const persistence = createBrowserPersistence("trs", "user-1", "current", storage, onError);
+    const key = "simoncharts:workspace:v1:trs:user-1:preferences";
+    storage.setItem(key, JSON.stringify({
+      schemaVersion: 1,
+      value: {
+        ...defaultPreferences,
+        seriesVisualOverrides: [{ type: "line", color: "#2962ff", lineWidth: 0 }]
+      }
+    }));
+
+    expect(persistence.loadPreferences()).toEqual(defaultPreferences);
+    expect(storage.getItem(key)).toBeNull();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "STORAGE_READ_FAILED" })
+    );
+  });
+
   it("isolates drawings by workspace, persistence scope, data context, symbol, and adjustment but not timeframe", () => {
     const storage = new MemoryStorage();
     const persistence = createBrowserPersistence("trs", "user-1", "cutoff:2026-07-16", storage, vi.fn());

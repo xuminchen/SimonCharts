@@ -1,5 +1,14 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.45 - 2026-07-30
+
+- Added sparse, type-specific `ChartSeriesVisualOverrides` through initial options, runtime get/set APIs, Layout V3, and browser preferences.
+- Added strict per-output Study visual overrides for line, histogram, band, and marker outputs through `ChartStudyApi`, with built-in and Custom Study output-id/type validation.
+- Kept series overrides isolated to the main series, preserved explicit overrides across base-theme changes, and left the fixed intraday presentation unchanged.
+- Made style-only Study changes repaint without recalculation; `visible: false` now removes that output from rendering, auto-scale, hit testing, crosshair values, and the data window.
+- Added public-contract, persistence, runtime, calculation-lifecycle, and Chrome/Edge browser coverage without adding a dependency, a second renderer, or a new layout schema.
+- Published the immutable eight-file package after `77 files / 1,321 tests`, combined Chrome `158/158`, Charts `22 files / 310 tests`, Charts Chrome/Edge `107/107` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer checks. SHA-256: `9b48f5c9830b6d3b6dc7a41d5b2bf9f42c75d1f40b27942ace9bc4b913d957bd`; SHA-512: `ed11841f8e2835ffaa8097fa8d2f1d46656670920fea600d1c4099121390af384b9ef35ae12e87879aa3ad7d99e09fe97fd9e8176e1632c16cb7ace67ddfca12`. Final adversarial review found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.44 - 2026-07-30
 
 - Added a frozen public `ChartTimeScaleApi` with visible-range control, bounded bar spacing, plot width, exact loaded-Candle coordinate conversion, Bar-based scrolling, zoom, fit, and reset.

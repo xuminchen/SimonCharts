@@ -132,6 +132,49 @@ export type ChartSeriesType =
   | "lineBreak"
   | "kagi"
   | "pointAndFigure";
+export type ChartSeriesVisualOverrides<T extends ChartSeriesType = ChartSeriesType> =
+  T extends
+    | "bars"
+    | "candles"
+    | "hollowCandles"
+    | "volumeCandles"
+    | "highLow"
+    | "heikinAshi"
+    | "renko"
+    | "lineBreak"
+    | "kagi"
+    | "pointAndFigure"
+    ? {
+        readonly type: T;
+        readonly upColor?: string;
+        readonly downColor?: string;
+        readonly lineWidth?: number;
+      }
+    : T extends "line" | "lineWithMarkers" | "stepLine"
+      ? {
+          readonly type: T;
+          readonly color?: string;
+          readonly lineWidth?: number;
+        }
+      : T extends "area" | "hlcArea"
+        ? {
+            readonly type: T;
+            readonly lineColor?: string;
+            readonly fillColor?: string;
+            readonly lineWidth?: number;
+          }
+        : T extends "baseline"
+          ? {
+              readonly type: T;
+              readonly upColor?: string;
+              readonly downColor?: string;
+              readonly lineWidth?: number;
+            }
+          : {
+              readonly type: T;
+              readonly upColor?: string;
+              readonly downColor?: string;
+            };
 export type ChartSeriesProperties =
   | { readonly type: "renko"; readonly brickSize: number }
   | { readonly type: "lineBreak"; readonly lineCount: number }
@@ -285,12 +328,40 @@ export interface ChartCustomStudyDefinition {
   ) => ChartCustomStudyCalculationResult;
 }
 
+export type ChartStudyOutputVisualOverride =
+  | {
+      readonly outputId: string;
+      readonly type: "line";
+      readonly visible?: boolean;
+      readonly color?: string;
+      readonly lineWidth?: number;
+    }
+  | {
+      readonly outputId: string;
+      readonly type: "histogram";
+      readonly visible?: boolean;
+      readonly color?: string;
+    }
+  | {
+      readonly outputId: string;
+      readonly type: "band";
+      readonly visible?: boolean;
+      readonly fill?: string;
+    }
+  | {
+      readonly outputId: string;
+      readonly type: "marker";
+      readonly visible?: boolean;
+      readonly color?: string;
+    };
+
 export interface ChartIndicator {
   readonly instanceId: string;
   readonly id: ChartStudyDefinitionId;
   readonly definitionVersion?: string;
   readonly params: Readonly<Record<string, number>>;
   readonly visible: boolean;
+  readonly visualOverrides?: readonly ChartStudyOutputVisualOverride[];
 }
 
 export interface ChartBuiltInStudy extends ChartIndicator {
@@ -309,6 +380,7 @@ export interface ChartIndicatorInput {
   readonly definitionVersion?: string;
   readonly params: Readonly<Record<string, number>>;
   readonly visible: boolean;
+  readonly visualOverrides?: readonly ChartStudyOutputVisualOverride[];
 }
 
 export interface ChartBuiltInStudyInput extends ChartIndicatorInput {
@@ -490,6 +562,7 @@ export interface ChartOptions {
   comparisons?: readonly ChartComparison[];
   marks?: readonly ChartMark[];
   seriesProperties?: readonly ChartSeriesProperties[];
+  seriesVisualOverrides?: readonly ChartSeriesVisualOverrides[];
   studyDefinitions?: readonly ChartCustomStudyDefinition[];
   onError?: (error: ChartError) => void;
 }
@@ -595,6 +668,8 @@ export interface ChartStudyApi {
   setInputs(inputs: Readonly<Record<string, number>>): void;
   isVisible(): boolean;
   setVisible(visible: boolean): void;
+  getVisualOverrides(): readonly ChartStudyOutputVisualOverride[];
+  setVisualOverrides(overrides: readonly ChartStudyOutputVisualOverride[]): void;
   remove(): boolean;
 }
 
@@ -623,6 +698,7 @@ export interface ChartLayoutV3 {
   readonly schemaVersion: 3;
   readonly seriesType: ChartSeriesType;
   readonly seriesProperties?: readonly ChartSeriesProperties[];
+  readonly seriesVisualOverrides?: readonly ChartSeriesVisualOverrides[];
   readonly priceScaleMode: ChartPriceScaleMode;
   readonly indicators: readonly ChartIndicator[];
   readonly drawings: readonly ChartDrawing[];
@@ -673,6 +749,9 @@ export interface ChartInstance {
   getSeriesProperties<T extends ChartConfigurableSeriesType>(
     type: T
   ): Readonly<Extract<ChartSeriesProperties, { readonly type: T }>>;
+  getSeriesVisualOverrides<T extends ChartSeriesType>(
+    type: T
+  ): Readonly<ChartSeriesVisualOverrides<T>>;
   getPriceScaleMode(): ChartPriceScaleMode;
   getPanes(): readonly ChartPane[];
   getPaneById(id: ChartPaneId): ChartPane | undefined;
@@ -706,6 +785,7 @@ export interface ChartInstance {
   setAdjustMode(adjustMode: AdjustMode): void;
   setSeriesType(type: ChartSeriesType): void;
   setSeriesProperties(properties: ChartSeriesProperties): void;
+  setSeriesVisualOverrides(overrides: ChartSeriesVisualOverrides): void;
   setPriceScaleMode(mode: ChartPriceScaleMode): void;
   setIndicators(indicators: readonly ChartIndicator[]): void;
   setDrawings(drawings: readonly ChartDrawing[]): void;

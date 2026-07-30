@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ChartActionId,
+  ChartIndicator,
   ChartOptions,
+  ChartSeriesVisualOverrides,
   ChartState,
+  ChartStudyOutputVisualOverride,
   ChartTimeScaleApi
 } from "../contracts";
 
@@ -16,6 +19,8 @@ const mocks = vi.hoisted(() => ({
     prepareTimeScaleMutation: vi.fn(() => true),
     setVisibleRange: vi.fn(),
     resetToLatest: vi.fn(),
+    setIndicators: vi.fn(),
+    setSeriesVisualOverrides: vi.fn(),
     undoDrawing: vi.fn(),
     redoDrawing: vi.fn()
   },
@@ -166,9 +171,10 @@ describe("createChart rc.44 time-scale and action API", () => {
         intradayView: false,
         seriesType: "candles",
         seriesProperties: [],
+        seriesVisualOverrides: [] as ChartSeriesVisualOverrides[],
         favoriteTimeframes: [],
         priceScaleMode: "linear",
-        indicators: [],
+        indicators: [] as ChartIndicator[],
         drawings: [],
         marks: [],
         comparisons: [],
@@ -192,6 +198,19 @@ describe("createChart rc.44 time-scale and action API", () => {
         shouldPublishVisibleRange: () => true,
         setMarks: vi.fn(),
         setComparisons: vi.fn(),
+        setIndicators: (indicators: readonly ChartIndicator[]) => {
+          viewModel.indicators = structuredClone(indicators);
+          mocks.controller.setIndicators(indicators);
+        },
+        setSeriesVisualOverrides: (overrides: ChartSeriesVisualOverrides) => {
+          viewModel.seriesVisualOverrides = [
+            ...viewModel.seriesVisualOverrides.filter(
+              (candidate) => candidate.type !== overrides.type
+            ),
+            ...(Object.keys(overrides).length === 1 ? [] : [structuredClone(overrides)])
+          ];
+          mocks.controller.setSeriesVisualOverrides(overrides);
+        },
         setVisibleRange: mocks.controller.setVisibleRange,
         resetToLatest: mocks.controller.resetToLatest,
         undoDrawing: mocks.controller.undoDrawing,
@@ -396,5 +415,82 @@ describe("createChart rc.44 time-scale and action API", () => {
     expect(mocks.runtime.zoomOut).toHaveBeenCalledOnce();
     expect(mocks.runtime.fitContent).toHaveBeenCalledOnce();
     expect(() => chart.executeActionById("unknown" as ChartActionId)).toThrow();
+  });
+
+  it("round-trips rc.45 series and study visual overrides through public handles", () => {
+    const configured = {
+      ...options(),
+      seriesVisualOverrides: [{
+        type: "candles" as const,
+        upColor: "#ff3355",
+        downColor: "#00aa88"
+      }]
+    };
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      configured
+    );
+    expect(mocks.controllerOptions?.initialSeriesVisualOverrides).toEqual(
+      configured.seriesVisualOverrides
+    );
+
+    const lineOverrides = {
+      type: "line" as const,
+      color: "#5566ff",
+      lineWidth: 3
+    };
+    chart.setSeriesVisualOverrides(lineOverrides);
+    lineOverrides.color = "#000000";
+    expect(chart.getSeriesVisualOverrides("line")).toEqual({
+      type: "line",
+      color: "#5566ff",
+      lineWidth: 3
+    });
+
+    const entityId = chart.createStudy({
+      instanceId: "ma-visual",
+      id: "MA",
+      params: { period: 5 },
+      visible: true
+    });
+    const study = chart.getStudyApi(entityId)!;
+    const visualOverrides: ChartStudyOutputVisualOverride[] = [{
+      outputId: "MA",
+      type: "line",
+      color: "#ff00aa",
+      lineWidth: 4
+    }];
+    study.setVisualOverrides(visualOverrides);
+    visualOverrides[0] = { outputId: "MA", type: "line", visible: false };
+    expect(study.getVisualOverrides()).toEqual([{
+      outputId: "MA",
+      type: "line",
+      color: "#ff00aa",
+      lineWidth: 4
+    }]);
+    expect(chart.exportLayout()).toMatchObject({
+      seriesVisualOverrides: [{
+        type: "line",
+        color: "#5566ff",
+        lineWidth: 3
+      }],
+      indicators: [{
+        instanceId: "ma-visual",
+        visualOverrides: [{
+          outputId: "MA",
+          type: "line",
+          color: "#ff00aa",
+          lineWidth: 4
+        }]
+      }]
+    });
+
+    expect(() => study.setVisualOverrides([{
+      outputId: "missing",
+      type: "line",
+      color: "#fff"
+    }])).toThrow();
+    expect(() => study.setVisualOverrides(undefined as never)).toThrow(TypeError);
+    expect(study.getVisualOverrides()[0]?.outputId).toBe("MA");
   });
 });

@@ -10,6 +10,7 @@ import {
 import type {
   AdjustMode,
   ChartSeriesProperties,
+  ChartSeriesVisualOverrides,
   ChartSymbol,
   Timeframe
 } from "../contracts";
@@ -18,6 +19,7 @@ import {
   fromEngineDrawings,
   parseIndicators,
   parseSeriesProperties,
+  parseSeriesVisualOverrides,
   toEngineDrawings
 } from "../programmableApi";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
@@ -51,6 +53,7 @@ export interface WorkspacePreferences {
   readonly gridVisible: boolean;
   readonly favoriteTimeframes: readonly FavoriteTimeframe[];
   readonly seriesProperties?: readonly ChartSeriesProperties[];
+  readonly seriesVisualOverrides?: readonly ChartSeriesVisualOverrides[];
 }
 
 type StoredWorkspacePreferences = Omit<WorkspacePreferences, "favoriteTimeframes"> & {
@@ -116,6 +119,7 @@ function isLayout(value: unknown): value is WorkspaceLayoutState {
 function isPreferences(value: unknown): value is StoredWorkspacePreferences {
   const favoriteTimeframes = isRecord(value) ? value.favoriteTimeframes : undefined;
   const seriesProperties = isRecord(value) ? value.seriesProperties : undefined;
+  const seriesVisualOverrides = isRecord(value) ? value.seriesVisualOverrides : undefined;
   return (
     isRecord(value) &&
     supportedSeriesTypes.includes(value.seriesType as SeriesType) &&
@@ -131,6 +135,7 @@ function isPreferences(value: unknown): value is StoredWorkspacePreferences {
     (() => {
       try {
         parseSeriesProperties(seriesProperties);
+        parseSeriesVisualOverrides(seriesVisualOverrides);
         return true;
       } catch {
         return false;
@@ -230,7 +235,14 @@ export function createBrowserPersistence(
           .slice(0, maxFavoriteTimeframes),
         ...(stored.seriesProperties === undefined
           ? {}
-          : { seriesProperties: parseSeriesProperties(stored.seriesProperties) })
+          : { seriesProperties: parseSeriesProperties(stored.seriesProperties) }),
+        ...(stored.seriesVisualOverrides === undefined
+          ? {}
+          : {
+              seriesVisualOverrides: parseSeriesVisualOverrides(
+                stored.seriesVisualOverrides
+              )
+            })
       };
     },
     savePreferences: (value) => write(preferencesKey, value),

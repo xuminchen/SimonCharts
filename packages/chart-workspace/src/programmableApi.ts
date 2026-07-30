@@ -1,5 +1,6 @@
 import {
   builtInDrawingToolDefinitions,
+  calculateCoreIndicator,
   coreIndicatorDefinitions,
   type CandleSeries,
   type DrawingObject,
@@ -34,7 +35,9 @@ import type {
   ChartConfigurableSeriesType,
   ChartSeriesProperties,
   ChartSeriesType,
+  ChartSeriesVisualOverrides,
   ChartState,
+  ChartStudyOutputVisualOverride,
   ChartThemeOverrides,
   ChartVisibleRange
 } from "./contracts";
@@ -51,6 +54,18 @@ const drawingDefinitions = new Map(
 );
 const indicatorDefinitions = new Map(
   coreIndicatorDefinitions.map((definition) => [definition.id, definition])
+);
+const builtInStudyOutputs = new Map(
+  coreIndicatorDefinitions.map((definition) => [
+    definition.id,
+    calculateCoreIndicator(definition.id, {
+      symbol: "",
+      timeframe: "1d",
+      adjustMode: "none",
+      dataVersion: "",
+      candles: []
+    }).outputs.map(({ id, type }) => ({ id, type }))
+  ])
 );
 const integerIndicatorParams = new Set(["period", "fast", "slow", "signal"]);
 const maxIndicators = 32;
@@ -71,6 +86,7 @@ const maxSeriesCountProperty = 10_000;
 const maxLineBreakCount = 500;
 const maxPaneHeightRatio = 100;
 const maxThemeColorLength = 128;
+const maxVisualLineWidth = 10;
 const chartActionIds = new Set<ChartActionId>([
   "timeScaleReset",
   "chartReset",
@@ -687,6 +703,84 @@ export function parseSeriesProperties(value: unknown): ChartSeriesProperties[] {
   });
 }
 
+function visualLineWidth(value: unknown, label: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = finite(value, label);
+  if (parsed < 0.5 || parsed > maxVisualLineWidth) {
+    throw new RangeError(`${label} must be from 0.5 to ${maxVisualLineWidth}`);
+  }
+  return parsed;
+}
+
+function optionalThemeColor(value: unknown, label: string): string | undefined {
+  return value === undefined ? undefined : themeColor(value, label);
+}
+
+export function parseSeriesVisualOverrides(value: unknown): ChartSeriesVisualOverrides[] {
+  if (value === undefined) return [];
+  const candidates = denseDataArray(value, "Chart series visual overrides", seriesTypes.length);
+  const seen = new Set<ChartSeriesType>();
+  return candidates.map((candidate, index) => {
+    const label = `Chart series visual override ${index}`;
+    const item = record(candidate, label);
+    const type = parseSeriesType(item.type);
+    if (seen.has(type)) throw new TypeError(`Chart series visual override ${type} is duplicated`);
+    seen.add(type);
+    const lineWidth = visualLineWidth(item.lineWidth, `${label} lineWidth`);
+    if (
+      type === "line" ||
+      type === "lineWithMarkers" ||
+      type === "stepLine"
+    ) {
+      onlyKeys(item, ["type", "color", "lineWidth"], label);
+      const color = optionalThemeColor(item.color, `${label} color`);
+      return {
+        type,
+        ...(color === undefined ? {} : { color }),
+        ...(lineWidth === undefined ? {} : { lineWidth })
+      };
+    }
+    if (type === "area" || type === "hlcArea") {
+      onlyKeys(item, ["type", "lineColor", "fillColor", "lineWidth"], label);
+      const lineColor = optionalThemeColor(item.lineColor, `${label} lineColor`);
+      const fillColor = optionalThemeColor(item.fillColor, `${label} fillColor`);
+      return {
+        type,
+        ...(lineColor === undefined ? {} : { lineColor }),
+        ...(fillColor === undefined ? {} : { fillColor }),
+        ...(lineWidth === undefined ? {} : { lineWidth })
+      };
+    }
+    const acceptsLineWidth = type !== "columns";
+    onlyKeys(
+      item,
+      acceptsLineWidth
+        ? ["type", "upColor", "downColor", "lineWidth"]
+        : ["type", "upColor", "downColor"],
+      label
+    );
+    const upColor = optionalThemeColor(item.upColor, `${label} upColor`);
+    const downColor = optionalThemeColor(item.downColor, `${label} downColor`);
+    return {
+      type,
+      ...(upColor === undefined ? {} : { upColor }),
+      ...(downColor === undefined ? {} : { downColor }),
+      ...(lineWidth === undefined ? {} : { lineWidth })
+    } as ChartSeriesVisualOverrides;
+  });
+}
+
+export function resolveSeriesVisualOverrides<T extends ChartSeriesType>(
+  type: T,
+  overrides: unknown
+): ChartSeriesVisualOverrides<T> {
+  const parsedType = parseSeriesType(type) as T;
+  return structuredClone(
+    parseSeriesVisualOverrides(overrides).find((override) => override.type === parsedType) ??
+      { type: parsedType }
+  ) as ChartSeriesVisualOverrides<T>;
+}
+
 export function resolveSeriesProperties<T extends ChartConfigurableSeriesType>(
   type: T,
   properties: unknown
@@ -752,6 +846,84 @@ export function toEntityId(
   return `mark:${JSON.stringify([...scope, state.symbol.id, entity.value.id])}`;
 }
 
+function parseStudyOutputVisualOverrides(
+  value: unknown,
+  outputDefinitions: readonly {
+    readonly id: string;
+    readonly type: ChartStudyOutputVisualOverride["type"];
+  }[],
+  label: string
+): ChartStudyOutputVisualOverride[] | undefined {
+  if (value === undefined) return undefined;
+  const candidates = denseDataArray(
+    value,
+    `${label} visual overrides`,
+    maxStudyOutputs
+  );
+  const outputs = new Map(outputDefinitions.map((output) => [output.id, output.type]));
+  const seen = new Set<string>();
+  return candidates.map((candidate, index) => {
+    const itemLabel = `${label} visual override ${index}`;
+    const item = record(candidate, itemLabel);
+    const outputId = identifier(item.outputId, `${itemLabel} outputId`);
+    const expectedType = outputs.get(outputId);
+    if (expectedType === undefined) {
+      throw new TypeError(`${itemLabel} outputId is unsupported`);
+    }
+    if (item.type !== expectedType) {
+      throw new TypeError(`${itemLabel} type does not match output ${outputId}`);
+    }
+    if (seen.has(outputId)) {
+      throw new TypeError(`${label} visual override ${outputId} is duplicated`);
+    }
+    seen.add(outputId);
+    if (item.visible !== undefined && typeof item.visible !== "boolean") {
+      throw new TypeError(`${itemLabel} visibility must be boolean`);
+    }
+    const visibility = item.visible === undefined ? {} : { visible: item.visible };
+    if (item.type === "line") {
+      onlyKeys(item, ["outputId", "type", "visible", "color", "lineWidth"], itemLabel);
+      const color = optionalThemeColor(item.color, `${itemLabel} color`);
+      const lineWidth = visualLineWidth(item.lineWidth, `${itemLabel} lineWidth`);
+      return {
+        outputId,
+        type: "line",
+        ...visibility,
+        ...(color === undefined ? {} : { color }),
+        ...(lineWidth === undefined ? {} : { lineWidth })
+      };
+    }
+    if (item.type === "histogram") {
+      onlyKeys(item, ["outputId", "type", "visible", "color"], itemLabel);
+      const color = optionalThemeColor(item.color, `${itemLabel} color`);
+      return {
+        outputId,
+        type: "histogram",
+        ...visibility,
+        ...(color === undefined ? {} : { color })
+      };
+    }
+    if (item.type === "band") {
+      onlyKeys(item, ["outputId", "type", "visible", "fill"], itemLabel);
+      const fill = optionalThemeColor(item.fill, `${itemLabel} fill`);
+      return {
+        outputId,
+        type: "band",
+        ...visibility,
+        ...(fill === undefined ? {} : { fill })
+      };
+    }
+    onlyKeys(item, ["outputId", "type", "visible", "color"], itemLabel);
+    const color = optionalThemeColor(item.color, `${itemLabel} color`);
+    return {
+      outputId,
+      type: "marker",
+      ...visibility,
+      ...(color === undefined ? {} : { color })
+    };
+  });
+}
+
 function parseIndicatorInputValue(
   candidate: unknown,
   index: number,
@@ -760,7 +932,7 @@ function parseIndicatorInputValue(
     const item = record(candidate, `Chart indicator ${index}`);
     onlyKeys(
       item,
-      ["instanceId", "id", "definitionVersion", "params", "visible"],
+      ["instanceId", "id", "definitionVersion", "params", "visible", "visualOverrides"],
       `Chart indicator ${index}`
     );
     const instanceId = item.instanceId === undefined
@@ -828,12 +1000,20 @@ function parseIndicatorInputValue(
     if (typeof item.visible !== "boolean") {
       throw new TypeError(`Chart indicator ${id} visibility must be boolean`);
     }
+    const visualOverrides = parseStudyOutputVisualOverrides(
+      item.visualOverrides,
+      builtInDefinition === undefined
+        ? customDefinition!.outputs
+        : builtInStudyOutputs.get(builtInDefinition.id)!,
+      `Chart indicator ${id}`
+    );
     return {
       ...(instanceId === undefined ? {} : { instanceId }),
       id: id as ChartIndicator["id"],
       ...(definitionVersion === undefined ? {} : { definitionVersion }),
       params: parsedParams,
-      visible: item.visible
+      visible: item.visible,
+      ...(visualOverrides === undefined ? {} : { visualOverrides })
     } as ChartIndicatorInput;
 }
 
@@ -1301,6 +1481,7 @@ export function parseLayout(
       "schemaVersion",
       "seriesType",
       "seriesProperties",
+      ...(version === 3 ? ["seriesVisualOverrides"] : []),
       "priceScaleMode",
       "indicators",
       "drawings",
@@ -1320,6 +1501,9 @@ export function parseLayout(
     ...(layout.seriesProperties === undefined
       ? {}
       : { seriesProperties: parseSeriesProperties(layout.seriesProperties) }),
+    ...(version !== 3 || layout.seriesVisualOverrides === undefined
+      ? {}
+      : { seriesVisualOverrides: parseSeriesVisualOverrides(layout.seriesVisualOverrides) }),
     priceScaleMode,
     indicators,
     drawings: parseDrawings(layout.drawings),

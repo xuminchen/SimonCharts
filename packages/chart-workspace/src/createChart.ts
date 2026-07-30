@@ -35,10 +35,12 @@ import type {
   ChartConfigurableSeriesType,
   ChartSeriesProperties,
   ChartSeriesType,
+  ChartSeriesVisualOverrides,
   ChartSelectableEntityId,
   ChartState,
   ChartStateListener,
   ChartStudyApi,
+  ChartStudyOutputVisualOverride,
   ChartSymbol,
   ChartTheme,
   ChartThemeOverrides,
@@ -78,6 +80,7 @@ import {
   parsePanePriceRange,
   parsePriceScaleMode,
   parseSeriesProperties,
+  parseSeriesVisualOverrides,
   parseSeriesType,
   parseStudyDefinitions,
   parseThemeOverrides,
@@ -86,6 +89,7 @@ import {
   parseTimeScaleSpacing,
   parseVisibleRange,
   resolveSeriesProperties,
+  resolveSeriesVisualOverrides,
   studyDefinitionKey,
   paneIdForIndicator,
   toLayoutV3,
@@ -197,6 +201,15 @@ function validSeriesProperties(properties: unknown): boolean {
   }
 }
 
+function validSeriesVisualOverrides(overrides: unknown): boolean {
+  try {
+    parseSeriesVisualOverrides(overrides);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validSymbol(symbol: unknown): symbol is ChartSymbol {
   return parseChartSymbol(symbol) !== undefined;
 }
@@ -232,6 +245,7 @@ function validOptions(options: ChartOptions): boolean {
     (options.comparisons === undefined || validComparisons(options.comparisons, symbol)) &&
     (options.marks === undefined || validMarks(options.marks)) &&
     validSeriesProperties(options.seriesProperties) &&
+    validSeriesVisualOverrides(options.seriesVisualOverrides) &&
     typeof options?.datafeed?.getCapabilities === "function" &&
     typeof options?.datafeed?.searchSymbols === "function" &&
     typeof options?.datafeed?.loadSeries === "function"
@@ -245,6 +259,7 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     intradayView: false,
     seriesType: defaultPreferences.seriesType,
     seriesProperties: [],
+    seriesVisualOverrides: [],
     favoriteTimeframes: defaultPreferences.favoriteTimeframes,
     priceScaleMode: defaultPreferences.priceScaleMode,
     indicators: [],
@@ -281,9 +296,15 @@ function layoutSnapshot(
     drawings: fromEngineDrawings(viewModel.drawings),
     gridVisible: viewModel.gridVisible
   }, studyDefinitions);
-  return panes === undefined
+  const configured = viewModel.seriesVisualOverrides.length === 0
     ? layout
-    : { ...layout, panes: structuredClone(panes) };
+    : {
+        ...layout,
+        seriesVisualOverrides: structuredClone(viewModel.seriesVisualOverrides)
+      };
+  return panes === undefined
+    ? configured
+    : { ...configured, panes: structuredClone(panes) };
 }
 
 function symbolKey(symbol: Readonly<ChartSymbol>) {
@@ -382,6 +403,8 @@ export function createChart(
     current: Readonly<ChartIndicator>,
     value: unknown
   ) => mergeIndicatorInputs(current, value, studyDefinitions);
+  const parseChartSeriesVisualOverrides = (value: unknown) =>
+    parseSeriesVisualOverrides(value);
   const parseChartEntityInput = (value: unknown) =>
     parseEntityInput(value, studyDefinitions);
   const parseChartEntity = (value: unknown) => parseEntity(value, studyDefinitions);
@@ -629,6 +652,8 @@ export function createChart(
       getSeriesType: () => layout.seriesType,
       getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
         resolveSeriesProperties(type, []),
+      getSeriesVisualOverrides: <T extends ChartSeriesType>(type: T) =>
+        resolveSeriesVisualOverrides(type, layout.seriesVisualOverrides),
       getPriceScaleMode: () => layout.priceScaleMode,
       getPanes: () => [],
       getPaneById: () => undefined,
@@ -670,6 +695,9 @@ export function createChart(
       setAdjustMode: () => undefined,
       setSeriesType: () => undefined,
       setSeriesProperties: () => undefined,
+      setSeriesVisualOverrides: (value: ChartSeriesVisualOverrides) => {
+        parseChartSeriesVisualOverrides([value]);
+      },
       setPriceScaleMode: () => undefined,
       setIndicators: () => undefined,
       setDrawings: () => undefined,
@@ -1040,6 +1068,9 @@ export function createChart(
     initialTimeframe: options.initialTimeframe,
     initialAdjustMode: options.initialAdjustMode,
     initialSeriesProperties: parseSeriesProperties(options.seriesProperties),
+    initialSeriesVisualOverrides: parseChartSeriesVisualOverrides(
+      options.seriesVisualOverrides
+    ),
     initialComparisons,
     getCapabilities: (symbol, signal) => options.datafeed.getCapabilities(symbol, signal),
     store,
@@ -1251,6 +1282,17 @@ export function createChart(
         }
         updateStudy(value, (current) => ({ ...current, visible }));
       },
+      getVisualOverrides: () =>
+        structuredClone(requireStudy(value).visualOverrides ?? []),
+      setVisualOverrides: (visualOverrides: readonly ChartStudyOutputVisualOverride[]) => {
+        if (!Array.isArray(visualOverrides)) {
+          throw new TypeError("Chart study visual overrides must be an array");
+        }
+        updateStudy(value, (current) => parseChartIndicators([{
+          ...current,
+          visualOverrides
+        }])[0]!);
+      },
       remove: () => removeStudy(value)
     });
   };
@@ -1448,6 +1490,11 @@ export function createChart(
     getSeriesType: () => controller!.getViewModel().seriesType,
     getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
       resolveSeriesProperties(type, controller!.getViewModel().seriesProperties),
+    getSeriesVisualOverrides: <T extends ChartSeriesType>(type: T) =>
+      resolveSeriesVisualOverrides(
+        type,
+        controller!.getViewModel().seriesVisualOverrides
+      ),
     getPriceScaleMode: () => controller!.getViewModel().priceScaleMode,
     getPanes: () => {
       requireReadyLayout(controller!.getViewModel(), readySelectionKey);
@@ -1675,6 +1722,10 @@ export function createChart(
       const parsed = parseSeriesProperties([properties])[0]!;
       controller!.setSeriesProperties(parsed);
     },
+    setSeriesVisualOverrides: (overrides: ChartSeriesVisualOverrides) => {
+      const parsed = parseChartSeriesVisualOverrides([overrides])[0]!;
+      controller!.setSeriesVisualOverrides(parsed);
+    },
     setPriceScaleMode: (mode: ChartPriceScaleMode) =>
       controller!.setPriceScaleMode(parsePriceScaleMode(mode)),
     setIndicators: (indicators: readonly ChartIndicator[]) =>
@@ -1719,6 +1770,12 @@ export function createChart(
           layout.seriesType,
           layout.seriesProperties ?? []
         );
+        for (const current of controller!.getViewModel().seriesVisualOverrides) {
+          controller!.setSeriesVisualOverrides({ type: current.type });
+        }
+        for (const overrides of layout.seriesVisualOverrides ?? []) {
+          controller!.setSeriesVisualOverrides(overrides);
+        }
         controller!.setPriceScaleMode(layout.priceScaleMode);
         controller!.setIndicators(layout.indicators);
         runtime.applyPaneLayouts(layout.panes);

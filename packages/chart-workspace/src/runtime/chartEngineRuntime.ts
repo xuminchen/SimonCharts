@@ -77,6 +77,7 @@ import type {
   ChartPaneLayout,
   ChartPriceRange,
   ChartSeriesProperties,
+  ChartSeriesVisualOverrides,
   ChartVisibleRange,
   Timeframe
 } from "../contracts";
@@ -95,6 +96,7 @@ import {
 } from "./intradayPresentation";
 import { formatShanghaiTime } from "./shanghaiTimeFormatter";
 import { readWorkspaceChartTheme } from "./workspaceTheme";
+import { applyStudyVisualOverrides } from "./visualOverrides";
 import {
   createExecutionMarkerOutput,
   executionsFromMark,
@@ -195,6 +197,7 @@ export interface ChartEngineRuntime {
   resetToLatest(resetPriceScale?: boolean): void;
   clearCrosshair(): void;
   setSeriesType(type: SeriesType, properties?: ChartSeriesProperties): void;
+  setSeriesVisualOverrides(overrides: ChartSeriesVisualOverrides | undefined): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
   setComparisonData(snapshots: readonly ComparisonDataSnapshot[]): void;
   setMarks(marks: readonly ChartMark[]): void;
@@ -354,6 +357,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let indicatorConfigs: readonly IndicatorConfig[] = [];
   let seriesModel: SeriesRenderModel | undefined;
   let activeSeriesProperties: ChartSeriesProperties | undefined;
+  let activeSeriesVisualOverrides: ChartSeriesVisualOverrides | undefined;
   let crosshair: ChartCrosshairState | undefined;
   let crosshairPoint: { x: number; y: number } | undefined;
   let crosshairPane: { id: string; y: number } | undefined;
@@ -443,8 +447,35 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
           : { previousClose: snapshot.previousClose })
       }));
   };
+  let resolvedStudyOutputSource: readonly IndicatorVisualOutput[] | undefined;
+  let resolvedStudyConfigSource: readonly IndicatorConfig[] | undefined;
+  let resolvedStudyOutputCache: IndicatorVisualOutput[] = [];
+  const resolvedStudyOutputs = (): IndicatorVisualOutput[] => {
+    if (
+      resolvedStudyOutputSource === visualOutputs &&
+      resolvedStudyConfigSource === indicatorConfigs
+    ) return resolvedStudyOutputCache;
+    resolvedStudyOutputSource = visualOutputs;
+    resolvedStudyConfigSource = indicatorConfigs;
+    resolvedStudyOutputCache = indicatorConfigs.reduce(
+      (outputs, config) =>
+        applyStudyVisualOverrides(outputs, config.instanceId, config.visualOverrides),
+      visualOutputs
+    );
+    return resolvedStudyOutputCache;
+  };
+  const indicatorCalculationKey = (configs: readonly IndicatorConfig[]): string =>
+    JSON.stringify(configs.map((config) => ({
+      instanceId: config.instanceId,
+      id: config.id,
+      ...(config.definitionVersion === undefined
+        ? {}
+        : { definitionVersion: config.definitionVersion }),
+      params: config.params,
+      visible: config.visible
+    })));
   const activeVisualOutputs = (): IndicatorVisualOutput[] => [
-    ...visualOutputs,
+    ...resolvedStudyOutputs(),
     ...comparisonOutputs(),
     ...(markOutput === undefined ? [] : [markOutput]),
     ...(executionOutput === undefined ? [] : [executionOutput])
@@ -941,6 +972,44 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       : readWorkspaceChartTheme(options.themeRoot, style);
   }
 
+  function currentSeriesTheme(theme: ReturnType<typeof currentTheme>) {
+    const overrides = activeSeriesVisualOverrides;
+    if (
+      overrides === undefined ||
+      intradayLocked() ||
+      overrides.type !== chartEngine.getState().seriesType
+    ) return theme;
+    const colors = { ...theme.colors };
+    const lineWidths = { ...theme.lineWidths };
+    if (
+      overrides.type === "line" ||
+      overrides.type === "lineWithMarkers" ||
+      overrides.type === "stepLine"
+    ) {
+      if (overrides.color !== undefined) {
+        colors.text = overrides.color;
+        colors.bullishCandle = overrides.color;
+        colors.bearishCandle = overrides.color;
+      }
+      if (overrides.lineWidth !== undefined) lineWidths.indicator = overrides.lineWidth;
+    } else if (overrides.type === "area" || overrides.type === "hlcArea") {
+      if (overrides.lineColor !== undefined) colors.text = overrides.lineColor;
+      if (overrides.fillColor !== undefined) colors.volume = overrides.fillColor;
+      if (overrides.lineWidth !== undefined) {
+        if (overrides.type === "area") lineWidths.indicator = overrides.lineWidth;
+        else lineWidths.candleWick = overrides.lineWidth;
+      }
+    } else {
+      if (overrides.upColor !== undefined) colors.bullishCandle = overrides.upColor;
+      if (overrides.downColor !== undefined) colors.bearishCandle = overrides.downColor;
+      if ("lineWidth" in overrides && overrides.lineWidth !== undefined) {
+        if (overrides.type === "baseline") lineWidths.indicator = overrides.lineWidth;
+        else lineWidths.candleWick = overrides.lineWidth;
+      }
+    }
+    return { ...theme, colors, lineWidths };
+  }
+
   function syncLayout(): void {
     const width = Math.max(1, Math.floor(options.themeRoot.clientWidth || options.staticCanvas.clientWidth || 1));
     const height = Math.max(1, Math.floor(options.themeRoot.clientHeight || options.staticCanvas.clientHeight || 1));
@@ -1064,7 +1133,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (id === "main") continue;
       const pane = paneLayouts.get(id);
       if (pane === undefined) continue;
-      const outputs = visualOutputs.filter((output) => (output.panelId ?? "main") === id);
+      const outputs = resolvedStudyOutputs().filter(
+        (output) => output.visible !== false && (output.panelId ?? "main") === id
+      );
       panelPriceScales.set(
         id,
         pane.priceScale.autoScale
@@ -1218,12 +1289,13 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         ? aligned
         : points.find((point) => point.time === candle.time))?.value ?? null;
     };
+    const studyOutputs = resolvedStudyOutputs();
     const studies = indicatorConfigs
       .filter((config) => config.visible)
       .map((config): RuntimeCrosshairStudyValues => {
         const prefix = indicatorOutputPrefix(config.instanceId);
-        const outputs = visualOutputs
-          .filter((output) => output.id.startsWith(prefix))
+        const outputs = studyOutputs
+          .filter((output) => output.visible !== false && output.id.startsWith(prefix))
           .map((output): ChartCrosshairStudyOutput => {
             const id = output.id.slice(prefix.length);
             if (output.type === "band") {
@@ -1430,21 +1502,25 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         };
     const previousClose = previousCloseAt(index, candle);
     const change = candle.close - previousClose;
+    const studyOutputs = resolvedStudyOutputs();
     const indicatorRows = indicatorConfigs
       .filter((config) => config.visible)
-      .map((config) => {
-        const output = visualOutputs.find(
-          (candidate) => candidate.id.startsWith(indicatorOutputPrefix(config.instanceId))
+      .flatMap((config) => {
+        const output = studyOutputs.find(
+          (candidate) =>
+            candidate.visible !== false &&
+            candidate.id.startsWith(indicatorOutputPrefix(config.instanceId))
         );
+        if (output === undefined) return [];
         let value: number | null | undefined;
         if (output?.type === "line") value = output.values.find((point) => point.time === candle.time)?.value;
         else if (output?.type === "histogram") value = output.values.find((point) => point.time === candle.time)?.value;
         else if (output?.type === "band") value = output.upper.find((point) => point.time === candle.time)?.value;
-        return {
+        return [{
           id: config.instanceId,
           label: `${options.studyTitleFor?.(config) ?? config.id} ${Object.values(config.params).join(",")}`,
           value: typeof value === "number" ? String(value) : "--"
-        };
+        }];
       });
     const comparisonRows = comparisonRowsAt(candle.time);
     options.onDataWindowChanged?.({
@@ -1512,6 +1588,22 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       } else if (pass === "static") {
         const context = resizeCanvas(options.staticCanvas, layout.width, layout.height, options.devicePixelRatio ?? 1);
         const layers = createStaticLayers();
+        const seriesLayerIndex = layers.findIndex((layer) => layer.id === "series");
+        const seriesLayer = layers[seriesLayerIndex];
+        if (seriesLayer !== undefined) {
+          layers[seriesLayerIndex] = {
+            id: seriesLayer.id,
+            render(context) {
+              seriesLayer.render({
+                ...context,
+                state: {
+                  ...context.state,
+                  theme: currentSeriesTheme(context.state.theme)
+                }
+              });
+            }
+          };
+        }
         if (state.settings.gridVisible === false) layers.splice(layers.findIndex((layer) => layer.id === "grid"), 1);
         layers.push(createVisualLayer(visualRegistry), createDrawingLayer(drawingRegistry));
         renderStaticChart({ context, state: renderState }, layers, { clear: true, paintBackground: true });
@@ -1584,7 +1676,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       point.y <= plotArea.y + plotArea.height
     );
     if (!panel) return undefined;
-    const activeOutputs = visualOutputs.filter((output) =>
+    const activeOutputs = resolvedStudyOutputs().filter((output) =>
       output.visible !== false && (output.panelId ?? "main") === panel.id
     );
     const valueRange = mergeVisualAutoscaleRanges(activeOutputs.map((output) =>
@@ -2660,14 +2752,33 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       }
       void calculateSeries(type, generation);
     },
+    setSeriesVisualOverrides(overrides) {
+      if (destroyed) return;
+      if (JSON.stringify(overrides) === JSON.stringify(activeSeriesVisualOverrides)) return;
+      activeSeriesVisualOverrides = overrides === undefined
+        ? undefined
+        : structuredClone(overrides);
+      scheduler.invalidate({ layers: ["series"], reason: "seriesVisualOverridesChanged" });
+    },
     setIndicators(configs) {
       if (destroyed) return;
-      if (pendingClick?.kind === "study") pendingClick = undefined;
       const nextConfigs = configs.map((config) => structuredClone(config));
+      const unchanged = JSON.stringify(nextConfigs) === JSON.stringify(indicatorConfigs);
+      const recoveryRequired =
+        indicatorCalculationFailed ||
+        (
+          activeIndicatorGeneration !== undefined &&
+          activeIndicatorGeneration !== indicatorGeneration
+        );
+      if (unchanged && !recoveryRequired) return;
+      const visualOnly =
+        !unchanged &&
+        indicatorCalculationKey(nextConfigs) === indicatorCalculationKey(indicatorConfigs);
+      if (!visualOnly && pendingClick?.kind === "study") pendingClick = undefined;
       const visiblePaneIds = JSON.stringify(paneOrder.filter(paneIsVisible));
       const paneSetChanged = reconcilePaneLayouts(nextConfigs);
       indicatorConfigs = nextConfigs;
-      visualOutputs = [];
+      if (!visualOnly) visualOutputs = [];
       syncVisualOutputs();
       if (
         paneSetChanged ||
@@ -2686,6 +2797,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         layers: ["axis", "indicators", "visuals", "crosshair"],
         reason: "indicatorsChanged"
       });
+      if (visualOnly) return;
       indicatorGeneration += 1;
       void calculateIndicators(indicatorConfigs, indicatorGeneration);
     },

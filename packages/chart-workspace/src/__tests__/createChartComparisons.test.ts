@@ -156,6 +156,7 @@ describe("createChart comparison wiring", () => {
         intradayView: false,
         seriesType: "candles",
         seriesProperties: [],
+        seriesVisualOverrides: [],
         favoriteTimeframes: [],
         priceScaleMode: "linear",
         indicators: [],
