@@ -34,6 +34,8 @@ export interface ChartLabels {
   readonly noSearchResults: string;
   readonly searchResultCount: (count: number) => string;
   readonly indicators: string;
+  readonly studyLimitReached: string;
+  readonly studyNoLongerExists: string;
   readonly undo: string;
   readonly redo: string;
   readonly settings: string;
@@ -249,6 +251,8 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       noSearchResults: "No symbols found",
       searchResultCount: (count) => `${count} symbol${count === 1 ? "" : "s"} found`,
       indicators: "Indicators",
+      studyLimitReached: "A chart supports at most 32 studies",
+      studyNoLongerExists: "This study no longer exists",
       undo: "Undo",
       redo: "Redo",
       settings: "Settings",
@@ -319,6 +323,8 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     noSearchResults: "没有找到标的",
     searchResultCount: (count) => `找到 ${count} 个标的`,
     indicators: "指标",
+    studyLimitReached: "每个图表最多支持 32 个指标",
+    studyNoLongerExists: "该指标已不存在",
     undo: "撤销",
     redo: "重做",
     settings: "设置",

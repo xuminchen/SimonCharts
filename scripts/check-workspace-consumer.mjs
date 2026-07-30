@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.48";
+const expectedVersion = "1.0.0-rc.49";
 const suppliedTarball = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
 let tempRoot;
 
@@ -144,10 +144,13 @@ function consumerSource() {
   type ChartDatafeed,
   type ChartCustomStudyDefinition,
   type ChartDrawing,
+  type ChartEntityInput,
   type ChartEntityId,
   type ChartEvent,
   type ChartExecution,
+  type ChartIndicator,
   type ChartIndicatorEntityId,
+  type ChartIndicatorInput,
   type ChartLayoutV2,
   type ChartLayoutV3,
   type ChartMark,
@@ -157,7 +160,11 @@ function consumerSource() {
   type ChartSeriesVisualOverrides,
   type ChartSelectableEntityId,
   type ChartStudyApi,
+  type ChartStudyInputs,
   type ChartStudyOutputVisualOverride,
+  type ChartStudyPresetItem,
+  type ChartStudyPresetV1,
+  type ChartStudySource,
   type ChartThemeOverrides,
   type ChartTimeScaleApi,
   type ChartVisibleRange,
@@ -186,7 +193,7 @@ const datafeed: ChartDatafeed = {
 };
 const container = document.querySelector<HTMLElement>("#app");
 if (!container) throw new Error("consumer mount missing");
-const studyDefinitions = [{
+const rangeStudyDefinition = {
   id: "custom:consumer.range",
   version: "1",
   title: "Consumer Range",
@@ -198,7 +205,52 @@ const studyDefinitions = [{
       range: candles.map((candle) => (candle.high - candle.low) * inputs.factor)
     }
   })
-}] satisfies readonly ChartCustomStudyDefinition[];
+} satisfies ChartCustomStudyDefinition;
+type ConsumerRichInputs = {
+  readonly length: number;
+  readonly enabled: boolean;
+  readonly note: string;
+  readonly mode: "simple" | "exponential";
+  readonly source: ChartStudySource;
+};
+const richStudyDefinition = {
+  id: "custom:consumer.rich",
+  version: "1",
+  title: "Consumer Rich",
+  pane: "main",
+  inputs: [
+    { id: "length", title: "Length", type: "number", defaultValue: 3, minValue: 1, integer: true },
+    { id: "enabled", title: "Enabled", type: "boolean", defaultValue: true },
+    { id: "note", title: "Note", type: "string", defaultValue: "review" },
+    {
+      id: "mode",
+      title: "Mode",
+      type: "select",
+      defaultValue: "simple",
+      options: [
+        { value: "simple", title: "Simple" },
+        { value: "exponential", title: "Exponential" }
+      ]
+    },
+    { id: "source", title: "Source", type: "source", defaultValue: "close" }
+  ],
+  outputs: [{ id: "value", title: "Value", type: "line", color: "#0ea5e9" }],
+  calculate: ({ candles, inputs }) => ({
+    outputs: {
+      value: candles.map((candle) => {
+        if (!inputs.enabled || inputs.note.length === 0) return null;
+        const source = inputs.source === "open" ? candle.open : candle.close;
+        return source * (inputs.mode === "exponential" ? inputs.length : 1);
+      })
+    }
+  })
+} satisfies ChartCustomStudyDefinition<ConsumerRichInputs>;
+const studyDefinitions: readonly ChartCustomStudyDefinition<ChartStudyInputs>[] = [
+  rangeStudyDefinition,
+  richStudyDefinition
+];
+const readonlyRichStudyDefinition: ChartCustomStudyDefinition<ConsumerRichInputs> =
+  richStudyDefinition;
 const executions: readonly ChartExecution[] = [{
   id: "consumer-buy",
   time: 1_784_192_400_000,
@@ -226,6 +278,44 @@ const chart = createChart(container, {
   studyDefinitions,
   features: [...advancedChartFeatures, "executions"]
 });
+if (false) {
+  const legacyStudies: ChartIndicator[] = [{
+    instanceId: "legacy-ma",
+    id: "MA",
+    params: { period: 5 },
+    visible: true
+  }];
+  const legacyStudyInput: ChartIndicatorInput = {
+    id: "MA",
+    params: { period: 5 },
+    visible: true
+  };
+  chart.setIndicators(legacyStudies);
+  chart.createStudy(legacyStudyInput);
+  const numericStudyApi = null as unknown as ChartStudyApi;
+  // @ts-expect-error Built-in Study handles keep numeric inputs by default.
+  numericStudyApi.setInputs({ period: "bad" });
+  // @ts-expect-error Built-in studies only accept numeric inputs.
+  chart.createStudy({ id: "MA", params: { period: "bad" }, visible: true });
+  // @ts-expect-error Built-in studies remain numeric in collection APIs.
+  chart.setIndicators([{ instanceId: "bad-ma", id: "MA", params: { period: "bad" }, visible: true }]);
+  // @ts-expect-error Built-in studies remain numeric in layouts.
+  const invalidLayout: ChartLayoutV2 = { schemaVersion: 2, seriesType: "candles", priceScaleMode: "linear", indicators: [{ instanceId: "bad-ma", id: "MA", params: { period: "bad" }, visible: true }], drawings: [], gridVisible: true };
+  // @ts-expect-error Built-in studies remain numeric in Layout V3.
+  const invalidLayoutV3: ChartLayoutV3 = { schemaVersion: 3, seriesType: "candles", priceScaleMode: "linear", indicators: [{ instanceId: "bad-ma", id: "MA", params: { period: "bad" }, visible: true }], drawings: [], gridVisible: true, panes: [{ id: "main", heightRatio: 1, collapsed: false, priceScale: { autoScale: true, inverted: false } }] };
+  // @ts-expect-error Built-in studies remain numeric in entity inputs.
+  const invalidEntity: ChartEntityInput = { kind: "indicator", value: { instanceId: "bad-ma", id: "MA", params: { period: "bad" }, visible: true } };
+  // @ts-expect-error Built-in studies remain numeric in entity updates.
+  chart.updateEntity({ id: "indicator:bad-ma", kind: "indicator", value: { instanceId: "bad-ma", id: "MA", params: { period: "bad" }, visible: true } });
+  // @ts-expect-error Built-in studies remain numeric in presets.
+  const invalidPreset: ChartStudyPresetItem = { id: "MA", params: { period: "bad" }, visible: true };
+  // @ts-expect-error Custom study calculation functions remain readonly.
+  readonlyRichStudyDefinition.calculate = richStudyDefinition.calculate;
+  void invalidLayout;
+  void invalidLayoutV3;
+  void invalidEntity;
+  void invalidPreset;
+}
 const drawings: readonly ChartDrawing[] = [{
   id: "consumer-support",
   type: "horizontalLine",
@@ -512,6 +602,90 @@ if (
 }
 if (Object.values(localStorage).join("\\n").includes("custom:consumer.range")) {
   throw new Error("host-owned custom study leaked into browser indicator persistence");
+}
+const richStudyId: ChartIndicatorEntityId = chart.createStudy({
+  id: "custom:consumer.rich",
+  definitionVersion: "1",
+  params: {
+    length: 5,
+    enabled: true,
+    note: "packed",
+    mode: "exponential",
+    source: "open"
+  },
+  visible: true
+});
+const richStudyApi = chart.getStudyApi<ConsumerRichInputs>(richStudyId);
+if (!richStudyApi) throw new Error("rich study handle was not created");
+if (
+  richStudyApi.getInputs().enabled !== true ||
+  richStudyApi.getInputs().note !== "packed" ||
+  richStudyApi.getInputs().mode !== "exponential" ||
+  richStudyApi.getInputs().source !== "open"
+) {
+  throw new Error("rich study inputs were not preserved by the packed package");
+}
+richStudyApi.setInputs({ length: 6 });
+richStudyApi.setInputs({
+  length: 8,
+  enabled: false,
+  note: "edited",
+  mode: "simple",
+  source: "hlc3"
+});
+if (!await chart.dataReady()) throw new Error("rich study recalculation did not become usable");
+const richLayout = chart.exportLayout();
+chart.importLayout(richLayout);
+if (
+  !await chart.dataReady() ||
+  chart.getStudyById(richStudyId)?.params.source !== "hlc3" ||
+  chart.getStudyById(richStudyId)?.params.enabled !== false
+) {
+  throw new Error("rich study inputs did not round-trip through Layout V3");
+}
+const preset: ChartStudyPresetV1 = chart.createStudyPreset();
+const presetState = JSON.stringify(chart.getState());
+const previousInstanceIds = chart.getAllStudies().map((study) => study.instanceId);
+if (preset.studies.some((study) => Object.hasOwn(study, "instanceId"))) {
+  throw new Error("Study Preset leaked runtime identity");
+}
+chart.setIndicators([{
+  instanceId: "temporary-study",
+  id: "MA",
+  params: { period: 3 },
+  visible: true
+}]);
+const appliedPresetIds = chart.applyStudyPreset(preset);
+if (!await chart.dataReady()) throw new Error("Study Preset application did not become usable");
+const restoredStudies = chart.getAllStudies();
+if (
+  JSON.stringify(chart.getState()) !== presetState ||
+  restoredStudies.length !== preset.studies.length ||
+  restoredStudies.some((study) => previousInstanceIds.includes(study.instanceId)) ||
+  appliedPresetIds.some((id) => chart.getStudyById(id) === undefined) ||
+  !restoredStudies.some((study) =>
+    study.id === "custom:consumer.rich" &&
+    study.params.length === 8 &&
+    study.params.enabled === false &&
+    study.params.note === "edited" &&
+    study.params.mode === "simple" &&
+    study.params.source === "hlc3"
+  )
+) {
+  throw new Error("Study Preset did not restore fresh typed study entities");
+}
+const stableStudies = JSON.stringify(restoredStudies);
+let rejectedInvalidPreset = false;
+try {
+  chart.applyStudyPreset({
+    ...preset,
+    studies: [{ ...preset.studies[0], instanceId: "forbidden" }]
+  });
+} catch {
+  rejectedInvalidPreset = true;
+}
+if (!rejectedInvalidPreset || JSON.stringify(chart.getAllStudies()) !== stableStudies) {
+  throw new Error("invalid Study Preset partially replaced valid state");
 }
 const ma20StudyId: ChartIndicatorEntityId = chart.createStudy({
   id: "MA",

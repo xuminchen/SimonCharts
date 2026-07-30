@@ -6,9 +6,11 @@ import {
 import type {
   AdjustMode,
   ChartDataCapabilities,
+  ChartCustomStudyDefinition,
   ChartDisplayMode,
   ChartFeature,
   ChartLocale,
+  ChartStudyInputs,
   IntradayDayCount,
   Timeframe
 } from "../contracts";
@@ -97,7 +99,8 @@ export function createTopToolbar(
   manifest: EngineCapabilityManifest,
   features: ReadonlySet<ChartFeature>,
   locale: ChartLocale,
-  studyTitleFor?: (config: Readonly<WorkspaceViewModel["indicators"][number]>) => string
+  studyTitleFor?: (config: Readonly<WorkspaceViewModel["indicators"][number]>) => string,
+  studyDefinitions: readonly Readonly<ChartCustomStudyDefinition<ChartStudyInputs>>[] = []
 ): TopToolbar {
   const model = createToolbarModel(manifest);
   const labels = labelsFor(locale);
@@ -273,7 +276,7 @@ export function createTopToolbar(
   }
 
   const indicatorManager = features.has("indicators")
-    ? createIndicatorManager(labels, advanced, studyTitleFor)
+    ? createIndicatorManager(labels, advanced, studyTitleFor, studyDefinitions)
     : undefined;
   const executionsToggle = features.has("executions") ? document.createElement("button") : undefined;
   if (executionsToggle) {

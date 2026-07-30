@@ -22,8 +22,8 @@ import type {
   ChartEntityKind,
   ChartIndicator,
   ChartIndicatorId,
-  ChartIndicatorInput,
   ChartCustomStudyDefinition,
+  ChartCustomStudyInputDefinition,
   ChartCustomStudyId,
   ChartJsonValue,
   ChartLayout,
@@ -39,7 +39,14 @@ import type {
   ChartSeriesType,
   ChartSeriesVisualOverrides,
   ChartState,
+  ChartStudyInputs,
+  ChartStudyInputValue,
+  ChartStudy,
+  ChartStudyInput,
   ChartStudyOutputVisualOverride,
+  ChartStudyPresetItem,
+  ChartStudyPresetV1,
+  ChartStudySource,
   ChartThemeOverrides,
   ChartVisibleRange
 } from "./contracts";
@@ -83,6 +90,7 @@ const maxTotalTextLength = 1_000_000;
 const maxIdentifierLength = 256;
 const maxStudyDefinitions = 32;
 const maxStudyInputs = 16;
+const maxStudyInputOptions = 64;
 const maxStudyOutputs = 16;
 const maxSeriesCountProperty = 10_000;
 const maxLineBreakCount = 500;
@@ -95,6 +103,15 @@ const chartActionIds = new Set<ChartActionId>([
   "zoomIn",
   "zoomOut",
   "fitContent"
+]);
+const studySources = new Set<ChartStudySource>([
+  "open",
+  "high",
+  "low",
+  "close",
+  "hl2",
+  "hlc3",
+  "ohlc4"
 ]);
 const cssNumber = String.raw`[-+]?(?:\d+(?:\.\d*)?|\.\d+)`;
 const rgbComponent = `${cssNumber}%?`;
@@ -132,7 +149,10 @@ const defaultSeriesProperties = Object.freeze({
   })
 }) satisfies Readonly<Record<ChartConfigurableSeriesType, ChartSeriesProperties>>;
 
-export type StudyDefinitionCatalog = ReadonlyMap<string, Readonly<ChartCustomStudyDefinition>>;
+export type StudyDefinitionCatalog = ReadonlyMap<
+  string,
+  Readonly<ChartCustomStudyDefinition<ChartStudyInputs>>
+>;
 const emptyStudyDefinitions: StudyDefinitionCatalog = new Map();
 
 export function studyDefinitionKey(id: ChartCustomStudyId, version: string): string {
@@ -193,6 +213,12 @@ function optionalText(value: unknown, label: string): string | undefined {
     throw new TypeError(`${label} must be a bounded string`);
   }
   return value;
+}
+
+function boundedText(value: unknown, label: string): string {
+  const parsed = optionalText(value, label);
+  if (parsed === undefined) throw new TypeError(`${label} must be a bounded string`);
+  return parsed;
 }
 
 function optionalIdentifier(value: unknown, label: string): string | undefined {
@@ -262,6 +288,208 @@ function denseDataArray(
   );
 }
 
+function studySource(value: unknown, label: string): ChartStudySource {
+  if (typeof value !== "string" || !studySources.has(value as ChartStudySource)) {
+    throw new TypeError(`${label} is unsupported`);
+  }
+  return value as ChartStudySource;
+}
+
+function parseStudyInputDefinition(
+  candidate: unknown,
+  definitionId: string,
+  index: number
+): Readonly<ChartCustomStudyInputDefinition> {
+  const label = `Chart study definition ${definitionId} input ${index}`;
+  const input = record(candidate, label);
+  const inputId = identifier(input.id, `${label} id`);
+  const title = identifier(input.title, `Chart study definition ${definitionId} input ${inputId} title`);
+  const valueLabel = `Chart study definition ${definitionId} input ${inputId} defaultValue`;
+
+  if (input.type === undefined || input.type === "number") {
+    onlyKeys(
+      input,
+      ["id", "title", "type", "defaultValue", "minValue", "maxValue", "integer"],
+      label
+    );
+    const defaultValue = finite(input.defaultValue, valueLabel);
+    const minValue = optionalFinite(
+      input.minValue,
+      `Chart study definition ${definitionId} input ${inputId} minValue`
+    );
+    const maxValue = optionalFinite(
+      input.maxValue,
+      `Chart study definition ${definitionId} input ${inputId} maxValue`
+    );
+    if (input.integer !== undefined && typeof input.integer !== "boolean") {
+      throw new TypeError(
+        `Chart study definition ${definitionId} input ${inputId} integer must be boolean`
+      );
+    }
+    if (
+      (minValue !== undefined && maxValue !== undefined && minValue > maxValue) ||
+      (minValue !== undefined && defaultValue < minValue) ||
+      (maxValue !== undefined && defaultValue > maxValue) ||
+      (input.integer === true && !Number.isInteger(defaultValue))
+    ) {
+      throw new TypeError(
+        `Chart study definition ${definitionId} input ${inputId} defaultValue is invalid`
+      );
+    }
+    return Object.freeze({
+      id: inputId,
+      title,
+      ...(input.type === undefined ? {} : { type: "number" as const }),
+      defaultValue,
+      ...(minValue === undefined ? {} : { minValue }),
+      ...(maxValue === undefined ? {} : { maxValue }),
+      ...(input.integer === undefined ? {} : { integer: input.integer })
+    });
+  }
+
+  if (input.type === "boolean") {
+    onlyKeys(input, ["id", "title", "type", "defaultValue"], label);
+    if (typeof input.defaultValue !== "boolean") {
+      throw new TypeError(`${valueLabel} must be boolean`);
+    }
+    return Object.freeze({
+      id: inputId,
+      title,
+      type: "boolean" as const,
+      defaultValue: input.defaultValue
+    });
+  }
+
+  if (input.type === "string") {
+    onlyKeys(input, ["id", "title", "type", "defaultValue"], label);
+    return Object.freeze({
+      id: inputId,
+      title,
+      type: "string" as const,
+      defaultValue: boundedText(input.defaultValue, valueLabel)
+    });
+  }
+
+  if (input.type === "select") {
+    onlyKeys(input, ["id", "title", "type", "defaultValue", "options"], label);
+    const optionValues = new Set<string>();
+    const options = denseDataArray(
+      input.options,
+      `Chart study definition ${definitionId} input ${inputId} options`,
+      maxStudyInputOptions,
+      1
+    ).map((candidateOption, optionIndex) => {
+      const optionLabel =
+        `Chart study definition ${definitionId} input ${inputId} option ${optionIndex}`;
+      const option = record(candidateOption, optionLabel);
+      onlyKeys(option, ["value", "title"], optionLabel);
+      const value = identifier(option.value, `${optionLabel} value`);
+      if (optionValues.has(value)) {
+        throw new TypeError(
+          `Chart study definition ${definitionId} input ${inputId} option ${value} is duplicated`
+        );
+      }
+      optionValues.add(value);
+      return Object.freeze({
+        value,
+        title: identifier(option.title, `${optionLabel} title`)
+      });
+    });
+    const defaultValue = identifier(input.defaultValue, valueLabel);
+    if (!optionValues.has(defaultValue)) {
+      throw new TypeError(
+        `Chart study definition ${definitionId} input ${inputId} defaultValue is invalid`
+      );
+    }
+    return Object.freeze({
+      id: inputId,
+      title,
+      type: "select" as const,
+      defaultValue,
+      options: Object.freeze(options)
+    });
+  }
+
+  if (input.type === "source") {
+    onlyKeys(input, ["id", "title", "type", "defaultValue", "options"], label);
+    const defaultValue = studySource(input.defaultValue, valueLabel);
+    let options: readonly ChartStudySource[] | undefined;
+    if (input.options !== undefined) {
+      const optionValues = new Set<ChartStudySource>();
+      options = Object.freeze(denseDataArray(
+        input.options,
+        `Chart study definition ${definitionId} input ${inputId} options`,
+        studySources.size,
+        1
+      ).map((candidateOption, optionIndex) => {
+        const option = studySource(
+          candidateOption,
+          `Chart study definition ${definitionId} input ${inputId} option ${optionIndex}`
+        );
+        if (optionValues.has(option)) {
+          throw new TypeError(
+            `Chart study definition ${definitionId} input ${inputId} option ${option} is duplicated`
+          );
+        }
+        optionValues.add(option);
+        return option;
+      }));
+      if (!optionValues.has(defaultValue)) {
+        throw new TypeError(
+          `Chart study definition ${definitionId} input ${inputId} defaultValue is invalid`
+        );
+      }
+    }
+    return Object.freeze({
+      id: inputId,
+      title,
+      type: "source" as const,
+      defaultValue,
+      ...(options === undefined ? {} : { options })
+    });
+  }
+
+  throw new TypeError(`Chart study definition ${definitionId} input ${inputId} type is unsupported`);
+}
+
+function parseCustomStudyInputValue(
+  value: unknown,
+  definition: Readonly<ChartCustomStudyInputDefinition>,
+  label: string
+): ChartStudyInputValue {
+  if (definition.type === undefined || definition.type === "number") {
+    const parsed = finite(value, label);
+    if (
+      (definition.minValue !== undefined && parsed < definition.minValue) ||
+      (definition.maxValue !== undefined && parsed > definition.maxValue) ||
+      (definition.integer === true && !Number.isInteger(parsed))
+    ) {
+      throw new TypeError(`${label} is invalid`);
+    }
+    return parsed;
+  }
+  if (definition.type === "boolean") {
+    if (typeof value !== "boolean") throw new TypeError(`${label} must be boolean`);
+    return value;
+  }
+  if (definition.type === "string") return boundedText(value, label);
+  if (definition.type === "select") {
+    const parsed = boundedText(value, label);
+    if (!definition.options.some((option) => option.value === parsed)) {
+      throw new TypeError(`${label} is invalid`);
+    }
+    return parsed;
+  }
+  if (definition.type !== "source") {
+    throw new TypeError(`${label} type is unsupported`);
+  }
+  const parsed = studySource(value, label);
+  if (definition.options !== undefined && !definition.options.includes(parsed)) {
+    throw new TypeError(`${label} is invalid`);
+  }
+  return parsed;
+}
+
 export function parseStudyDefinitions(value: unknown): StudyDefinitionCatalog {
   if (value === undefined) return new Map();
   const candidates = denseDataArray(
@@ -269,7 +497,10 @@ export function parseStudyDefinitions(value: unknown): StudyDefinitionCatalog {
     "Chart study definitions",
     maxStudyDefinitions
   );
-  const definitions = new Map<string, Readonly<ChartCustomStudyDefinition>>();
+  const definitions = new Map<
+    string,
+    Readonly<ChartCustomStudyDefinition<ChartStudyInputs>>
+  >();
   candidates.forEach((candidate, index) => {
     const item = record(candidate, `Chart study definition ${index}`);
     onlyKeys(
@@ -293,48 +524,12 @@ export function parseStudyDefinitions(value: unknown): StudyDefinitionCatalog {
     );
     const inputIds = new Set<string>();
     const inputs = inputCandidates.map((candidateInput, inputIndex) => {
-      const input = record(candidateInput, `Chart study definition ${id} input ${inputIndex}`);
-      onlyKeys(
-        input,
-        ["id", "title", "defaultValue", "minValue", "maxValue", "integer"],
-        `Chart study definition ${id} input ${inputIndex}`
-      );
-      const inputId = identifier(input.id, `Chart study definition ${id} input ${inputIndex} id`);
-      if (inputIds.has(inputId)) {
-        throw new TypeError(`Chart study definition ${id} input ${inputId} is duplicated`);
+      const input = parseStudyInputDefinition(candidateInput, id, inputIndex);
+      if (inputIds.has(input.id)) {
+        throw new TypeError(`Chart study definition ${id} input ${input.id} is duplicated`);
       }
-      inputIds.add(inputId);
-      const defaultValue = finite(
-        input.defaultValue,
-        `Chart study definition ${id} input ${inputId} defaultValue`
-      );
-      const minValue = optionalFinite(
-        input.minValue,
-        `Chart study definition ${id} input ${inputId} minValue`
-      );
-      const maxValue = optionalFinite(
-        input.maxValue,
-        `Chart study definition ${id} input ${inputId} maxValue`
-      );
-      if (input.integer !== undefined && typeof input.integer !== "boolean") {
-        throw new TypeError(`Chart study definition ${id} input ${inputId} integer must be boolean`);
-      }
-      if (
-        (minValue !== undefined && maxValue !== undefined && minValue > maxValue) ||
-        (minValue !== undefined && defaultValue < minValue) ||
-        (maxValue !== undefined && defaultValue > maxValue) ||
-        (input.integer === true && !Number.isInteger(defaultValue))
-      ) {
-        throw new TypeError(`Chart study definition ${id} input ${inputId} defaultValue is invalid`);
-      }
-      return Object.freeze({
-        id: inputId,
-        title: identifier(input.title, `Chart study definition ${id} input ${inputId} title`),
-        defaultValue,
-        ...(minValue === undefined ? {} : { minValue }),
-        ...(maxValue === undefined ? {} : { maxValue }),
-        ...(input.integer === undefined ? {} : { integer: input.integer })
-      });
+      inputIds.add(input.id);
+      return input;
     });
     const outputCandidates = denseDataArray(
       item.outputs,
@@ -426,7 +621,7 @@ export function parseStudyDefinitions(value: unknown): StudyDefinitionCatalog {
       pane: item.pane,
       inputs: Object.freeze(inputs),
       outputs: Object.freeze(outputs),
-      calculate: item.calculate as ChartCustomStudyDefinition["calculate"]
+      calculate: item.calculate as ChartCustomStudyDefinition<ChartStudyInputs>["calculate"]
     }));
   });
   return definitions;
@@ -448,10 +643,10 @@ function alignedNumericValues(value: unknown, label: string, length: number): Ar
 }
 
 export function calculateCustomStudyChunk(input: {
-  readonly definition: Readonly<ChartCustomStudyDefinition>;
+  readonly definition: Readonly<ChartCustomStudyDefinition<ChartStudyInputs>>;
   readonly selection: Readonly<SeriesSelection>;
   readonly dataVersion: string;
-  readonly params: Readonly<Record<string, number>>;
+  readonly params: ChartStudyInputs;
   readonly chunk: CandleSeries;
   readonly checkpoint?: Readonly<CustomStudyCheckpoint>;
 }): { readonly result: IndicatorResult; readonly checkpoint: CustomStudyCheckpoint } {
@@ -930,7 +1125,7 @@ function parseIndicatorInputValue(
   candidate: unknown,
   index: number,
   studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
-): ChartIndicatorInput {
+): ChartStudyInput {
     const item = record(candidate, `Chart indicator ${index}`);
     onlyKeys(
       item,
@@ -965,24 +1160,22 @@ function parseIndicatorInputValue(
     }
     const parsedParams = Object.fromEntries(parameterDefinitions.map((parameterDefinition) => {
       const key = parameterDefinition.id;
-      const raw = key in params ? params[key] : parameterDefinition.defaultValue;
+      const raw = Object.hasOwn(params, key) ? params[key] : parameterDefinition.defaultValue;
+      if (builtInDefinition === undefined) {
+        return [
+          key,
+          parseCustomStudyInputValue(
+            raw,
+            parameterDefinition as ChartCustomStudyInputDefinition,
+            `Chart indicator ${id} param ${key}`
+          )
+        ] as const;
+      }
       const parameter = finite(raw, `Chart indicator ${id} param ${key}`);
-      const invalidBuiltIn = builtInDefinition !== undefined && (
+      if (
         parameter <= 0 ||
         (integerIndicatorParams.has(key) && !Number.isInteger(parameter))
-      );
-      const invalidCustom = customDefinition !== undefined && (
-        ("minValue" in parameterDefinition &&
-          parameterDefinition.minValue !== undefined &&
-          parameter < parameterDefinition.minValue) ||
-        ("maxValue" in parameterDefinition &&
-          parameterDefinition.maxValue !== undefined &&
-          parameter > parameterDefinition.maxValue) ||
-        ("integer" in parameterDefinition &&
-          parameterDefinition.integer === true &&
-          !Number.isInteger(parameter))
-      );
-      if (invalidBuiltIn || invalidCustom) {
+      ) {
         throw new TypeError(`Chart indicator ${id} param ${key} is invalid`);
       }
       return [key, parameter] as const;
@@ -1016,21 +1209,21 @@ function parseIndicatorInputValue(
       params: parsedParams,
       visible: item.visible,
       ...(visualOverrides === undefined ? {} : { visualOverrides })
-    } as ChartIndicatorInput;
+    } as ChartStudyInput;
 }
 
 export function parseIndicatorInput(
   value: unknown,
   studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
-): ChartIndicatorInput {
+): ChartStudyInput {
   return parseIndicatorInputValue(value, 0, studyDefinitions);
 }
 
 export function mergeIndicatorInputs(
-  current: Readonly<ChartIndicator>,
+  current: Readonly<ChartStudy>,
   value: unknown,
   studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
-): ChartIndicator {
+): ChartStudy {
   const patch = record(value, "Chart study inputs");
   const parsed = parseIndicatorInputValue({
     ...current,
@@ -1039,19 +1232,20 @@ export function mergeIndicatorInputs(
   return {
     ...parsed,
     instanceId: current.instanceId
-  } as ChartIndicator;
+  } as ChartStudy;
 }
 
 export function parseIndicators(
   value: unknown,
   studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
-): ChartIndicator[] {
+): ChartStudy[] {
   if (!Array.isArray(value)) throw new TypeError("Chart indicators must be an array");
   if (value.length > maxIndicators) {
     throw new TypeError(`Chart indicators must contain at most ${maxIndicators} items`);
   }
+  const candidates = denseDataArray(value, "Chart indicators", maxIndicators);
   const seen = new Set<string>();
-  return value.map((candidate, index) => {
+  return candidates.map((candidate, index) => {
     const indicator = parseIndicatorInputValue(candidate, index, studyDefinitions);
     if (indicator.instanceId === undefined) {
       throw new TypeError(`Chart indicator ${index} instanceId is required`);
@@ -1060,8 +1254,76 @@ export function parseIndicators(
       throw new TypeError(`Chart indicator instance ${indicator.instanceId} is duplicated`);
     }
     seen.add(indicator.instanceId);
-    return { ...indicator, instanceId: indicator.instanceId } as ChartIndicator;
+    return {
+      ...indicator,
+      instanceId: indicator.instanceId
+    } as ChartStudy;
   });
+}
+
+export function parseStudyPreset(
+  value: unknown,
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartStudyPresetV1 {
+  const preset = record(value, "Chart study preset");
+  onlyKeys(preset, ["schemaVersion", "studies"], "Chart study preset");
+  if (preset.schemaVersion !== 1) {
+    throw new TypeError("Chart study preset schema version is unsupported");
+  }
+  const studies = denseDataArray(
+    preset.studies,
+    "Chart study preset studies",
+    maxIndicators
+  ).map((candidate, index): ChartStudyPresetItem => {
+    const label = `Chart study preset study ${index}`;
+    const item = record(candidate, label);
+    onlyKeys(
+      item,
+      ["id", "definitionVersion", "params", "visible", "visualOverrides"],
+      label
+    );
+    const parsed = parseIndicatorInputValue(item, index, studyDefinitions);
+    return {
+      id: parsed.id,
+      ...(parsed.definitionVersion === undefined
+        ? {}
+        : { definitionVersion: parsed.definitionVersion }),
+      params: parsed.params,
+      visible: parsed.visible,
+      ...(parsed.visualOverrides === undefined
+        ? {}
+        : { visualOverrides: parsed.visualOverrides })
+    } as ChartStudyPresetItem;
+  });
+  return deepFreeze({
+    schemaVersion: 1,
+    studies
+  });
+}
+
+export function createStudyPresetSnapshot(
+  indicators: readonly Readonly<ChartStudy>[],
+  studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
+): ChartStudyPresetV1 {
+  const studies = denseDataArray(
+    indicators,
+    "Chart indicators",
+    maxIndicators
+  ).map((candidate, index) => {
+    const indicator = record(candidate, `Chart indicator ${index}`);
+    return {
+      id: indicator.id,
+      ...(indicator.definitionVersion === undefined
+        ? {}
+        : { definitionVersion: indicator.definitionVersion }),
+      params: indicator.params,
+      visible: indicator.visible,
+      ...(indicator.visualOverrides === undefined
+        ? {}
+        : { visualOverrides: indicator.visualOverrides })
+    };
+  });
+  return parseStudyPreset({ schemaVersion: 1, studies }, studyDefinitions);
 }
 
 function parseDrawingStyle(value: unknown, index: number): ChartDrawingStyle | undefined {
@@ -1381,7 +1643,7 @@ export function parseTimeScaleBars(value: unknown): number {
 }
 
 export function paneIdForIndicator(
-  indicator: Readonly<ChartIndicator>,
+  indicator: Readonly<ChartIndicator<ChartStudyInputs>>,
   studyDefinitions: StudyDefinitionCatalog = emptyStudyDefinitions
 ): ChartPaneId | undefined {
   if (indicator.id.startsWith("custom:")) {
@@ -1406,7 +1668,7 @@ export function paneIdForIndicator(
 }
 
 function defaultPaneLayouts(
-  indicators: readonly ChartIndicator[],
+  indicators: readonly ChartIndicator<ChartStudyInputs>[],
   studyDefinitions: StudyDefinitionCatalog
 ): ChartPaneLayout[] {
   return [
@@ -1468,7 +1730,7 @@ export function parsePanePriceRange(
 
 function parsePaneLayouts(
   value: unknown,
-  indicators: readonly ChartIndicator[],
+  indicators: readonly ChartIndicator<ChartStudyInputs>[],
   priceScaleMode: ChartPriceScaleMode,
   studyDefinitions: StudyDefinitionCatalog
 ): ChartPaneLayout[] {

@@ -1,9 +1,11 @@
 import { createEngineCapabilityManifest } from "@simoncharts/chart-engine";
 import type {
   ChartFeature,
+  ChartCustomStudyDefinition,
   ChartDisplayMode,
   ChartLocale,
   ChartReplaySpeed,
+  ChartStudyInputs,
   ChartTheme
 } from "../contracts";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
@@ -30,6 +32,9 @@ export interface WorkspaceShellOptions {
   readonly theme: ChartTheme;
   readonly locale: ChartLocale;
   readonly studyTitleFor?: (config: Readonly<IndicatorConfig>) => string;
+  readonly studyDefinitions?: readonly Readonly<
+    ChartCustomStudyDefinition<ChartStudyInputs>
+  >[];
 }
 
 type ShellUiActions = WorkspaceUiActions & {
@@ -92,7 +97,8 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         createEngineCapabilityManifest(),
         options.features,
         options.locale,
-        options.studyTitleFor
+        options.studyTitleFor,
+        options.studyDefinitions
       )
     : undefined;
   const body = document.createElement("div");

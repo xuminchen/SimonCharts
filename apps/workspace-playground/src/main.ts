@@ -1,10 +1,13 @@
 import {
   advancedChartFeatures,
   createChart,
+  type Candle,
   type ChartCustomStudyDefinition,
   type ChartInstance,
   type ChartLocale,
   type ChartOptions,
+  type ChartStudyInputs,
+  type ChartStudySource,
   type ChartTheme,
   type ChartThemeOverrides
 } from "@simoncharts/charts";
@@ -117,6 +120,20 @@ const invalidExecutionRange = params.get("invalidExecutionRange") === "1";
 const executionAnchorTime = Date.UTC(2026, 5, 5, 1, 33);
 const customStudies = params.get("customStudies") === "1";
 let customStudyFailurePending = params.get("customStudyFailure") === "once";
+const studySourcePrice = (
+  candle: Readonly<Candle>,
+  source: ChartStudySource
+): number => {
+  if (source === "open") return candle.open;
+  if (source === "high") return candle.high;
+  if (source === "low") return candle.low;
+  if (source === "hl2") return (candle.high + candle.low) / 2;
+  if (source === "hlc3") return (candle.high + candle.low + candle.close) / 3;
+  if (source === "ohlc4") {
+    return (candle.open + candle.high + candle.low + candle.close) / 4;
+  }
+  return candle.close;
+};
 const studyDefinitions = customStudies
   ? ([
       {
@@ -124,7 +141,7 @@ const studyDefinitions = customStudies
         version: "1",
         title: "Fixture Average",
         pane: "main",
-        inputs: [{ id: "factor", title: "Factor", defaultValue: 1, minValue: 0.1 }],
+        inputs: [{ id: "factor", title: "Factor", defaultValue: 1, minValue: 0 }],
         outputs: [{ id: "average", title: "Average", type: "line", color: "#7c3aed" }],
         calculate: ({ candles, inputs }) => {
           window.__customStudyCalls += 1;
@@ -133,7 +150,9 @@ const studyDefinitions = customStudies
             throw new Error("fixture custom study failure");
           }
           return {
-            outputs: { average: candles.map((candle) => candle.close * inputs.factor) }
+            outputs: {
+              average: candles.map((candle) => candle.close * (inputs.factor as number))
+            }
           };
         }
       },
@@ -155,8 +174,91 @@ const studyDefinitions = customStudies
             outputs: { range: candles.map((candle) => candle.high - candle.low) }
           };
         }
+      },
+      {
+        id: "custom:fixture.rich",
+        version: "1",
+        title: "Fixture Rich Inputs",
+        pane: "main",
+        inputs: [
+          {
+            id: "length",
+            title: "Length",
+            type: "number",
+            defaultValue: 5,
+            minValue: 1,
+            maxValue: 20,
+            integer: true
+          },
+          {
+            id: "enabled",
+            title: "Enabled",
+            type: "boolean",
+            defaultValue: false
+          },
+          {
+            id: "note",
+            title: "Note",
+            type: "string",
+            defaultValue: "initial"
+          },
+          {
+            id: "mode",
+            title: "Mode",
+            type: "select",
+            defaultValue: "simple",
+            options: [
+              { value: "simple", title: "Simple" },
+              { value: "exponential", title: "Exponential" }
+            ]
+          },
+          {
+            id: "source",
+            title: "Source",
+            type: "source",
+            defaultValue: "close"
+          }
+        ],
+        outputs: [{
+          id: "value",
+          title: "Value",
+          type: "line",
+          color: "#0ea5e9"
+        }],
+        calculate: ({ candles, inputs }) => {
+          window.__customStudyCalls += 1;
+          if (inputs.enabled !== true) {
+            return { outputs: { value: candles.map(() => null) } };
+          }
+          const length = inputs.length as number;
+          const source = inputs.source as ChartStudySource;
+          const values = candles.map((candle) => studySourcePrice(candle, source));
+          if (inputs.mode === "exponential") {
+            const alpha = 2 / (length + 1);
+            let previous: number | undefined;
+            return {
+              outputs: {
+                value: values.map((value) => {
+                  previous = previous === undefined
+                    ? value
+                    : previous + alpha * (value - previous);
+                  return previous;
+                })
+              }
+            };
+          }
+          return {
+            outputs: {
+              value: values.map((_, index) => {
+                const from = Math.max(0, index - length + 1);
+                const window = values.slice(from, index + 1);
+                return window.reduce((sum, value) => sum + value, 0) / window.length;
+              })
+            }
+          };
+        }
       }
-    ] satisfies readonly ChartCustomStudyDefinition[])
+    ] satisfies readonly ChartCustomStudyDefinition<ChartStudyInputs>[])
   : undefined;
 window.__customStudyCalls = 0;
 let chart: ChartInstance | undefined;

@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.48.tgz
+npm install ./simoncharts-charts-1.0.0-rc.49.tgz
 ```
 
 ## Embed the default chart
@@ -440,7 +440,7 @@ if (await chart.dataReady()) {
 
 `createStudy()` returns an opaque indicator entity ID and generates a non-reused UUID instance ID when the caller does not provide one. The generic Entity API accepts indicators too, but their `instanceId` is required because the host owns that immutable identity and must not reuse it for a different study. Missing indicator inputs are normalized to the built-in defaults before validation and persistence. Same-definition studies calculate, cache, render, hide, edit, remove, persist, and restore independently; a layout accepts at most 32 studies. rc.29 stores these V2 instances in a separate browser namespace and leaves older indicator records untouched instead of guessing an identity or deleting legacy data.
 
-`getStudyApi()` returns a live handle over the existing study entity. It reads current state on every call, returns defensive input snapshots, and routes partial input changes through the same public validator as `createStudy()`. A handle whose study no longer exists throws `NotFoundError` for reads or updates; after chart destruction, reads and updates throw `InvalidStateError` and `remove()` returns `false`.
+`getStudyApi()` returns a live handle over the existing study entity. Its default input type remains numeric for built-in and legacy Studies; pass the registered Custom Study input type to `getStudyApi<TInputs>()` for Rich Inputs. It reads current state on every call, returns defensive input snapshots, and routes partial input changes through the same public validator as `createStudy()`. A handle whose study no longer exists throws `NotFoundError` for reads or updates; after chart destruction, reads and updates throw `InvalidStateError` and `remove()` returns `false`.
 
 `entity-created`, `entity-updated`, and `entity-removed` events carry the final defensive entity snapshot. Drawing IDs are isolated by chart, persistence scope, data context, symbol, and adjustment; mark IDs additionally follow the current symbol; indicator IDs follow the chart's persisted indicator scope. A stale or foreign ID cannot mutate the current selection.
 
@@ -471,28 +471,60 @@ Custom Study definitions are chart-scoped trusted host code. They reuse the exis
 import {
   createChart,
   type ChartCustomStudyDefinition,
-  type ChartCustomStudyInput
+  type ChartCustomStudyInput,
+  type ChartStudySource
 } from "@simoncharts/charts";
+
+type ReviewRangeInputs = {
+  readonly factor: number;
+  readonly enabled: boolean;
+  readonly note: string;
+  readonly mode: "range" | "close";
+  readonly source: ChartStudySource;
+};
 
 const studyDefinitions = [{
   id: "custom:review.range",
   version: "1",
   title: "Review Range",
   pane: "separate",
-  inputs: [{
-    id: "factor",
-    title: "Factor",
-    defaultValue: 1,
-    minValue: 0.1
-  }],
+  inputs: [
+    { id: "factor", title: "Factor", type: "number", defaultValue: 1, minValue: 0.1 },
+    { id: "enabled", title: "Enabled", type: "boolean", defaultValue: true },
+    { id: "note", title: "Note", type: "string", defaultValue: "Review" },
+    {
+      id: "mode",
+      title: "Mode",
+      type: "select",
+      defaultValue: "range",
+      options: [
+        { value: "range", title: "Range" },
+        { value: "close", title: "Close" }
+      ]
+    },
+    {
+      id: "source",
+      title: "Source",
+      type: "source",
+      defaultValue: "close",
+      options: ["open", "close"]
+    }
+  ],
   outputs: [
     { id: "range", title: "Range", type: "line", color: "#7c3aed" },
     { id: "strength", title: "Strength", type: "histogram", color: "#ea580c" }
   ],
   calculate({ candles, inputs }) {
-    const values = candles.map(
-      (candle) => (candle.high - candle.low) * inputs.factor
-    );
+    const values = candles.map((candle) => {
+      if (!inputs.enabled) return null;
+      return (
+        inputs.mode === "range"
+          ? candle.high - candle.low
+          : inputs.source === "open"
+            ? candle.open
+            : candle.close
+      ) * inputs.factor;
+    });
     return {
       outputs: {
         range: values,
@@ -500,7 +532,7 @@ const studyDefinitions = [{
       }
     };
   }
-}] satisfies readonly ChartCustomStudyDefinition[];
+}] satisfies readonly ChartCustomStudyDefinition<ReviewRangeInputs>[];
 
 const chart = createChart(container, {
   // ...the required host configuration above
@@ -515,15 +547,26 @@ const customStudy: ChartCustomStudyInput = {
   visible: true
 };
 const entityId = chart.createStudy(customStudy);
-chart.getStudyApi(entityId)?.setInputs({ factor: 2 });
+chart.getStudyApi<ReviewRangeInputs>(entityId)?.setInputs({
+  factor: 2,
+  enabled: true,
+  note: "Edited",
+  mode: "close",
+  source: "open"
+});
 await chart.dataReady();
+
+const preset = chart.createStudyPreset();
+const freshEntityIds = chart.applyStudyPreset(preset);
 ```
 
-Definition IDs must use the `custom:` namespace. A chart accepts at most 32 definitions, 16 numeric inputs and 16 fixed outputs per definition; outputs are `line`, `histogram`, `band`, or `marker`. `calculate()` is synchronous and receives only the current chronological real-candle chunk, normalized inputs, accepted selection/data revision, `processedCount`, and the prior JSON-safe checkpoint state. Every declared output must return one dense finite-or-`null` value per input candle; a band returns matching `upper` and `lower` arrays. The SDK assigns candle times and rejects missing, extra, sparse, non-finite, accessor-backed, or oversized data before publishing a visual or checkpoint.
+Definition IDs must use the `custom:` namespace. A chart accepts at most 32 definitions, 16 typed inputs and 16 fixed outputs per definition. Inputs are bounded `number`, `boolean`, `string`, enumerated `select`, or Candle `source`; omitting `type` keeps the legacy numeric contract. Sources are `open`, `high`, `low`, `close`, `hl2`, `hlc3`, or `ohlc4`. Outputs are `line`, `histogram`, `band`, or `marker`. `calculate()` is synchronous and receives only the current chronological real-candle chunk, strictly parsed inputs, accepted selection/data revision, `processedCount`, and the prior JSON-safe checkpoint state. Every declared output must return one dense finite-or-`null` value per input candle; a band returns matching `upper` and `lower` arrays. The SDK assigns candle times and rejects missing, extra, sparse, non-finite, accessor-backed, or oversized data before publishing a visual or checkpoint.
 
 Instances must name the exact registered `definitionVersion`; missing or mismatched versions are rejected atomically by creation, batch replacement, Entity update, and layout import. Use `ChartCustomStudyInput` for the statically exact custom contract. The legacy extendable `ChartIndicator` and `ChartIndicatorInput` interfaces remain source-compatible, while the same ID/version rules are enforced at runtime.
 
-Definitions and callback functions never enter the portable layout, JSON export, or browser storage. Layouts contain only the custom instance's `id`, exact `definitionVersion`, `instanceId`, normalized numeric `params`, and `visible` state. Custom instances are also excluded from automatic browser indicator preferences: the host must retain its definitions and explicitly save/import the layout. The built-in UI displays the custom title and supports visibility/removal, but rc.34 intentionally provides no code editor, marketplace, arbitrary DOM/Canvas renderer, async callback, or custom input form.
+Definitions and callback functions never enter the portable layout, JSON export, or browser storage. Layouts contain only the custom instance's `id`, exact `definitionVersion`, `instanceId`, typed `params`, visibility, and visual overrides. Custom instances are also excluded from automatic browser indicator preferences: the host must retain its definitions and explicitly save/import the layout. The native Study panel creates and edits all five input types through safe platform controls while reusing the same parser and `setIndicators()` action path. The SDK still provides no code editor, marketplace, arbitrary DOM/Canvas renderer, or async callback.
+
+`createStudyPreset()` returns a deep-frozen `ChartStudyPresetV1` containing only ordered Study definitions, typed params, visibility, and visual overrides. It excludes `instanceId`, panes, symbol, timeframe, drawings, layouts, and storage ownership. `applyStudyPreset()` validates the complete value before mutation, atomically replaces all Studies, and returns fresh entity IDs; invalid or version-mismatched presets leave current Studies unchanged. Preset naming and persistence remain host-owned.
 
 Thrown calculations fail closed through the existing `CALCULATION_FAILED` state and `retry()` path. Superseded or cancelled generations cannot publish visuals or checkpoints, and `dataReady()` remains pending until all concurrent study and stateful-series calculations have settled and the resulting presentation has painted.
 
@@ -673,7 +716,7 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.48 completes offline Historical Replay across evicted cursor pages using the existing
-bounded store, DataCoordinator, and host Candle timestamps. It changes no public Replay API,
-cache limit, datafeed contract, dependency, or persistence model. rc.48 preserves rc.47 and every
-earlier RC contract.
+Current rc.49 adds strict Rich Study Inputs and identity-free Study Preset V1 through the existing
+parser, checkpoint, Entity, Layout V3, native Study panel, event, and readiness paths. It adds no
+dependency, renderer, persistence store, or layout schema; rc.49 preserves rc.48 and every earlier
+RC contract.

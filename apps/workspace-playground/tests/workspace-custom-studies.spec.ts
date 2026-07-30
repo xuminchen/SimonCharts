@@ -42,8 +42,8 @@ test("runs chart-scoped custom studies through the native Study, Entity, Layout 
     .toContainText("Fixture Average");
   await expect(page.getByTestId("indicator-legend-fixture-range"))
     .toContainText("Fixture Range");
-  await expect(page.getByRole("button", { name: "Edit custom:fixture.average" }))
-    .toHaveCount(0);
+  await expect(page.locator('[data-edit-indicator="fixture-average"]'))
+    .toHaveCount(1);
   const pixels = await page.evaluate(() => {
     const canvas = document.querySelector<HTMLCanvasElement>("canvas.sc-static-canvas")!;
     const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -101,10 +101,11 @@ test("runs chart-scoped custom studies through the native Study, Entity, Layout 
     try {
       const current = chart.getEntity(averageId)!;
       if (current.kind !== "indicator") throw new Error("custom study entity missing");
+      const custom = current.value as import("@simoncharts/charts").ChartCustomStudy;
       chart.updateEntity({
         ...current,
         value: {
-          ...current.value,
+          ...custom,
           definitionVersion: "missing"
         }
       });
@@ -201,4 +202,73 @@ test("fails closed and recovers the same custom study generation through retry",
   await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
   expect(await page.evaluate(() => window.__chart!.getAllStudies().length)).toBe(2);
   expect(pageErrors).toEqual([]);
+});
+
+test("captures and reapplies one identity-free Study Preset with fresh entities", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?customStudies=1");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const chart = window.__chart!;
+    const before = {
+      state: chart.getState(),
+      studies: chart.getAllStudies(),
+      layout: chart.exportLayout()
+    };
+    const preset = chart.createStudyPreset();
+    chart.setIndicators([{
+      instanceId: "temporary-ma",
+      id: "MA",
+      params: { period: 5 },
+      visible: true
+    }]);
+    const ids = chart.applyStudyPreset(preset);
+    const applied = chart.getAllStudies();
+    const entityIds = chart.getEntities("indicator").map((entity) => entity.id);
+    let rejectedInvalid = false;
+    try {
+      chart.applyStudyPreset({
+        ...preset,
+        studies: [{ ...preset.studies[0], instanceId: "forbidden" }]
+      });
+    } catch {
+      rejectedInvalid = true;
+    }
+    return {
+      before,
+      preset,
+      ids,
+      entityIds,
+      rejectedInvalid,
+      afterInvalid: chart.getAllStudies(),
+      ready: await chart.dataReady(),
+      afterState: chart.getState(),
+      afterStudies: applied,
+      afterLayout: chart.exportLayout()
+    };
+  });
+
+  expect(result.preset.schemaVersion).toBe(1);
+  expect(result.preset.studies).toHaveLength(2);
+  expect(result.preset.studies.every((study) => !("instanceId" in study))).toBe(true);
+  expect(result.ready).toBe(true);
+  expect(result.afterState).toEqual(result.before.state);
+  expect(result.afterStudies.map((study) => ({
+    id: study.id,
+    definitionVersion: study.definitionVersion,
+    params: study.params,
+    visible: study.visible
+  }))).toEqual(result.preset.studies);
+  expect(result.afterStudies.map((study) => study.instanceId))
+    .not.toEqual(result.before.studies.map((study) => study.instanceId));
+  expect(result.ids).toEqual(result.entityIds);
+  expect(result.rejectedInvalid).toBe(true);
+  expect(result.afterInvalid).toEqual(result.afterStudies);
+  expect(result.afterLayout.schemaVersion).toBe(3);
+  expect(errors).toEqual([]);
 });

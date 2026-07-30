@@ -45,7 +45,12 @@ import type {
   ChartState,
   ChartStateListener,
   ChartStudyApi,
+  ChartStudy,
+  ChartStudyInput,
+  ChartStudyInputs,
+  ChartNumericStudyInputs,
   ChartStudyOutputVisualOverride,
+  ChartStudyPresetV1,
   ChartSymbol,
   ChartTheme,
   ChartThemeOverrides,
@@ -88,6 +93,7 @@ import {
   parseSeriesProperties,
   parseSeriesVisualOverrides,
   parseSeriesType,
+  parseStudyPreset,
   parseStudyDefinitions,
   parseThemeOverrides,
   parseTimeScaleBars,
@@ -96,6 +102,7 @@ import {
   parseVisibleRange,
   resolveSeriesProperties,
   resolveSeriesVisualOverrides,
+  createStudyPresetSnapshot,
   studyDefinitionKey,
   paneIdForIndicator,
   toLayoutV3,
@@ -421,7 +428,7 @@ export function createChart(
   const parseChartIndicatorInput = (value: unknown) =>
     parseIndicatorInput(value, studyDefinitions);
   const mergeChartIndicatorInputs = (
-    current: Readonly<ChartIndicator>,
+    current: Readonly<ChartStudy>,
     value: unknown
   ) => mergeIndicatorInputs(current, value, studyDefinitions);
   const parseChartSeriesVisualOverrides = (value: unknown) =>
@@ -431,7 +438,9 @@ export function createChart(
   const parseChartEntity = (value: unknown) => parseEntity(value, studyDefinitions);
   const parseChartLayout = (value: unknown) =>
     toLayoutV3(parseLayout(value, studyDefinitions), studyDefinitions);
-  const studyTitleFor = (config: Readonly<ChartIndicator>): string =>
+  const parseChartStudyPreset = (value: unknown): ChartStudyPresetV1 =>
+    parseStudyPreset(value, studyDefinitions);
+  const studyTitleFor = (config: Readonly<ChartIndicator<ChartStudyInputs>>): string =>
     config.definitionVersion === undefined
       ? config.id
       : studyDefinitions.get(studyDefinitionKey(
@@ -444,6 +453,7 @@ export function createChart(
     features,
     theme,
     locale: resolvedLocale(options?.locale),
+    studyDefinitions: [...studyDefinitions.values()],
     studyTitleFor
   });
   applyWorkspaceThemeOverrides(shell.root, themeOverrides);
@@ -716,6 +726,12 @@ export function createChart(
       dataReady: () => Promise.resolve(false),
       createStudy: () => {
         throw new DOMException("Chart study API is unavailable", "InvalidStateError");
+      },
+      createStudyPreset: () => {
+        throw new DOMException("Chart study preset API is unavailable", "InvalidStateError");
+      },
+      applyStudyPreset: () => {
+        throw new DOMException("Chart study preset API is unavailable", "InvalidStateError");
       },
       getStudyById: () => undefined,
       getStudyApi: () => undefined,
@@ -1305,20 +1321,28 @@ export function createChart(
   for (const error of pendingStorageErrors) controller.handleStorageError(error);
   controller.start();
 
-  const allocateStudyInstanceId = (): string => {
-    const existing = new Set(controller!.getViewModel().indicators.map((indicator) => indicator.instanceId));
+  const allocateStudyInstanceId = (
+    existing = new Set(
+      controller!.getViewModel().indicators.map((indicator) => indicator.instanceId)
+    )
+  ): string => {
     let candidate: string;
     do candidate = `study-${crypto.randomUUID()}`;
     while (existing.has(candidate));
+    existing.add(candidate);
     return candidate;
   };
-  const findStudy = (value: ChartIndicatorEntityId): ChartIndicator | undefined => {
+  const findStudy = (
+    value: ChartIndicatorEntityId
+  ): ChartStudy | undefined => {
     const id = parseEntityId(value);
     const entity = entitySnapshot(controller!.getViewModel(), entityScope)
       .find((candidate) => candidate.id === id && candidate.kind === "indicator");
     return entity?.kind === "indicator" ? entity.value : undefined;
   };
-  const requireStudy = (value: ChartIndicatorEntityId): ChartIndicator => {
+  const requireStudy = (
+    value: ChartIndicatorEntityId
+  ): ChartStudy => {
     if (destroyed) {
       throw new DOMException("Chart study API is unavailable", "InvalidStateError");
     }
@@ -1330,7 +1354,9 @@ export function createChart(
   };
   const updateStudy = (
     value: ChartIndicatorEntityId,
-    update: (study: Readonly<ChartIndicator>) => ChartIndicator
+    update: (
+      study: Readonly<ChartStudy>
+    ) => ChartStudy
   ): void => {
     const current = requireStudy(value);
     const next = update(current);
@@ -1351,12 +1377,16 @@ export function createChart(
     ));
     return true;
   };
-  const studyApi = (value: ChartIndicatorEntityId): ChartStudyApi | undefined => {
+  const studyApi = <
+    TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+  >(
+    value: ChartIndicatorEntityId
+  ): ChartStudyApi<TInputs> | undefined => {
     if (destroyed || findStudy(value) === undefined) return undefined;
     return Object.freeze({
       entityId: value,
-      getInputs: () => structuredClone(requireStudy(value).params),
-      setInputs: (inputs: Readonly<Record<string, number>>) => {
+      getInputs: () => structuredClone(requireStudy(value).params) as TInputs,
+      setInputs: (inputs: TInputs) => {
         updateStudy(value, (current) => mergeChartIndicatorInputs(current, inputs));
       },
       isVisible: () => requireStudy(value).visible,
@@ -1712,7 +1742,7 @@ export function createChart(
         dataReadyWaiters.add({ key, resolve });
       });
     },
-    createStudy: (value: ChartIndicatorInput) => {
+    createStudy: (value: ChartStudyInput) => {
       if (destroyed) {
         throw new DOMException("Chart study API is unavailable", "InvalidStateError");
       }
@@ -1730,11 +1760,45 @@ export function createChart(
       controller!.setIndicators(parseChartIndicators([...viewModel.indicators, indicator]));
       return id;
     },
+    createStudyPreset: () => {
+      if (destroyed) {
+        throw new DOMException("Chart study preset API is unavailable", "InvalidStateError");
+      }
+      return createStudyPresetSnapshot(
+        controller!.getViewModel().indicators,
+        studyDefinitions
+      );
+    },
+    applyStudyPreset: (value: unknown) => {
+      if (destroyed) {
+        throw new DOMException("Chart study preset API is unavailable", "InvalidStateError");
+      }
+      const preset = parseChartStudyPreset(value);
+      const viewModel = controller!.getViewModel();
+      const reserved = new Set(
+        viewModel.indicators.map((indicator) => indicator.instanceId)
+      );
+      const indicators = parseChartIndicators(preset.studies.map((study) => ({
+        ...study,
+        instanceId: allocateStudyInstanceId(reserved)
+      })));
+      const ids = indicators.map((indicator) =>
+        toEntityId(
+          { kind: "indicator", value: indicator },
+          viewModel.state,
+          entityScope
+        ) as ChartIndicatorEntityId
+      );
+      controller!.setIndicators(indicators);
+      return ids;
+    },
     getStudyById: (value: ChartIndicatorEntityId) => {
       const study = findStudy(value);
       return study === undefined ? undefined : structuredClone(study);
     },
-    getStudyApi: (value: ChartIndicatorEntityId) => studyApi(value),
+    getStudyApi: <
+      TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+    >(value: ChartIndicatorEntityId) => studyApi<TInputs>(value),
     getAllStudies: () => structuredClone(controller!.getViewModel().indicators),
     getDrawingGroupsApi: () => drawingGroupsApi,
     removeStudy: (value: ChartIndicatorEntityId) => removeStudy(value),
@@ -1922,7 +1986,7 @@ export function createChart(
     },
     setPriceScaleMode: (mode: ChartPriceScaleMode) =>
       controller!.setPriceScaleMode(parsePriceScaleMode(mode)),
-    setIndicators: (indicators: readonly ChartIndicator[]) =>
+    setIndicators: (indicators: readonly ChartStudy[]) =>
       controller!.setIndicators(parseChartIndicators(indicators)),
     setDrawings: (drawings: readonly ChartDrawing[]) => {
       const parsed = parseDrawings(drawings);

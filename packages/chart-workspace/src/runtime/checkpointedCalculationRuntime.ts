@@ -17,7 +17,11 @@ import type {
   CalculationCheckpointStore
 } from "../data/calculationCheckpointStore";
 import type { PagedSeriesStore, SeriesSelection } from "../data/pagedSeriesStore";
-import type { ChartCustomStudyId, ChartIndicatorId } from "../contracts";
+import type {
+  ChartCustomStudyId,
+  ChartIndicatorId,
+  ChartNumericStudyInputs
+} from "../contracts";
 import {
   calculateCustomStudyChunk,
   studyDefinitionKey,
@@ -286,7 +290,7 @@ export function createCheckpointedCalculationRuntime(
             ? calculateCoreIndicatorChunk(
                 config.id as ChartIndicatorId,
                 chunk,
-                config.params,
+                config.params as ChartNumericStudyInputs,
                 checkpoints.get(config.instanceId) as CoreIndicatorCheckpoint | undefined,
                 { finalize: pageIndex === lastTargetIndex }
               )

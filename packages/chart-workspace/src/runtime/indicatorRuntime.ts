@@ -1,6 +1,6 @@
-import type { ChartIndicator } from "../contracts";
+import type { ChartStudy } from "../contracts";
 
-export type IndicatorConfig = ChartIndicator;
+export type IndicatorConfig = ChartStudy;
 
 export const indicatorOutputPrefix = (instanceId: string): string =>
   `study:${JSON.stringify(instanceId)}:`;

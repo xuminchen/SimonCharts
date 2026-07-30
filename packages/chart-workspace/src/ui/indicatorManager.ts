@@ -1,19 +1,141 @@
 import { coreIndicatorDefinitions, type CoreIndicatorDefinition } from "@simoncharts/chart-engine";
+import type {
+  ChartCustomStudyDefinition,
+  ChartCustomStudyInputDefinition,
+  ChartStudyInputs,
+  ChartStudyInputValue,
+  ChartStudySource
+} from "../contracts";
 import type { WorkspaceUiActions, WorkspaceViewModel } from "../controller/chartController";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
 import type { ChartLabels } from "./localization";
 
-function validParams(id: string, params: Record<string, number>): boolean {
-  if (Object.values(params).some((value) => !Number.isFinite(value) || value <= 0)) return false;
-  for (const key of ["period", "fast", "slow", "signal"]) {
-    if (params[key] !== undefined && !Number.isInteger(params[key])) return false;
-  }
-  if (params.fast !== undefined && params.slow !== undefined && params.fast >= params.slow) return false;
-  if (id === "SAR" && params.step !== undefined && params.max !== undefined && params.step > params.max) return false;
-  return true;
+const createInstanceId = (id: string): string => `${id}-${crypto.randomUUID()}`;
+const studySources: readonly ChartStudySource[] = [
+  "open",
+  "high",
+  "low",
+  "close",
+  "hl2",
+  "hlc3",
+  "ohlc4"
+];
+
+type CustomStudyDefinition = Readonly<ChartCustomStudyDefinition<ChartStudyInputs>>;
+
+interface EditorDefinition {
+  readonly id: string;
+  readonly title: string;
+  readonly definitionVersion?: string;
+  readonly inputs: readonly Readonly<ChartCustomStudyInputDefinition>[];
 }
 
-const createInstanceId = (id: string): string => `${id}-${crypto.randomUUID()}`;
+const definitionKey = (id: string, version?: string): string =>
+  `${id}@${version ?? ""}`;
+
+const coreEditorDefinition = (
+  definition: Readonly<CoreIndicatorDefinition>
+): EditorDefinition => ({
+  id: definition.id,
+  title: definition.id,
+  inputs: definition.params.map((parameter) => ({
+    id: parameter.id,
+    title: parameter.id,
+    defaultValue: parameter.defaultValue
+  }))
+});
+
+const customEditorDefinition = (
+  definition: CustomStudyDefinition
+): EditorDefinition => ({
+  id: definition.id,
+  title: definition.title,
+  definitionVersion: definition.version,
+  inputs: definition.inputs
+});
+
+const inputValue = (
+  definition: Readonly<ChartCustomStudyInputDefinition>,
+  existing?: Readonly<IndicatorConfig>
+): ChartStudyInputValue =>
+  existing?.params[definition.id] ?? definition.defaultValue;
+
+function appendOption(
+  select: HTMLSelectElement,
+  value: string,
+  title: string
+): void {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = title;
+  select.append(option);
+}
+
+function createInputControl(
+  study: Readonly<EditorDefinition>,
+  definition: Readonly<ChartCustomStudyInputDefinition>,
+  existing?: Readonly<IndicatorConfig>
+): HTMLInputElement | HTMLSelectElement {
+  const value = inputValue(definition, existing);
+  const accessibleName = `${study.title} ${definition.title}`;
+  let control: HTMLInputElement | HTMLSelectElement;
+  if (definition.type === "select") {
+    const select = document.createElement("select");
+    for (const option of definition.options) {
+      appendOption(select, option.value, option.title);
+    }
+    select.value = String(value);
+    control = select;
+  } else if (definition.type === "source") {
+    const select = document.createElement("select");
+    for (const source of definition.options ?? studySources) {
+      appendOption(select, source, source);
+    }
+    select.value = String(value);
+    control = select;
+  } else {
+    const input = document.createElement("input");
+    if (definition.type === "boolean") {
+      input.type = "checkbox";
+      input.checked = value === true;
+      input.style.width = "auto";
+    } else {
+      input.type = definition.type === "string" ? "text" : "number";
+      input.value = String(value);
+      if (definition.type === undefined || definition.type === "number") {
+        if (definition.minValue !== undefined) input.min = String(definition.minValue);
+        if (definition.maxValue !== undefined) input.max = String(definition.maxValue);
+        input.step = definition.integer === true ? "1" : "any";
+      }
+    }
+    control = input;
+  }
+  control.name = definition.id;
+  control.dataset.studyInput = definition.id;
+  control.setAttribute("aria-label", accessibleName);
+  return control;
+}
+
+function readEditorInputs(
+  editor: HTMLElement,
+  definition: Readonly<EditorDefinition>
+): Record<string, ChartStudyInputValue> {
+  return Object.fromEntries(definition.inputs.map((inputDefinition) => {
+    const control = editor.querySelector<HTMLInputElement | HTMLSelectElement>(
+      `[data-study-input="${CSS.escape(inputDefinition.id)}"]`
+    );
+    if (control === null) {
+      throw new TypeError(`Study input ${inputDefinition.id} is unavailable`);
+    }
+    if (inputDefinition.type === "boolean") {
+      return [inputDefinition.id, (control as HTMLInputElement).checked] as const;
+    }
+    if (inputDefinition.type === undefined || inputDefinition.type === "number") {
+      return [inputDefinition.id, (control as HTMLInputElement).valueAsNumber] as const;
+    }
+    return [inputDefinition.id, control.value] as const;
+  }));
+}
 
 export interface IndicatorManager {
   readonly element: HTMLDivElement;
@@ -24,7 +146,8 @@ export interface IndicatorManager {
 export function createIndicatorManager(
   labels: ChartLabels,
   compact = false,
-  titleFor: (config: Readonly<IndicatorConfig>) => string = (config) => config.id
+  titleFor: (config: Readonly<IndicatorConfig>) => string = (config) => config.id,
+  customStudies: readonly CustomStudyDefinition[] = []
 ): IndicatorManager {
   const element = document.createElement("div");
   element.className = "sc-indicator-manager";
@@ -37,11 +160,30 @@ export function createIndicatorManager(
   popup.className = "sc-indicator-popup";
   popup.hidden = true;
   const definitions = document.createElement("div");
-  for (const definition of coreIndicatorDefinitions) {
+  const editorDefinitions = [
+    ...coreIndicatorDefinitions.map(coreEditorDefinition),
+    ...customStudies.map(customEditorDefinition)
+  ];
+  const definitionsByKey = new Map(
+    editorDefinitions.map((definition) => [
+      definitionKey(definition.id, definition.definitionVersion),
+      definition
+    ])
+  );
+  for (const definition of editorDefinitions) {
     const button = document.createElement("button");
     button.type = "button";
-    button.dataset.indicatorId = definition.id;
-    button.textContent = definition.label;
+    button.dataset.studyDefinition = definitionKey(
+      definition.id,
+      definition.definitionVersion
+    );
+    if (definition.definitionVersion === undefined) {
+      button.dataset.indicatorId = definition.id;
+    }
+    button.textContent = definition.definitionVersion === undefined
+      ? coreIndicatorDefinitions.find((candidate) => candidate.id === definition.id)?.label ??
+        definition.title
+      : definition.title;
     definitions.append(button);
   }
   const editor = document.createElement("div");
@@ -53,28 +195,31 @@ export function createIndicatorManager(
   if (!compact) element.append(legends);
   let actions: WorkspaceUiActions | undefined;
   let current: readonly IndicatorConfig[] = [];
-  let active: CoreIndicatorDefinition | undefined;
+  let active: EditorDefinition | undefined;
   let activeInstanceId: string | undefined;
 
-  const showEditor = (definition: CoreIndicatorDefinition, existing?: IndicatorConfig) => {
+  const showEditor = (definition: EditorDefinition, existing?: IndicatorConfig) => {
     active = definition;
     activeInstanceId = existing?.instanceId;
     editor.replaceChildren();
-    for (const parameter of definition.params) {
+    for (const parameter of definition.inputs) {
       const label = document.createElement("label");
-      label.textContent = `${definition.id} ${parameter.id}`;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.name = parameter.id;
-      input.setAttribute("aria-label", `${definition.id} ${parameter.id}`);
-      input.value = String(existing?.params[parameter.id] ?? parameter.defaultValue);
-      label.append(input);
+      label.textContent = parameter.title;
+      label.append(createInputControl(definition, parameter, existing));
       editor.append(label);
     }
     const apply = document.createElement("button");
     apply.type = "button";
+    apply.dataset.applyStudy = definitionKey(
+      definition.id,
+      definition.definitionVersion
+    );
     apply.textContent = `Apply ${definition.id}`;
-    editor.append(apply);
+    const error = document.createElement("div");
+    error.dataset.testid = "indicator-editor-error";
+    error.setAttribute("role", "alert");
+    error.hidden = true;
+    editor.append(apply, error);
   };
 
   return {
@@ -87,36 +232,69 @@ export function createIndicatorManager(
       };
       const click = (event: Event) => {
         const target = event.target as HTMLElement;
-        const id = target.closest<HTMLElement>("[data-indicator-id]")?.dataset.indicatorId;
-        if (id) {
-          const definition = coreIndicatorDefinitions.find((candidate) => candidate.id === id);
+        const definitionId = target.closest<HTMLElement>("[data-study-definition]")
+          ?.dataset.studyDefinition;
+        if (definitionId) {
+          const definition = definitionsByKey.get(definitionId);
           if (definition) showEditor(definition);
           return;
         }
         const editInstanceId = target.closest<HTMLElement>("[data-edit-indicator]")?.dataset.editIndicator;
         if (editInstanceId) {
           const existing = current.find((config) => config.instanceId === editInstanceId);
-          const definition = coreIndicatorDefinitions.find((candidate) => candidate.id === existing?.id);
+          const definition = existing === undefined
+            ? undefined
+            : definitionsByKey.get(definitionKey(existing.id, existing.definitionVersion));
           if (existing && definition) showEditor(definition, existing);
           return;
         }
-        if (active && target.textContent === `Apply ${active.id}`) {
-          if (activeInstanceId === undefined && current.length >= 32) return;
-          const params = Object.fromEntries(
-            [...editor.querySelectorAll<HTMLInputElement>("input")].map((input) => [input.name, Number(input.value)])
-          );
-          if (!validParams(active.id, params)) return;
-          const next: IndicatorConfig = {
-            instanceId: activeInstanceId ?? createInstanceId(active.id),
-            id: active.id,
-            params,
-            visible: true
-          };
-          actions?.setIndicators(activeInstanceId === undefined
-            ? [...current, next]
-            : current.map((config) => config.instanceId === activeInstanceId ? next : config));
-          popup.hidden = true;
-          open.setAttribute("aria-expanded", "false");
+        const applyId = target.closest<HTMLElement>("[data-apply-study]")?.dataset.applyStudy;
+        if (active && applyId === definitionKey(active.id, active.definitionVersion)) {
+          const error = editor.querySelector<HTMLElement>("[data-testid='indicator-editor-error']");
+          if (activeInstanceId === undefined && current.length >= 32) {
+            if (error) {
+              error.textContent = labels.studyLimitReached;
+              error.hidden = false;
+            }
+            return;
+          }
+          try {
+            const params = readEditorInputs(editor, active);
+            const existing = activeInstanceId === undefined
+              ? undefined
+              : current.find((config) => config.instanceId === activeInstanceId);
+            if (activeInstanceId !== undefined && existing === undefined) {
+              throw new DOMException(labels.studyNoLongerExists, "NotFoundError");
+            }
+            const next = existing === undefined
+              ? {
+                  instanceId: createInstanceId(active.id),
+                  id: active.id,
+                  ...(active.definitionVersion === undefined
+                    ? {}
+                    : { definitionVersion: active.definitionVersion }),
+                  params,
+                  visible: true
+                }
+              : {
+                  ...existing,
+                  params
+                };
+            actions?.setIndicators(activeInstanceId === undefined
+              ? [...current, next as IndicatorConfig]
+              : current.map((config) =>
+                  config.instanceId === activeInstanceId
+                    ? next as IndicatorConfig
+                    : config
+                ));
+            popup.hidden = true;
+            open.setAttribute("aria-expanded", "false");
+          } catch (cause) {
+            if (error) {
+              error.textContent = cause instanceof Error ? cause.message : "Study inputs are invalid";
+              error.hidden = false;
+            }
+          }
         }
         const hideId = target.closest<HTMLElement>("[data-hide-indicator]")?.dataset.hideIndicator;
         if (hideId) actions?.setIndicators(current.map((config) => config.instanceId === hideId ? { ...config, visible: !config.visible } : config));
@@ -129,9 +307,10 @@ export function createIndicatorManager(
         open.setAttribute("aria-expanded", "false");
       };
       const escape = (event: KeyboardEvent) => {
-        if (event.key !== "Escape") return;
+        if (event.key !== "Escape" || popup.hidden) return;
         popup.hidden = true;
         open.setAttribute("aria-expanded", "false");
+        open.focus();
       };
       open.addEventListener("click", toggle);
       element.addEventListener("click", click);
@@ -153,7 +332,9 @@ export function createIndicatorManager(
         legend.dataset.visible = String(config.visible);
         const title = titleFor(config);
         legend.textContent = `${title}${Object.values(config.params).length === 0 ? "" : ` ${Object.values(config.params).join(",")}`}${config.visible ? "" : " (隐藏)"}`;
-        const editable = coreIndicatorDefinitions.some((definition) => definition.id === config.id);
+        const editable = definitionsByKey.has(
+          definitionKey(config.id, config.definitionVersion)
+        );
         const edit = editable ? document.createElement("button") : undefined;
         if (edit) {
           edit.type = "button";

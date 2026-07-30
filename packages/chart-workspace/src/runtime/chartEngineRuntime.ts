@@ -73,7 +73,7 @@ import type {
   ChartDrawingGroup,
   ChartDrawingGroupId,
   ChartDrawingGroupMove,
-  ChartIndicator,
+  ChartStudy,
   ChartMark,
   ChartPane,
   ChartPaneId,
@@ -157,7 +157,7 @@ export interface DataWindowSnapshot {
 }
 
 interface RuntimeCrosshairStudyValues {
-  readonly indicator: ChartIndicator;
+  readonly indicator: ChartStudy;
   readonly title: string;
   readonly outputs: readonly ChartCrosshairStudyOutput[];
 }
@@ -1407,10 +1407,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
             };
           });
         return {
-          indicator: {
-            ...config,
-            params: { ...config.params }
-          },
+          indicator: structuredClone(config),
           title: `${options.studyTitleFor?.(config) ?? config.id} ${Object.values(config.params).join(",")}`.trim(),
           outputs
         };

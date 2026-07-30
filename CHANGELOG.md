@@ -1,5 +1,13 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.49 - 2026-07-30
+
+- Added strict Rich Study Inputs for number, boolean, string, select, and Candle source values while preserving omitted-`type` numeric definitions.
+- Added native Custom Study create/edit controls that reuse the existing parser, `setIndicators()` action, checkpoint, Entity, Layout V2/V3, failure/retry, crosshair, and readiness paths.
+- Added identity-free `ChartStudyPresetV1` through `createStudyPreset()` and atomic `applyStudyPreset()`, with deep defensive snapshots, exact Custom Study version validation, fresh entity IDs, and no SDK-owned preset persistence.
+- Kept built-in Studies numeric, layouts on schema V3, runtime exports at five, and added no dependency, renderer, or persistence model.
+- Accepted the exact 8-file immutable package after `79 files / 1,372 tests`, combined Chrome `166/166`, Charts `23 files / 350 tests`, Charts Chrome/Edge `115/115` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer execution; SHA-256 is `70902d51381ea6da4759d31e2a035d331286af78a28c3e143b35768c0ca41764`, SHA-512 is `8916e838b44702fdd519f035532e4256a87899cf0303402fe3f57fe6883c40987d0f499af2242572ebb52909786a4a9acda206c63b4620c2570a44b994994fe0`. Final adversarial review found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.48 - 2026-07-30
 
 - Continued Historical Replay across evicted cursor pages by reusing the existing descriptor chain, `DataCoordinator.reloadPage()`, bounded materialization, and exact host Candle timestamps.

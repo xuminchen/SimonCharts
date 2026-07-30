@@ -13,7 +13,10 @@ import {
 import { createCalculationCheckpointStore } from "../data/calculationCheckpointStore";
 import { createPagedSeriesStore, type SeriesSelection } from "../data/pagedSeriesStore";
 import type { ValidatedSeriesPage } from "../data/seriesPageValidation";
-import type { ChartCustomStudyDefinition } from "../contracts";
+import type {
+  ChartCustomStudyDefinition,
+  ChartStudyInputs
+} from "../contracts";
 import { parseStudyDefinitions } from "../programmableApi";
 import { createCheckpointedCalculationRuntime } from "../runtime/checkpointedCalculationRuntime";
 import {
@@ -292,6 +295,61 @@ describe("checkpointed calculation runtime", () => {
       color: "#2563eb"
     });
     expect(checkpointStore.getDiagnostics().entryCount).toBe(4);
+  });
+
+  it("isolates custom checkpoints when boolean, string or source inputs change", async () => {
+    const full = createSeries(20);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 0, full.candles.length));
+    const seen: ChartStudyInputs[] = [];
+    const definition = {
+      id: "custom:acme.rich",
+      version: "1",
+      title: "Rich",
+      pane: "main",
+      inputs: [
+        { id: "enabled", title: "Enabled", type: "boolean", defaultValue: true },
+        { id: "label", title: "Label", type: "string", defaultValue: "a" },
+        { id: "source", title: "Source", type: "source", defaultValue: "close" }
+      ],
+      outputs: [{ id: "line", title: "Line", type: "line" }],
+      calculate: ({ candles, inputs }) => {
+        seen.push(structuredClone(inputs));
+        return { outputs: { line: candles.map((candle) => candle.close) } };
+      }
+    } satisfies ChartCustomStudyDefinition<ChartStudyInputs>;
+    const checkpointStore = createCalculationCheckpointStore();
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore,
+      studyDefinitions: parseStudyDefinitions([definition]),
+      reloadPage: async () => undefined
+    });
+    const targetTimes = new Set(full.candles.map((candle) => candle.time));
+    const config = {
+      instanceId: "rich",
+      id: definition.id,
+      definitionVersion: definition.version,
+      params: { enabled: true, label: "a", source: "close" },
+      visible: true
+    } as const;
+
+    await runtime.calculateIndicators({ selection, configs: [config], targetTimes });
+    await runtime.calculateIndicators({
+      selection,
+      configs: [{
+        ...config,
+        params: { enabled: false, label: "b", source: "hlc3" }
+      }],
+      targetTimes
+    });
+
+    expect(seen).toEqual([
+      { enabled: true, label: "a", source: "close" },
+      { enabled: false, label: "b", source: "hlc3" }
+    ]);
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(2);
   });
 
   it("does not expose or checkpoint candles after the requested replay time", async () => {

@@ -259,14 +259,52 @@ export type ChartIndicatorId =
 export type ChartCustomStudyId = `custom:${string}`;
 export type ChartStudyDefinitionId = ChartIndicatorId | ChartCustomStudyId;
 
-export interface ChartCustomStudyInputDefinition {
-  readonly id: string;
+export type ChartStudyInputValue = number | string | boolean;
+export type ChartStudyInputs = Readonly<Record<string, ChartStudyInputValue>>;
+export type ChartNumericStudyInputs = Readonly<Record<string, number>>;
+export type ChartStudySource = "open" | "high" | "low" | "close" | "hl2" | "hlc3" | "ohlc4";
+
+export interface ChartStudySelectOption {
+  readonly value: string;
   readonly title: string;
-  readonly defaultValue: number;
-  readonly minValue?: number;
-  readonly maxValue?: number;
-  readonly integer?: boolean;
 }
+
+export type ChartCustomStudyInputDefinition =
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type?: "number";
+      readonly defaultValue: number;
+      readonly minValue?: number;
+      readonly maxValue?: number;
+      readonly integer?: boolean;
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "boolean";
+      readonly defaultValue: boolean;
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "string";
+      readonly defaultValue: string;
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "select";
+      readonly defaultValue: string;
+      readonly options: readonly ChartStudySelectOption[];
+    }
+  | {
+      readonly id: string;
+      readonly title: string;
+      readonly type: "source";
+      readonly defaultValue: ChartStudySource;
+      readonly options?: readonly ChartStudySource[];
+    };
 
 export type ChartCustomStudyOutputDefinition =
   | {
@@ -295,12 +333,14 @@ export type ChartCustomStudyOutputDefinition =
       readonly color?: string;
     };
 
-export interface ChartCustomStudyCalculationInput {
+export interface ChartCustomStudyCalculationInput<
+  TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+> {
   readonly symbol: Readonly<ChartSymbol>;
   readonly timeframe: Timeframe;
   readonly adjustMode: AdjustMode;
   readonly dataVersion: string;
-  readonly inputs: Readonly<Record<string, number>>;
+  readonly inputs: TInputs;
   readonly candles: readonly Readonly<Candle>[];
   readonly processedCount: number;
   readonly previousState?: ChartJsonValue;
@@ -318,16 +358,24 @@ export interface ChartCustomStudyCalculationResult {
   readonly state?: ChartJsonValue;
 }
 
-export interface ChartCustomStudyDefinition {
+export type ChartCustomStudyCalculate<
+  TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+> = {
+  bivarianceHack(
+    input: Readonly<ChartCustomStudyCalculationInput<TInputs>>
+  ): ChartCustomStudyCalculationResult;
+}["bivarianceHack"];
+
+export interface ChartCustomStudyDefinition<
+  TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+> {
   readonly id: ChartCustomStudyId;
   readonly version: string;
   readonly title: string;
   readonly pane: "main" | "separate";
   readonly inputs: readonly ChartCustomStudyInputDefinition[];
   readonly outputs: readonly ChartCustomStudyOutputDefinition[];
-  readonly calculate: (
-    input: Readonly<ChartCustomStudyCalculationInput>
-  ) => ChartCustomStudyCalculationResult;
+  readonly calculate: ChartCustomStudyCalculate<TInputs>;
 }
 
 export type ChartStudyOutputVisualOverride =
@@ -357,43 +405,65 @@ export type ChartStudyOutputVisualOverride =
       readonly color?: string;
     };
 
-export interface ChartIndicator {
+export interface ChartIndicator<
+  TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+> {
   readonly instanceId: string;
   readonly id: ChartStudyDefinitionId;
   readonly definitionVersion?: string;
-  readonly params: Readonly<Record<string, number>>;
+  readonly params: TInputs;
   readonly visible: boolean;
   readonly visualOverrides?: readonly ChartStudyOutputVisualOverride[];
 }
 
-export interface ChartBuiltInStudy extends ChartIndicator {
+export interface ChartBuiltInStudy extends ChartIndicator<ChartNumericStudyInputs> {
   readonly id: ChartIndicatorId;
   readonly definitionVersion?: never;
 }
 
-export interface ChartCustomStudy extends ChartIndicator {
+export interface ChartCustomStudy extends ChartIndicator<ChartStudyInputs> {
   readonly id: ChartCustomStudyId;
   readonly definitionVersion: string;
 }
 
-export interface ChartIndicatorInput {
+export interface ChartIndicatorInput<
+  TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+> {
   readonly instanceId?: string;
   readonly id: ChartStudyDefinitionId;
   readonly definitionVersion?: string;
-  readonly params: Readonly<Record<string, number>>;
+  readonly params: TInputs;
   readonly visible: boolean;
   readonly visualOverrides?: readonly ChartStudyOutputVisualOverride[];
 }
 
-export interface ChartBuiltInStudyInput extends ChartIndicatorInput {
+export interface ChartBuiltInStudyInput extends ChartIndicatorInput<ChartNumericStudyInputs> {
   readonly id: ChartIndicatorId;
   readonly definitionVersion?: never;
 }
 
-export interface ChartCustomStudyInput extends ChartIndicatorInput {
+export interface ChartCustomStudyInput extends ChartIndicatorInput<ChartStudyInputs> {
   readonly id: ChartCustomStudyId;
   readonly definitionVersion: string;
 }
+
+export type ChartStudy = ChartBuiltInStudy | ChartCustomStudy | ChartIndicator;
+export type ChartStudyInput =
+  | ChartBuiltInStudyInput
+  | ChartCustomStudyInput
+  | ChartIndicatorInput;
+
+export type ChartStudyPresetItem =
+  | Omit<ChartBuiltInStudyInput, "instanceId">
+  | Omit<ChartCustomStudyInput, "instanceId">
+  | Omit<ChartIndicatorInput, "instanceId">;
+
+export interface ChartStudyPresetV1 {
+  readonly schemaVersion: 1;
+  readonly studies: readonly ChartStudyPresetItem[];
+}
+
+export type ChartStudyPreset = ChartStudyPresetV1;
 
 export type ChartDrawingType =
   | "trendLine"
@@ -538,12 +608,16 @@ export type ChartSelectableEntityId =
   | `drawing:${string}`;
 
 export type ChartEntityInput =
-  | { readonly kind: "indicator"; readonly value: ChartIndicator }
+  | { readonly kind: "indicator"; readonly value: ChartStudy }
   | { readonly kind: "drawing"; readonly value: ChartDrawing }
   | { readonly kind: "mark"; readonly value: ChartMark };
 
 export type ChartEntity =
-  | { readonly id: ChartEntityId; readonly kind: "indicator"; readonly value: ChartIndicator }
+  | {
+      readonly id: ChartEntityId;
+      readonly kind: "indicator";
+      readonly value: ChartStudy;
+    }
   | { readonly id: ChartEntityId; readonly kind: "drawing"; readonly value: ChartDrawing }
   | { readonly id: ChartEntityId; readonly kind: "mark"; readonly value: ChartMark };
 
@@ -587,7 +661,7 @@ export interface ChartOptions {
   marks?: readonly ChartMark[];
   seriesProperties?: readonly ChartSeriesProperties[];
   seriesVisualOverrides?: readonly ChartSeriesVisualOverrides[];
-  studyDefinitions?: readonly ChartCustomStudyDefinition[];
+  studyDefinitions?: readonly ChartCustomStudyDefinition<ChartStudyInputs>[];
   onError?: (error: ChartError) => void;
 }
 
@@ -686,10 +760,12 @@ export type ChartCrosshairEvent =
 
 export type ChartCrosshairListener = (event: Readonly<ChartCrosshairEvent>) => void;
 
-export interface ChartStudyApi {
+export interface ChartStudyApi<
+  TInputs extends ChartStudyInputs = ChartNumericStudyInputs
+> {
   readonly entityId: ChartIndicatorEntityId;
-  getInputs(): Readonly<Record<string, number>>;
-  setInputs(inputs: Readonly<Record<string, number>>): void;
+  getInputs(): TInputs;
+  setInputs(inputs: Readonly<Partial<TInputs>>): void;
   isVisible(): boolean;
   setVisible(visible: boolean): void;
   getVisualOverrides(): readonly ChartStudyOutputVisualOverride[];
@@ -702,7 +778,7 @@ export interface ChartLayoutV2 {
   readonly seriesType: ChartSeriesType;
   readonly seriesProperties?: readonly ChartSeriesProperties[];
   readonly priceScaleMode: ChartPriceScaleMode;
-  readonly indicators: readonly ChartIndicator[];
+  readonly indicators: readonly ChartStudy[];
   readonly drawings: readonly ChartDrawing[];
   readonly gridVisible: boolean;
 }
@@ -724,7 +800,7 @@ export interface ChartLayoutV3 {
   readonly seriesProperties?: readonly ChartSeriesProperties[];
   readonly seriesVisualOverrides?: readonly ChartSeriesVisualOverrides[];
   readonly priceScaleMode: ChartPriceScaleMode;
-  readonly indicators: readonly ChartIndicator[];
+  readonly indicators: readonly ChartStudy[];
   readonly drawings: readonly ChartDrawing[];
   readonly drawingGroups?: readonly ChartDrawingGroup[];
   readonly gridVisible: boolean;
@@ -783,16 +859,22 @@ export interface ChartInstance {
   getPanes(): readonly ChartPane[];
   getPaneById(id: ChartPaneId): ChartPane | undefined;
   getPaneApi(id: ChartPaneId): ChartPaneApi | undefined;
-  getIndicators(): readonly ChartIndicator[];
+  getIndicators(): readonly ChartStudy[];
   getDrawings(): readonly ChartDrawing[];
   getMarks(): readonly ChartMark[];
   getComparisons(): readonly ChartComparison[];
   getReplayState(): Readonly<ChartReplayState>;
   dataReady(): Promise<boolean>;
-  createStudy(indicator: ChartIndicatorInput): ChartIndicatorEntityId;
-  getStudyById(entityId: ChartIndicatorEntityId): ChartIndicator | undefined;
-  getStudyApi(entityId: ChartIndicatorEntityId): ChartStudyApi | undefined;
-  getAllStudies(): readonly ChartIndicator[];
+  createStudy(indicator: ChartStudyInput): ChartIndicatorEntityId;
+  createStudyPreset(): ChartStudyPresetV1;
+  applyStudyPreset(preset: unknown): readonly ChartIndicatorEntityId[];
+  getStudyById(
+    entityId: ChartIndicatorEntityId
+  ): ChartStudy | undefined;
+  getStudyApi<TInputs extends ChartStudyInputs = ChartNumericStudyInputs>(
+    entityId: ChartIndicatorEntityId
+  ): ChartStudyApi<TInputs> | undefined;
+  getAllStudies(): readonly ChartStudy[];
   getDrawingGroupsApi(): ChartDrawingGroupsApi;
   removeStudy(entityId: ChartIndicatorEntityId): boolean;
   createEntity(entity: ChartEntityInput): ChartEntityId;
@@ -816,7 +898,7 @@ export interface ChartInstance {
   setSeriesProperties(properties: ChartSeriesProperties): void;
   setSeriesVisualOverrides(overrides: ChartSeriesVisualOverrides): void;
   setPriceScaleMode(mode: ChartPriceScaleMode): void;
-  setIndicators(indicators: readonly ChartIndicator[]): void;
+  setIndicators(indicators: readonly ChartStudy[]): void;
   setDrawings(drawings: readonly ChartDrawing[]): void;
   setMarks(marks: readonly ChartMark[]): void;
   setComparisons(comparisons: readonly ChartComparison[]): void;

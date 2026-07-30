@@ -54,8 +54,14 @@ import type {
   ChartSelectableEntityId,
   ChartStateListener,
   ChartStudyApi,
+  ChartStudy,
   ChartStudyOutputVisualOverride,
   ChartStudyDefinitionId,
+  ChartStudyInput,
+  ChartStudyInputs,
+  ChartNumericStudyInputs,
+  ChartStudyPresetV1,
+  ChartStudySource,
   ChartSymbol,
   ChartTheme,
   ChartThemeOverrides,
@@ -74,7 +80,9 @@ import {
   parseIndicatorInput,
   parseIndicators,
   parseLayout,
+  parseStudyPreset,
   parseSeriesVisualOverrides,
+  createStudyPresetSnapshot,
   toLayoutV3,
   parseSeriesProperties,
   resolveSeriesProperties,
@@ -109,6 +117,44 @@ const customStudyDefinition = {
     state: { complete: true }
   })
 } satisfies ChartCustomStudyDefinition;
+
+const richStudyDefinition = {
+  id: "custom:acme.rich",
+  version: "1",
+  title: "ACME Rich",
+  pane: "separate",
+  inputs: [
+    { id: "length", title: "Length", defaultValue: 5, minValue: 1, integer: true },
+    { id: "enabled", title: "Enabled", type: "boolean", defaultValue: true },
+    { id: "label", title: "Label", type: "string", defaultValue: "Rich" },
+    {
+      id: "mode",
+      title: "Mode",
+      type: "select",
+      defaultValue: "fast",
+      options: [
+        { value: "fast", title: "Fast" },
+        { value: "slow", title: "Slow" }
+      ]
+    },
+    { id: "source", title: "Source", type: "source", defaultValue: "close" }
+  ],
+  outputs: [{ id: "value", title: "Value", type: "line" }],
+  calculate: ({ candles, inputs }) => ({
+    outputs: {
+      value: candles.map((candle) => inputs.enabled ? candle.close * inputs.length : null)
+    }
+  })
+} satisfies ChartCustomStudyDefinition<{
+  readonly length: number;
+  readonly enabled: boolean;
+  readonly label: string;
+  readonly mode: string;
+  readonly source: ChartStudySource;
+}>;
+const richOptionDefinitions: NonNullable<ChartOptions["studyDefinitions"]> = [
+  richStudyDefinition
+];
 
 describe("charts public contract", () => {
   it("exposes the transient chart/table display-mode contract", () => {
@@ -392,7 +438,7 @@ describe("charts public contract", () => {
     expectTypeOf<ChartInstance["exportLayout"]>().toEqualTypeOf<() => ChartLayoutV3>();
     expectTypeOf<ChartInstance["importLayout"]>().toEqualTypeOf<(layout: unknown) => void>();
     expectTypeOf<ChartInstance["setIndicators"]>()
-      .toEqualTypeOf<(indicators: readonly ChartIndicator[]) => void>();
+      .toEqualTypeOf<(indicators: readonly ChartStudy[]) => void>();
     expectTypeOf<ChartInstance["setDrawings"]>()
       .toEqualTypeOf<(drawings: readonly ChartDrawing[]) => void>();
     expectTypeOf<ChartDrawingGroupId>().toEqualTypeOf<`drawing-group:${string}`>();
@@ -425,13 +471,25 @@ describe("charts public contract", () => {
     expectTypeOf<ChartInstance["setMarks"]>()
       .toEqualTypeOf<(marks: readonly ChartMark[]) => void>();
     expectTypeOf<ChartInstance["createStudy"]>()
-      .toEqualTypeOf<(indicator: ChartIndicatorInput) => ChartIndicatorEntityId>();
+      .toEqualTypeOf<
+        (indicator: ChartStudyInput) => ChartIndicatorEntityId
+      >();
+    expectTypeOf<ChartInstance["createStudyPreset"]>()
+      .toEqualTypeOf<() => ChartStudyPresetV1>();
+    expectTypeOf<ChartInstance["applyStudyPreset"]>()
+      .toEqualTypeOf<(preset: unknown) => readonly ChartIndicatorEntityId[]>();
     expectTypeOf<ChartInstance["getStudyById"]>()
-      .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => ChartIndicator | undefined>();
+      .toEqualTypeOf<
+        (entityId: ChartIndicatorEntityId) => ChartStudy | undefined
+      >();
     expectTypeOf<ChartInstance["getAllStudies"]>()
-      .toEqualTypeOf<() => readonly ChartIndicator[]>();
+      .toEqualTypeOf<() => readonly ChartStudy[]>();
     expectTypeOf<ChartInstance["getStudyApi"]>()
-      .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => ChartStudyApi | undefined>();
+      .toEqualTypeOf<
+        <TInputs extends ChartStudyInputs = ChartNumericStudyInputs>(
+          entityId: ChartIndicatorEntityId
+        ) => ChartStudyApi<TInputs> | undefined
+      >();
     expectTypeOf<ChartInstance["removeStudy"]>()
       .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => boolean>();
     expectTypeOf<ChartInstance["dataReady"]>()
@@ -458,9 +516,9 @@ describe("charts public contract", () => {
       .toEqualTypeOf<() => void>();
     expectTypeOf<ChartStudyApi["entityId"]>().toEqualTypeOf<ChartIndicatorEntityId>();
     expectTypeOf<ChartStudyApi["getInputs"]>()
-      .toEqualTypeOf<() => Readonly<Record<string, number>>>();
+      .toEqualTypeOf<() => ChartNumericStudyInputs>();
     expectTypeOf<ChartStudyApi["setInputs"]>()
-      .toEqualTypeOf<(inputs: Readonly<Record<string, number>>) => void>();
+      .toEqualTypeOf<(inputs: ChartNumericStudyInputs) => void>();
     expectTypeOf<ChartStudyApi["isVisible"]>().toEqualTypeOf<() => boolean>();
     expectTypeOf<ChartStudyApi["setVisible"]>()
       .toEqualTypeOf<(visible: boolean) => void>();
@@ -1148,6 +1206,20 @@ describe("charts public contract", () => {
     } as const;
 
     expect(parseLayout(source).indicators).toEqual(source.indicators);
+    expect(() => parseIndicators(Array(1))).toThrow("dense data array");
+    expect(() => parseLayout({ ...source, indicators: Array(1) }))
+      .toThrow("dense data array");
+    let accessorRead = false;
+    const accessorIndicators = Array(1);
+    Object.defineProperty(accessorIndicators, "0", {
+      enumerable: true,
+      get: () => {
+        accessorRead = true;
+        return source.indicators[0];
+      }
+    });
+    expect(() => parseIndicators(accessorIndicators)).toThrow("dense data array");
+    expect(accessorRead).toBe(false);
     expect(() => parseLayout({
       ...source,
       indicators: source.indicators.map((indicator) => ({
@@ -1227,6 +1299,186 @@ describe("charts public contract", () => {
     }, parseStudyDefinitions([independentFastSlow]))).toMatchObject({
       params: { fast: 10, slow: 5 }
     });
+  });
+
+  it("parses rich custom study inputs while preserving legacy numeric defaults", () => {
+    const definitions = parseStudyDefinitions([customStudyDefinition, richStudyDefinition]);
+    const registered = definitions.get("custom:acme.rich\u00001")!;
+    const selectInput = registered.inputs.find((input) => input.type === "select");
+    expect(Object.isFrozen(registered)).toBe(true);
+    expect(Object.isFrozen(registered.inputs)).toBe(true);
+    expect(selectInput?.type).toBe("select");
+    expect(selectInput?.type === "select" && Object.isFrozen(selectInput.options)).toBe(true);
+    const parsed = parseIndicatorInput({
+      id: richStudyDefinition.id,
+      definitionVersion: "1",
+      params: { enabled: false, label: "Test", mode: "slow", source: "hlc3" },
+      visible: true
+    }, definitions);
+
+    expect(parsed.params).toEqual({
+      length: 5,
+      enabled: false,
+      label: "Test",
+      mode: "slow",
+      source: "hlc3"
+    });
+    expect(parseIndicatorInput({
+      id: customStudyDefinition.id,
+      definitionVersion: "1",
+      params: {},
+      visible: true
+    }, definitions).params).toEqual({ multiplier: 2 });
+    expect(() => parseIndicatorInput({
+      id: "MA",
+      params: { period: "5" },
+      visible: true
+    })).toThrow();
+  });
+
+  it("rejects malformed rich study definitions and values at the shared trust boundary", () => {
+    for (const inputs of [
+      [{ id: "enabled", title: "Enabled", type: "boolean", defaultValue: "true" }],
+      [{
+        id: "mode",
+        title: "Mode",
+        type: "select",
+        defaultValue: "missing",
+        options: [{ value: "fast", title: "Fast" }]
+      }],
+      [{
+        id: "mode",
+        title: "Mode",
+        type: "select",
+        defaultValue: "fast",
+        options: [
+          { value: "fast", title: "Fast" },
+          { value: "fast", title: "Duplicate" }
+        ]
+      }],
+      [{ id: "source", title: "Source", type: "source", defaultValue: "future" }]
+    ]) {
+      expect(() => parseStudyDefinitions([{
+        ...richStudyDefinition,
+        inputs
+      }])).toThrow();
+    }
+
+    const definitions = parseStudyDefinitions([richStudyDefinition]);
+    const current = parseIndicators([{
+      instanceId: "rich-primary",
+      id: richStudyDefinition.id,
+      definitionVersion: "1",
+      params: {},
+      visible: true
+    }], definitions)[0]!;
+    expect(() => mergeIndicatorInputs(current, { enabled: 1 }, definitions)).toThrow();
+    expect(() => mergeIndicatorInputs(current, { length: Number.NaN }, definitions)).toThrow();
+    expect(() => mergeIndicatorInputs(current, { label: "x".repeat(10_001) }, definitions)).toThrow();
+    expect(() => mergeIndicatorInputs(current, { mode: "missing" }, definitions)).toThrow();
+    expect(() => mergeIndicatorInputs(current, { source: "volume" }, definitions)).toThrow();
+    expect(current.params.enabled).toBe(true);
+
+    let getterCalls = 0;
+    const accessorOption = { title: "Fast" };
+    Object.defineProperty(accessorOption, "value", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return "fast";
+      }
+    });
+    expect(() => parseStudyDefinitions([{
+      ...richStudyDefinition,
+      inputs: [{
+        id: "mode",
+        title: "Mode",
+        type: "select",
+        defaultValue: "fast",
+        options: [accessorOption]
+      }]
+    }])).toThrow("only data properties");
+    expect(getterCalls).toBe(0);
+
+    const constructorDefinitions = parseStudyDefinitions([{
+      ...richStudyDefinition,
+      id: "custom:acme.constructor",
+      inputs: [{ id: "constructor", title: "Constructor", type: "string", defaultValue: "safe" }]
+    }]);
+    expect(parseIndicatorInput({
+      id: "custom:acme.constructor",
+      definitionVersion: "1",
+      params: {},
+      visible: true
+    }, constructorDefinitions).params).toEqual({ constructor: "safe" });
+  });
+
+  it("round-trips rich study inputs through Layout V2 and V3 without a schema upgrade", () => {
+    const definitions = parseStudyDefinitions([richStudyDefinition]);
+    const v2 = {
+      schemaVersion: 2,
+      seriesType: "candles",
+      priceScaleMode: "linear",
+      indicators: [{
+        instanceId: "rich-primary",
+        id: richStudyDefinition.id,
+        definitionVersion: "1",
+        params: { length: 8, enabled: false, label: "Layout", mode: "slow", source: "hl2" },
+        visible: true
+      }],
+      drawings: [],
+      gridVisible: true
+    } as const;
+    const parsedV2 = parseLayout(v2, definitions);
+    const parsedV3 = parseLayout(toLayoutV3(parsedV2, definitions), definitions);
+
+    expect(parsedV2.schemaVersion).toBe(2);
+    expect(parsedV3.schemaVersion).toBe(3);
+    expect(parsedV3.indicators[0]?.params).toEqual(v2.indicators[0].params);
+    expect(parsedV3.indicators[0]?.params).not.toBe(v2.indicators[0].params);
+  });
+
+  it("creates and parses an identity-free strict Study Preset V1", () => {
+    const definitions = parseStudyDefinitions([richStudyDefinition]);
+    const indicators = parseIndicators([{
+      instanceId: "rich-primary",
+      id: richStudyDefinition.id,
+      definitionVersion: "1",
+      params: { length: 8, enabled: false, label: "Preset", mode: "slow", source: "open" },
+      visible: false
+    }], definitions);
+    const preset = createStudyPresetSnapshot(indicators, definitions);
+
+    expectTypeOf(preset).toEqualTypeOf<ChartStudyPresetV1>();
+    expect(preset).toEqual({
+      schemaVersion: 1,
+      studies: [{
+        id: richStudyDefinition.id,
+        definitionVersion: "1",
+        params: indicators[0]!.params,
+        visible: false
+      }]
+    });
+    expect("instanceId" in preset.studies[0]!).toBe(false);
+    expect(parseStudyPreset(preset, definitions)).toEqual(preset);
+    expect(Object.isFrozen(preset)).toBe(true);
+    expect(Object.isFrozen(preset.studies[0]!.params)).toBe(true);
+    expect(() => parseStudyPreset({
+      ...preset,
+      studies: [{ ...preset.studies[0], instanceId: "unsafe" }]
+    }, definitions)).toThrow();
+    expect(() => parseStudyPreset({ ...preset, schemaVersion: 2 }, definitions)).toThrow();
+    expect(() => parseStudyPreset({ ...preset, name: "unsafe" }, definitions)).toThrow();
+    expect(() => parseStudyPreset(preset)).toThrow("unsupported");
+
+    const mutableIndicators = structuredClone(indicators);
+    const mutableParams = mutableIndicators[0]!.params as Record<
+      string,
+      string | number | boolean
+    >;
+    const isolated = createStudyPresetSnapshot(mutableIndicators, definitions);
+    mutableParams.label = "Changed";
+    expect(isolated.studies[0]!.params.label).toBe("Preset");
   });
 
   it("validates sparse study output visual overrides against output metadata", () => {
