@@ -490,11 +490,49 @@ export function createChartController(
     readonly generation: number;
     readonly dataVersion: string;
     readonly phase: "initial" | "history";
+    readonly cursor?: string;
   }> = [];
   let capabilityGeneration = 0;
   let capabilityController: AbortController | undefined;
   let viewModelRevision = 0;
   let replayTimer: ReturnType<typeof setTimeout> | undefined;
+  let replaySessionGeneration = 0;
+  let replayAdvanceTask: Promise<void> | undefined;
+  let presentationIsPending = false;
+
+  interface ReplayAdvanceTransaction {
+    readonly session: number;
+    readonly selectionRevision: number;
+    readonly dataGeneration: number;
+    readonly dataVersion: string | undefined;
+    readonly selection: SeriesSelection;
+    readonly materializationIntent: number;
+    readonly originTime: number;
+    readonly baseMaterialized: MaterializedSeries;
+    readonly windowCandles: Map<number, Candle>;
+    readonly availableRequestCursors: Array<string | undefined>;
+    readonly consumedRequestCursors: Array<string | undefined>;
+    readonly attemptedRequests: Set<string>;
+    readonly exhaustedRequestCursors: Array<string | undefined>;
+    traversedSteps: number;
+    traversalTime: number;
+    resolved?: {
+      readonly requestedSteps: number;
+      readonly targetTime: number;
+      readonly terminal: boolean;
+      readonly targetIndex?: number;
+    };
+    chunkRequestedSteps?: number;
+    readonly chunkCandles: Map<number, Candle>;
+    readonly chunkRequestCursors: Array<string | undefined>;
+    trustedOriginIndex?: number;
+    waitingForPage: boolean;
+    waitingCursor?: string;
+    requestedSteps: number;
+    keepPlaying: boolean;
+  }
+
+  let replayAdvanceTransaction: ReplayAdvanceTransaction | undefined;
 
   const clearReplayTimer = (): void => {
     if (replayTimer === undefined) return;
@@ -506,6 +544,9 @@ export function createChartController(
     if (!active) return;
     active = false;
     clearReplayTimer();
+    replaySessionGeneration += 1;
+    replayAdvanceTask = undefined;
+    replayAdvanceTransaction = undefined;
     materializationIntentGeneration += 1;
     capabilityGeneration += 1;
     capabilityController?.abort();
@@ -533,6 +574,16 @@ export function createChartController(
     dependencies.onViewModelChanged?.(structuredClone(viewModel), ++viewModelRevision);
   };
 
+  const markPresentationPending = (): void => {
+    presentationIsPending = true;
+    dependencies.onPresentationPending?.(structuredClone(state));
+  };
+
+  const markPresentationReady = (): void => {
+    presentationIsPending = false;
+    dependencies.onPresentationReady?.(structuredClone(state));
+  };
+
   const replayPresentation = (
     input: MaterializedSeries
   ): MaterializedSeries =>
@@ -540,21 +591,390 @@ export function createChartController(
       ? input
       : materializedThrough(input, viewModel.replay.cursorTime!);
 
-  const replayCandles = (): readonly Candle[] => {
-    const snapshot = dependencies.store.getSnapshot();
-    return sameSelection(snapshot.selection, selectionOf(state)) ? snapshot.candles : [];
+  type ReplayAdvanceResolution =
+    | {
+      readonly type: "complete";
+      readonly targetTime: number;
+      readonly terminal: boolean;
+      readonly targetIndex?: number;
+      }
+    | { readonly type: "reload"; readonly cursor: string | undefined }
+    | { readonly type: "terminal" };
+
+  type PreparedReplayWindow =
+    | { readonly type: "ready"; readonly materialized: MaterializedSeries }
+    | { readonly type: "reload"; readonly cursor: string | undefined }
+    | { readonly type: "invalid" };
+
+  const replayCandles = (): readonly Candle[] =>
+    currentMaterialized?.series.candles ?? [];
+
+  const hasRequestCursor = (
+    cursors: readonly (string | undefined)[],
+    cursor: string | undefined
+  ): boolean => cursors.some((item) => item === cursor);
+
+  const replayWindowLimit = (): number => {
+    const demand = dependencies.runtime.getMaterializationDemand();
+    return state.view === "intraday"
+      ? Math.min(maxContinuousMaterializedCandleCount, maxIntradayCandleCount(state.intradayDays) + 1)
+      : Math.min(
+          maxContinuousMaterializedCandleCount,
+          Math.max(1, demand.visibleCount + demand.overscanCount * 2)
+        );
   };
 
-  const ensureReplayWindow = (time: number): boolean => {
-    if (currentMaterialized?.series.candles.some((candle) => candle.time === time)) return true;
+  const markReplayCursorConsumed = (
+    transaction: ReplayAdvanceTransaction,
+    cursor: string | undefined
+  ): void => {
+    if (!hasRequestCursor(transaction.consumedRequestCursors, cursor)) {
+      transaction.consumedRequestCursors.push(cursor);
+    }
+  };
+
+  const captureReplayWindow = (
+    transaction: ReplayAdvanceTransaction,
+    anchorTime: number
+  ): void => {
+    for (const candle of transaction.baseMaterialized.series.candles) {
+      transaction.windowCandles.set(candle.time, candle);
+    }
+    const baseMinTime = transaction.baseMaterialized.sourceMinTime;
+    const baseMaxTime = transaction.baseMaterialized.sourceMaxTime;
+    for (const descriptor of dependencies.store.listDescriptors()) {
+      if (
+        baseMinTime !== undefined &&
+        baseMaxTime !== undefined &&
+        descriptor.maxTime >= baseMinTime &&
+        descriptor.minTime <= baseMaxTime &&
+        !hasRequestCursor(transaction.availableRequestCursors, descriptor.requestCursor)
+      ) transaction.availableRequestCursors.push(descriptor.requestCursor);
+      if (descriptor.candles === undefined) continue;
+      if (!hasRequestCursor(transaction.availableRequestCursors, descriptor.requestCursor)) {
+        transaction.availableRequestCursors.push(descriptor.requestCursor);
+      }
+      for (const candle of descriptor.candles) {
+        transaction.windowCandles.set(candle.time, candle);
+      }
+    }
+    const limit = replayWindowLimit();
+    if (transaction.windowCandles.size <= limit) return;
+    const retained = [...transaction.windowCandles.values()]
+      .sort((left, right) => {
+        const distance = Math.abs(left.time - anchorTime) - Math.abs(right.time - anchorTime);
+        return distance === 0 ? left.time - right.time : distance;
+      })
+      .slice(0, limit);
+    transaction.windowCandles.clear();
+    for (const candle of retained) transaction.windowCandles.set(candle.time, candle);
+  };
+
+  const createReplayAdvanceTransaction = (
+    originTime: number,
+    requestedSteps: number,
+    keepPlaying: boolean,
+    materializationIntent: number
+  ): ReplayAdvanceTransaction => {
+    const transaction: ReplayAdvanceTransaction = {
+      session: replaySessionGeneration,
+      selectionRevision,
+      dataGeneration: dependencies.dataCoordinator.getGeneration(),
+      dataVersion: dependencies.store.getSnapshot().dataVersion,
+      selection: selectionOf(state),
+      materializationIntent,
+      originTime,
+      baseMaterialized: currentMaterialized!,
+      windowCandles: new Map(),
+      availableRequestCursors: [],
+      consumedRequestCursors: [],
+      attemptedRequests: new Set(),
+      exhaustedRequestCursors: [],
+      traversedSteps: 0,
+      traversalTime: originTime,
+      chunkCandles: new Map(),
+      chunkRequestCursors: [],
+      waitingForPage: false,
+      requestedSteps,
+      keepPlaying
+    };
+    return transaction;
+  };
+
+  const completeReplayResolution = (
+    transaction: ReplayAdvanceTransaction,
+    targetTime: number,
+    terminal: boolean,
+    targetIndex?: number
+  ): ReplayAdvanceResolution => {
+    for (const candle of transaction.chunkCandles.values()) {
+      transaction.windowCandles.set(candle.time, candle);
+    }
+    for (const cursor of transaction.chunkRequestCursors) {
+      if (!hasRequestCursor(transaction.availableRequestCursors, cursor)) {
+        transaction.availableRequestCursors.push(cursor);
+      }
+      markReplayCursorConsumed(transaction, cursor);
+    }
+    transaction.resolved = {
+      requestedSteps: transaction.requestedSteps,
+      targetTime,
+      terminal,
+      ...(targetIndex === undefined ? {} : { targetIndex })
+    };
+    return {
+      type: "complete",
+      targetTime,
+      terminal,
+      ...(targetIndex === undefined ? {} : { targetIndex })
+    };
+  };
+
+  const descriptorCountsAreExact = (): boolean => {
+    const descriptors = dependencies.store.listDescriptors();
+    for (let index = 0; index + 1 < descriptors.length; index += 1) {
+      if (descriptors[index + 1]!.maxTime > descriptors[index]!.minTime) return false;
+    }
+    return true;
+  };
+
+  const resolveReplayFromDescriptorCounts = (
+    transaction: ReplayAdvanceTransaction
+  ): ReplayAdvanceResolution => {
+    const descriptors = dependencies.store.listDescriptors();
+    if (transaction.trustedOriginIndex === undefined) {
+      const originDescriptorIndex = descriptors.findIndex(
+        (descriptor) =>
+          transaction.originTime >= descriptor.minTime &&
+          transaction.originTime <= descriptor.maxTime &&
+          !descriptor.excludedOverlapTimes.includes(transaction.originTime)
+      );
+      const originDescriptor = descriptors[originDescriptorIndex];
+      if (originDescriptor === undefined) return { type: "terminal" };
+      const baseOwnerCandles = transaction.baseMaterialized.series.candles.filter(
+        (candle) =>
+          candle.time >= originDescriptor.minTime &&
+          candle.time <= originDescriptor.maxTime &&
+          !originDescriptor.excludedOverlapTimes.includes(candle.time)
+      );
+      const originCandles =
+        originDescriptor.candles ??
+        (baseOwnerCandles.length === originDescriptor.candleCount ? baseOwnerCandles : undefined);
+      if (originCandles === undefined) {
+        return { type: "reload", cursor: originDescriptor.requestCursor };
+      }
+      const localOriginIndex = originCandles.findIndex(
+        (candle) => candle.time === transaction.originTime
+      );
+      if (localOriginIndex < 0) return { type: "terminal" };
+      let originIndex = localOriginIndex;
+      for (let index = descriptors.length - 1; index > originDescriptorIndex; index -= 1) {
+        originIndex += descriptors[index]!.candleCount;
+      }
+      transaction.trustedOriginIndex = originIndex;
+    }
+    const totalCount = descriptors.reduce((total, descriptor) => total + descriptor.candleCount, 0);
+    const originIndex = transaction.trustedOriginIndex;
+    if (originIndex === undefined) return { type: "terminal" };
+    if (originIndex >= totalCount - 1) return { type: "terminal" };
+    const requestedIndex = originIndex + transaction.requestedSteps;
+    const targetIndex = Math.min(requestedIndex, totalCount - 1);
+    let offset = 0;
+    for (const descriptor of [...descriptors].reverse()) {
+      const end = offset + descriptor.candleCount;
+      if (targetIndex < end) {
+        if (descriptor.candles === undefined) {
+          return { type: "reload", cursor: descriptor.requestCursor };
+        }
+        const candle = descriptor.candles[targetIndex - offset];
+        markReplayCursorConsumed(transaction, descriptor.requestCursor);
+        return candle === undefined
+          ? { type: "terminal" }
+          : completeReplayResolution(
+              transaction,
+              candle.time,
+              targetIndex === totalCount - 1,
+              targetIndex
+            );
+      }
+      offset = end;
+    }
+    return { type: "terminal" };
+  };
+
+  const resetReplayChunk = (
+    transaction: ReplayAdvanceTransaction,
+    remainingSteps: number
+  ): void => {
+    transaction.chunkRequestedSteps = remainingSteps;
+    transaction.chunkCandles.clear();
+    transaction.chunkRequestCursors.splice(0);
+  };
+
+  const captureReplayChunkPage = (
+    transaction: ReplayAdvanceTransaction,
+    requestCursor: string | undefined,
+    candles: readonly Candle[],
+    limit: number
+  ): void => {
+    if (!hasRequestCursor(transaction.chunkRequestCursors, requestCursor)) {
+      transaction.chunkRequestCursors.push(requestCursor);
+    }
+    for (const candle of candles) {
+      if (candle.time > transaction.traversalTime) {
+        transaction.chunkCandles.set(candle.time, candle);
+      }
+    }
+    if (transaction.chunkCandles.size <= limit) return;
+    const retained = [...transaction.chunkCandles.values()]
+      .sort((left, right) => left.time - right.time)
+      .slice(0, limit);
+    transaction.chunkCandles.clear();
+    for (const candle of retained) transaction.chunkCandles.set(candle.time, candle);
+  };
+
+  const resolveReplayAcrossOverlaps = (
+    transaction: ReplayAdvanceTransaction,
+    retainedOriginIndex: number
+  ): ReplayAdvanceResolution => {
+    const retained = transaction.baseMaterialized.series.candles;
+    if (transaction.traversedSteps === 0 && transaction.traversalTime === transaction.originTime) {
+      const knownAfterOrigin = retained.slice(retainedOriginIndex + 1);
+      transaction.traversedSteps = knownAfterOrigin.length;
+      transaction.traversalTime = knownAfterOrigin.at(-1)?.time ?? transaction.originTime;
+    }
+    while (true) {
+      const remaining = transaction.requestedSteps - transaction.traversedSteps;
+      if (remaining <= 0) {
+        return completeReplayResolution(transaction, transaction.traversalTime, false);
+      }
+      if (transaction.chunkRequestedSteps !== remaining) {
+        resetReplayChunk(transaction, remaining);
+      }
+      const limit = Math.min(remaining, maxContinuousMaterializedCandleCount);
+      const descriptors = dependencies.store.listDescriptors();
+      while (true) {
+        const sorted = [...transaction.chunkCandles.values()]
+          .sort((left, right) => left.time - right.time);
+        const candidate = sorted[limit - 1];
+        let next:
+          | { readonly descriptor: (typeof descriptors)[number]; readonly index: number }
+          | undefined;
+        for (let index = descriptors.length - 1; index >= 0; index -= 1) {
+          const descriptor = descriptors[index]!;
+          if (
+            descriptor.candleCount === 0 ||
+            descriptor.maxTime <= transaction.traversalTime ||
+            hasRequestCursor(transaction.exhaustedRequestCursors, descriptor.requestCursor) ||
+            hasRequestCursor(transaction.chunkRequestCursors, descriptor.requestCursor) ||
+            (candidate !== undefined && descriptor.minTime > candidate.time)
+          ) continue;
+          if (
+            next === undefined ||
+            descriptor.minTime < next.descriptor.minTime ||
+            (descriptor.minTime === next.descriptor.minTime && index > next.index)
+          ) next = { descriptor, index };
+        }
+        if (next === undefined) {
+          if (sorted.length === 0) {
+            return transaction.traversedSteps > 0
+              ? completeReplayResolution(transaction, transaction.traversalTime, true)
+              : { type: "terminal" };
+          }
+          if (remaining <= sorted.length) {
+            const target = sorted[remaining - 1]!;
+            const hasAfter =
+              sorted.length > remaining ||
+              descriptors.some((descriptor) => descriptor.maxTime > target.time);
+            return completeReplayResolution(transaction, target.time, !hasAfter);
+          }
+          const tail = sorted.at(-1)!;
+          transaction.traversedSteps += sorted.length;
+          transaction.traversalTime = tail.time;
+          for (const descriptor of descriptors) {
+            if (
+              descriptor.maxTime <= tail.time &&
+              !hasRequestCursor(transaction.exhaustedRequestCursors, descriptor.requestCursor)
+            ) transaction.exhaustedRequestCursors.push(descriptor.requestCursor);
+          }
+          resetReplayChunk(
+            transaction,
+            transaction.requestedSteps - transaction.traversedSteps
+          );
+          break;
+        }
+        if (next.descriptor.candles === undefined) {
+          return { type: "reload", cursor: next.descriptor.requestCursor };
+        }
+        captureReplayChunkPage(
+          transaction,
+          next.descriptor.requestCursor,
+          next.descriptor.candles,
+          limit
+        );
+      }
+    }
+  };
+
+  const resolveReplayAdvance = (
+    transaction: ReplayAdvanceTransaction
+  ): ReplayAdvanceResolution => {
+    if (transaction.resolved?.requestedSteps === transaction.requestedSteps) {
+      return {
+        type: "complete",
+        targetTime: transaction.resolved.targetTime,
+        terminal: transaction.resolved.terminal,
+        ...(transaction.resolved.targetIndex === undefined
+          ? {}
+          : { targetIndex: transaction.resolved.targetIndex })
+      };
+    }
+    transaction.resolved = undefined;
+    const retained = transaction.baseMaterialized.series.candles;
+    const retainedOriginIndex = retained.findIndex(
+      (candle) => candle.time === transaction.originTime
+    );
+    const retainedCandidate = retained[
+      retainedOriginIndex + transaction.requestedSteps
+    ];
+    if (retainedOriginIndex >= 0 && retainedCandidate !== undefined) {
+      const hasKnownAfter = retainedOriginIndex + transaction.requestedSteps + 1 < retained.length;
+      const hasDescriptorAfter = dependencies.store.listDescriptors().some(
+        (descriptor) => descriptor.candleCount > 0 && descriptor.maxTime > retainedCandidate.time
+      );
+      return completeReplayResolution(
+        transaction,
+        retainedCandidate.time,
+        !hasKnownAfter && !hasDescriptorAfter
+      );
+    }
+    if (retainedOriginIndex < 0) return { type: "terminal" };
+    return descriptorCountsAreExact()
+      ? resolveReplayFromDescriptorCounts(transaction)
+      : resolveReplayAcrossOverlaps(transaction, retainedOriginIndex);
+  };
+
+  const prepareReplayWindow = (
+    transaction: ReplayAdvanceTransaction,
+    time: number
+  ): PreparedReplayWindow => {
+    if (
+      currentMaterialized === transaction.baseMaterialized &&
+      currentMaterialized?.series.candles.some((candle) => candle.time === time)
+    ) {
+      return { type: "ready", materialized: currentMaterialized };
+    }
+    captureReplayWindow(transaction, time);
     const demand = dependencies.runtime.getMaterializationDemand();
     const intradayDayCount = state.view === "intraday" ? state.intradayDays : undefined;
     const result = materializeSeriesAroundTime({
       store: dependencies.store,
-      selection: selectionOf(state),
+      selection: transaction.selection,
       anchorTime: time,
       visibleCount: demand.visibleCount,
       overscanCount: demand.overscanCount,
+      additionalCandles: [...transaction.windowCandles.values()],
+      availableRequestCursors: transaction.availableRequestCursors,
       ...(intradayDayCount === undefined ? {} : {
         intradayDayCount,
         ...(state.capabilities?.intradayScale === undefined
@@ -562,13 +982,13 @@ export function createChartController(
           : { intradayScale: state.capabilities.intradayScale })
       })
     });
-    if (
-      result.missingRequestCursors.length > 0 ||
-      !result.series.candles.some((candle) => candle.time === time)
-    ) return false;
-    currentMaterialized = result;
-    materializedAnchorTime = time;
-    return true;
+    const missingCursor = result.missingRequestCursors[0];
+    if (result.missingRequestCursors.length > 0) {
+      return { type: "reload", cursor: missingCursor };
+    }
+    return result.series.candles.some((candle) => candle.time === time)
+      ? { type: "ready", materialized: result }
+      : { type: "invalid" };
   };
 
   const commitReplayPresentation = (anchorTime?: number): boolean => {
@@ -579,32 +999,238 @@ export function createChartController(
     return true;
   };
 
-  const replayCursorIndex = (): number =>
-    viewModel.replay.status === "inactive"
-      ? -1
-      : replayCandles().findIndex(
-          (candle) => candle.time === viewModel.replay.cursorTime
-        );
+  const replayDataContextIsCurrent = (
+    transaction: ReplayAdvanceTransaction
+  ): boolean => {
+    const snapshot = dependencies.store.getSnapshot();
+    return (
+      active &&
+      transaction.materializationIntent === materializationIntentGeneration &&
+      transaction.selectionRevision === selectionRevision &&
+      transaction.dataGeneration === dependencies.dataCoordinator.getGeneration() &&
+      transaction.dataVersion === snapshot.dataVersion &&
+      sameSelection(selectionOf(state), transaction.selection) &&
+      sameSelection(snapshot.selection, transaction.selection)
+    );
+  };
 
-  const advanceReplay = (steps: number, keepPlaying: boolean): boolean => {
-    const index = replayCursorIndex();
-    const candles = replayCandles();
-    if (index < 0 || candles.length === 0) return false;
-    const nextIndex = Math.min(candles.length - 1, index + steps);
-    if (nextIndex <= index) return false;
-    const cursorTime = candles[nextIndex]!.time;
-    if (!ensureReplayWindow(cursorTime)) return false;
+  const replayContextIsCurrent = (
+    transaction: ReplayAdvanceTransaction
+  ): boolean =>
+    replayAdvanceTransaction === transaction &&
+    transaction.session === replaySessionGeneration &&
+    viewModel.replay.status !== "inactive" &&
+    viewModel.replay.cursorTime === transaction.originTime &&
+    replayDataContextIsCurrent(transaction);
+
+  const clearReplayAdvanceTransaction = (
+    transaction: ReplayAdvanceTransaction
+  ): void => {
+    if (replayAdvanceTransaction !== transaction) return;
+    replayAdvanceTransaction = undefined;
+    replayAdvanceTask = undefined;
+  };
+
+  const commitReplayAdvance = (
+    transaction: ReplayAdvanceTransaction,
+    resolution: Extract<ReplayAdvanceResolution, { type: "complete" }>,
+    prepared: MaterializedSeries
+  ): boolean => {
+    if (!replayContextIsCurrent(transaction)) return false;
+    const targetLocalIndex = prepared.series.candles.findIndex(
+      (candle) => candle.time === resolution.targetTime
+    );
+    currentMaterialized =
+      resolution.targetIndex === undefined || targetLocalIndex < 0
+        ? prepared
+        : {
+            ...prepared,
+            sourceIndexOffset: Math.max(0, resolution.targetIndex - targetLocalIndex)
+          };
+    materializedAnchorTime = resolution.targetTime;
     viewModel = {
       ...viewModel,
       replay: {
-        status: keepPlaying && nextIndex < candles.length - 1 ? "playing" : "paused",
+        status: transaction.keepPlaying && !resolution.terminal ? "playing" : "paused",
         speed: viewModel.replay.speed,
-        cursorTime
+        cursorTime: resolution.targetTime
       }
     };
-    if (!commitReplayPresentation(cursorTime)) return false;
+    return commitReplayPresentation(resolution.targetTime);
+  };
+
+  const restoreReplayReadiness = (transaction: ReplayAdvanceTransaction): void => {
+    if (!replayDataContextIsCurrent(transaction)) return;
+    markPresentationReady();
+  };
+
+  const pauseReplayAfterLoadFailure = (
+    transaction: ReplayAdvanceTransaction
+  ): void => {
+    if (!replayContextIsCurrent(transaction)) return;
+    const changed = viewModel.replay.status !== "paused";
+    transaction.keepPlaying = false;
+    clearReplayAdvanceTransaction(transaction);
+    if (changed) {
+      viewModel = {
+        ...viewModel,
+        replay: {
+          status: "paused",
+          speed: viewModel.replay.speed,
+          cursorTime: transaction.originTime
+        }
+      };
+    }
+    restoreReplayReadiness(transaction);
+    if (changed) publish();
+  };
+
+  const finalizeReplayAdvance = (
+    transaction: ReplayAdvanceTransaction,
+    keepPlaying: boolean
+  ): void => {
+    clearReplayAdvanceTransaction(transaction);
+    if (presentationIsPending) markPresentationReady();
     publish();
+    for (const cursor of transaction.consumedRequestCursors) {
+      emitPendingDataLoads(
+        transaction.selection,
+        transaction.dataGeneration,
+        { cursor }
+      );
+    }
+    if (keepPlaying && viewModel.replay.status === "playing") scheduleReplay();
+  };
+
+  const runReplayAdvance = async (
+    transaction: ReplayAdvanceTransaction,
+    initialCursor: string | undefined
+  ): Promise<void> => {
+    let cursor = initialCursor;
+    while (replayContextIsCurrent(transaction)) {
+      const requestKey = JSON.stringify([
+        transaction.requestedSteps,
+        cursor,
+        transaction.resolved?.targetTime,
+        transaction.availableRequestCursors.length,
+        transaction.traversalTime
+      ]);
+      if (transaction.attemptedRequests.has(requestKey)) {
+        pauseReplayAfterLoadFailure(transaction);
+        return;
+      }
+      transaction.attemptedRequests.add(requestKey);
+      transaction.waitingForPage = true;
+      transaction.waitingCursor = cursor;
+      try {
+        await dependencies.dataCoordinator.reloadPage(cursor);
+      } catch {
+        transaction.waitingForPage = false;
+        pauseReplayAfterLoadFailure(transaction);
+        return;
+      }
+      transaction.waitingForPage = false;
+      if (!replayContextIsCurrent(transaction)) return;
+      if (dependencies.store.getDescriptorForCursor(cursor)?.candles === undefined) {
+        pauseReplayAfterLoadFailure(transaction);
+        return;
+      }
+      markReplayCursorConsumed(transaction, cursor);
+      const resolution = resolveReplayAdvance(transaction);
+      if (resolution.type === "terminal") {
+        pauseReplayAfterLoadFailure(transaction);
+        return;
+      }
+      if (resolution.type === "reload") {
+        cursor = resolution.cursor;
+        continue;
+      }
+      const prepared = prepareReplayWindow(transaction, resolution.targetTime);
+      if (prepared.type === "reload") {
+        cursor = prepared.cursor;
+        continue;
+      }
+      if (
+        prepared.type === "invalid" ||
+        resolution.targetTime === transaction.originTime ||
+        !commitReplayAdvance(transaction, resolution, prepared.materialized)
+      ) {
+        pauseReplayAfterLoadFailure(transaction);
+        return;
+      }
+      const keepPlaying = transaction.keepPlaying;
+      finalizeReplayAdvance(transaction, keepPlaying);
+      return;
+    }
+  };
+
+  const requestReplayAdvance = (steps: number, keepPlaying: boolean): boolean => {
+    if (viewModel.replay.status === "inactive") return false;
+    if (replayAdvanceTransaction !== undefined) {
+      const requestedSteps = replayAdvanceTransaction.requestedSteps + steps;
+      if (!Number.isSafeInteger(requestedSteps)) return false;
+      replayAdvanceTransaction.requestedSteps = requestedSteps;
+      replayAdvanceTransaction.keepPlaying = keepPlaying;
+      return true;
+    }
+    const transaction = createReplayAdvanceTransaction(
+      viewModel.replay.cursorTime!,
+      steps,
+      keepPlaying,
+      ++materializationIntentGeneration
+    );
+    replayAdvanceTransaction = transaction;
+    const resolution = resolveReplayAdvance(transaction);
+    if (resolution.type === "terminal") {
+      clearReplayAdvanceTransaction(transaction);
+      return false;
+    }
+    let cursor: string | undefined;
+    if (resolution.type === "reload") {
+      cursor = resolution.cursor;
+    } else {
+      const prepared = prepareReplayWindow(transaction, resolution.targetTime);
+      if (prepared.type === "ready") {
+        if (
+          resolution.targetTime === transaction.originTime ||
+          !commitReplayAdvance(transaction, resolution, prepared.materialized)
+        ) {
+          clearReplayAdvanceTransaction(transaction);
+          return false;
+        }
+        finalizeReplayAdvance(transaction, false);
+        return true;
+      }
+      if (prepared.type === "invalid") {
+        clearReplayAdvanceTransaction(transaction);
+        return false;
+      }
+      cursor = prepared.cursor;
+    }
+    markPresentationPending();
+    const task = runReplayAdvance(transaction, cursor);
+    replayAdvanceTask = task;
+    void task.then(
+      () => clearReplayAdvanceTransaction(transaction),
+      () => {
+        pauseReplayAfterLoadFailure(transaction);
+        clearReplayAdvanceTransaction(transaction);
+      }
+    );
     return true;
+  };
+
+  const hasReplaySuccessor = (time: number): boolean => {
+    if (currentMaterialized === undefined) return false;
+    const probe = createReplayAdvanceTransaction(
+      time,
+      1,
+      false,
+      materializationIntentGeneration
+    );
+    const resolution = resolveReplayAdvance(probe);
+    return resolution.type === "reload" ||
+      (resolution.type === "complete" && resolution.targetTime !== time);
   };
 
   const scheduleReplay = (): void => {
@@ -628,7 +1254,7 @@ export function createChartController(
         scheduleReplay();
         return;
       }
-      if (!advanceReplay(1, true)) {
+      if (!requestReplayAdvance(1, true)) {
         viewModel = {
           ...viewModel,
           replay: {
@@ -640,14 +1266,17 @@ export function createChartController(
         publish();
         return;
       }
-      scheduleReplay();
+      if (replayAdvanceTask === undefined) scheduleReplay();
     }, 1_000 / viewModel.replay.speed);
   };
 
   const report = (error: ChartError, blocking: boolean): void => {
     if (!active) return;
-    if (blocking && viewModel.replay.status === "playing") {
+    if (blocking && viewModel.replay.status !== "inactive") {
       clearReplayTimer();
+      replaySessionGeneration += 1;
+      replayAdvanceTask = undefined;
+      replayAdvanceTransaction = undefined;
       viewModel = {
         ...viewModel,
         replay: {
@@ -699,18 +1328,27 @@ export function createChartController(
       selection: event.selection,
       generation: event.generation,
       dataVersion: event.dataVersion,
-      phase: event.type === "initialPageAccepted" ? "initial" : "history"
+      phase: event.type === "initialPageAccepted" ? "initial" : "history",
+      ...(event.type === "historyPageAccepted" && event.cursor !== undefined
+        ? { cursor: event.cursor }
+        : {})
     });
     return true;
   };
 
   const emitPendingDataLoads = (
     expectedSelection: SeriesSelection,
-    expectedGeneration: number
+    expectedGeneration: number,
+    historyCursor?: { readonly cursor: string | undefined }
   ): void => {
     const ready = pendingDataLoads.filter(
       (item) =>
-        item.generation === expectedGeneration && sameSelection(item.selection, expectedSelection)
+        item.generation === expectedGeneration &&
+        sameSelection(item.selection, expectedSelection) &&
+        (
+          historyCursor === undefined ||
+          (item.phase === "history" && item.cursor === historyCursor.cursor)
+        )
     );
     pendingDataLoads = pendingDataLoads.filter((item) => !ready.includes(item));
     for (const item of ready) {
@@ -728,7 +1366,7 @@ export function createChartController(
     const expectedSelectionRevision = selectionRevision;
     const expectedDataGeneration = dependencies.dataCoordinator.getGeneration();
     if (!sameSelection(dependencies.store.getSnapshot().selection, expectedSelection)) return false;
-    dependencies.onPresentationPending?.(structuredClone(state));
+    markPresentationPending();
     const materializationIntent = ++materializationIntentGeneration;
     const demand = dependencies.runtime.getMaterializationDemand();
     const requestedCandleCount = requestedVisibleRange === undefined
@@ -965,7 +1603,7 @@ export function createChartController(
       dependencies.onPresentationUnavailable?.(structuredClone(state));
       return false;
     }
-    dependencies.onPresentationReady?.(structuredClone(state));
+    markPresentationReady();
     emitPendingDataLoads(expectedSelection, expectedDataGeneration);
     transientCandles.clear();
     transientReferenceCandle = undefined;
@@ -1163,7 +1801,7 @@ export function createChartController(
     const requestedSelectionRevision = selectionRevision;
     const expectedSelection = selectionOf(state);
     activeRangeCommand = command;
-    dependencies.onPresentationPending?.(structuredClone(state));
+    markPresentationPending();
     void fulfillVisibleRange(range, command, requestedSelectionRevision, expectedSelection).finally(() => {
       if (activeRangeCommand === command) activeRangeCommand = undefined;
     });
@@ -1619,6 +2257,10 @@ export function createChartController(
       }
       if (event.type === "historyPageAccepted") {
         if (!queueDataLoad(event)) return;
+        if (viewModel.replay.status !== "inactive") {
+          failedHistoryCursor = undefined;
+          return;
+        }
         if (needsIntradayHistory()) {
           state = { ...state, loading: true };
           viewModel = { ...viewModel, status: { type: "loading" } };
@@ -1643,7 +2285,11 @@ export function createChartController(
         });
         return;
       }
-      if (event.type === "snapshotRefreshing") return;
+      if (event.type === "snapshotRefreshing") {
+        pendingDataLoads = [];
+        api.stopReplay();
+        return;
+      }
       if (event.type === "initialRequestFailed") {
         if (isAbortError(event.error)) return;
         if (requestedVisibleRange !== undefined) cancelVisibleRangeCommand();
@@ -1747,7 +2393,7 @@ export function createChartController(
     },
     handleMaterializedBoundary(direction, anchorTime) {
       if (!active || anchorTime === undefined || currentMaterialized === undefined) return;
-      if (viewModel.intradayView) return;
+      if (viewModel.intradayView || replayAdvanceTransaction !== undefined) return;
       materializedAnchorTime = anchorTime;
       const rematerialize =
         direction === "before"
@@ -1765,7 +2411,12 @@ export function createChartController(
       if (direction === "before") void dependencies.dataCoordinator.loadMoreBefore();
     },
     handleMaterializationDemandChanged(demand) {
-      if (!active || currentMaterialized === undefined || requestedVisibleRange !== undefined) return;
+      if (
+        !active ||
+        currentMaterialized === undefined ||
+        requestedVisibleRange !== undefined ||
+        replayAdvanceTransaction !== undefined
+      ) return;
       const required = demand.visibleCount + demand.overscanCount * 2;
       if (currentMaterialized.series.candles.length >= required) return;
       if (currentMaterialized.hasKnownOlderData || currentMaterialized.hasKnownNewerPages) {
@@ -1864,7 +2515,7 @@ export function createChartController(
         !state.loading &&
         currentMaterialized !== undefined &&
         currentMaterialized.series.candles.length > 0
-      ) dependencies.onPresentationReady?.(structuredClone(state));
+      ) markPresentationReady();
     },
     searchSymbols(query) {
       if (!active) return;
@@ -2092,8 +2743,13 @@ export function createChartController(
       if (requested === undefined) return false;
       const candles = replayCandles();
       const index = candles.findIndex((candle) => candle.time === requested);
-      if (index < 0 || index >= candles.length - 1 || !ensureReplayWindow(requested)) return false;
+      if (index < 0 || !hasReplaySuccessor(requested)) return false;
       clearReplayTimer();
+      cancelVisibleRangeCommand();
+      replaySessionGeneration += 1;
+      replayAdvanceTask = undefined;
+      replayAdvanceTransaction = undefined;
+      materializationIntentGeneration += 1;
       viewModel = {
         ...viewModel,
         replay: {
@@ -2103,6 +2759,7 @@ export function createChartController(
         }
       };
       if (!commitReplayPresentation(requested)) return false;
+      if (presentationIsPending) markPresentationReady();
       publish();
       return true;
     },
@@ -2110,6 +2767,7 @@ export function createChartController(
       if (!active || !Number.isSafeInteger(steps) || steps < 1) return false;
       clearReplayTimer();
       const wasPlaying = viewModel.replay.status === "playing";
+      const cursorBefore = viewModel.replay.cursorTime;
       if (wasPlaying) {
         viewModel = {
           ...viewModel,
@@ -2120,8 +2778,11 @@ export function createChartController(
           }
         };
       }
-      const advanced = advanceReplay(steps, false);
-      if (!advanced && wasPlaying) publish();
+      if (replayAdvanceTransaction !== undefined) {
+        replayAdvanceTransaction.keepPlaying = false;
+      }
+      const advanced = requestReplayAdvance(steps, false);
+      if (wasPlaying && viewModel.replay.cursorTime === cursorBefore) publish();
       return advanced;
     },
     playReplay() {
@@ -2131,7 +2792,7 @@ export function createChartController(
         viewModel.replay.status === "inactive"
       ) return;
       if (viewModel.replay.status === "playing") return;
-      if (replayCursorIndex() >= replayCandles().length - 1) return;
+      if (!hasReplaySuccessor(viewModel.replay.cursorTime!)) return;
       viewModel = {
         ...viewModel,
         replay: {
@@ -2141,11 +2802,17 @@ export function createChartController(
         }
       };
       publish();
-      scheduleReplay();
+      if (replayAdvanceTask === undefined) scheduleReplay();
+      else if (replayAdvanceTransaction !== undefined) {
+        replayAdvanceTransaction.keepPlaying = true;
+      }
     },
     pauseReplay() {
       clearReplayTimer();
       if (!active || viewModel.replay.status !== "playing") return;
+      if (replayAdvanceTransaction !== undefined) {
+        replayAdvanceTransaction.keepPlaying = false;
+      }
       viewModel = {
         ...viewModel,
         replay: {
@@ -2160,17 +2827,23 @@ export function createChartController(
       if (!active || speed === viewModel.replay.speed) return;
       viewModel = { ...viewModel, replay: { ...viewModel.replay, speed } };
       publish();
-      if (viewModel.replay.status === "playing") scheduleReplay();
+      if (viewModel.replay.status === "playing" && replayAdvanceTask === undefined) {
+        scheduleReplay();
+      }
     },
     stopReplay() {
       clearReplayTimer();
       if (!active || viewModel.replay.status === "inactive") return;
       const cursorTime = viewModel.replay.cursorTime;
+      replaySessionGeneration += 1;
+      replayAdvanceTask = undefined;
+      replayAdvanceTransaction = undefined;
       viewModel = {
         ...viewModel,
         replay: { status: "inactive", speed: viewModel.replay.speed }
       };
-      commitReplayPresentation(cursorTime);
+      const committed = commitReplayPresentation(cursorTime);
+      if (committed && presentationIsPending) markPresentationReady();
       publish();
     },
     setBottomPanel(bottomPanel) {

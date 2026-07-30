@@ -15,6 +15,7 @@ export type DataCoordinatorEvent =
       selection: SeriesSelection;
       generation: number;
       dataVersion: string;
+      cursor?: string;
     }
   | { type: "snapshotRefreshing"; selection: SeriesSelection; generation: number }
   | {
@@ -266,7 +267,8 @@ export function createDataCoordinator(options: DataCoordinatorOptions): DataCoor
         type: "historyPageAccepted",
         selection: currentSelection,
         generation: requestGeneration,
-        dataVersion: result.page.dataVersion
+        dataVersion: result.page.dataVersion,
+        ...(requestCursor === undefined ? {} : { cursor: requestCursor })
       });
     } catch (error) {
       if (isCurrent(requestGeneration, controller) && !isAbortError(error)) {

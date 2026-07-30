@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.47.tgz
+npm install ./simoncharts-charts-1.0.0-rc.48.tgz
 ```
 
 ## Embed the default chart
@@ -625,7 +625,7 @@ Host adapters may throw `ChartDatafeedError` with a safe code (`NOT_CONFIGURED`,
 
 ## Replay accepted history
 
-Historical Replay is transient and uses only accepted host Candle timestamps. `startReplay(time)` requires an exact available Candle time before the latest Candle. `stepReplay()` advances to the next real Candle, so weekends, suspensions, and missing host rows are never synthesized. `playReplay()` uses the selected fixed speed and pauses at the final Candle or on a blocking render/calculation failure.
+Historical Replay is transient and uses only accepted host Candle timestamps. `startReplay(time)` requires an exact available Candle time before the latest Candle. `stepReplay()` advances to the next real Candle, so weekends, suspensions, and missing host rows are never synthesized. If the exact newer page is known but its bounded-cache payload was evicted, Replay restores that page through the same Datafeed cursor and keeps the current causal presentation unchanged until the host page is accepted. Concurrent steps share that request and retain their exact count. `playReplay()` uses the selected fixed speed and pauses at the final Candle, on a blocking render/calculation failure, or when a page cannot be restored; it does not retry-spin, and a later manual step may retry.
 
 ```ts
 chart.startReplay(replayStartEpochMs);
@@ -673,7 +673,7 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.47 adds native Drawing Groups and Object Tree controls over the existing Drawing
-editor, history, Layout V3, and browser Drawing document. It adds no second Drawing store,
-history, renderer, dependency, or persistence key. rc.47 preserves rc.46 and every earlier
-RC contract.
+Current rc.48 completes offline Historical Replay across evicted cursor pages using the existing
+bounded store, DataCoordinator, and host Candle timestamps. It changes no public Replay API,
+cache limit, datafeed contract, dependency, or persistence model. rc.48 preserves rc.47 and every
+earlier RC contract.

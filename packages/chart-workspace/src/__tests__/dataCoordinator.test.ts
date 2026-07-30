@@ -364,7 +364,9 @@ describe("data coordinator", () => {
     await Promise.all([load, reload]);
 
     expect(requests.filter((request) => request.beforeCursor === "older")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "historyPageAccepted")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "historyPageAccepted")).toEqual([
+      expect.objectContaining({ cursor: "older" })
+    ]);
     expect(store.getSnapshot().candles.map((item) => item.time)).toEqual([100, 200]);
   });
 });

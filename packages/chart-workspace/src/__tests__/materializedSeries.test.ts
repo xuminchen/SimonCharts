@@ -114,6 +114,26 @@ describe("materialized series", () => {
     expect(backward.missingRequestCursors).toContain("older");
   });
 
+  it("counts a deduplicated boundary candle from its canonical page", () => {
+    const store = createPagedSeriesStore();
+    store.reset(selection, "v1");
+    expect(store.mergePage(undefined, page([candle(200), candle(300)], "older")))
+      .toEqual({ ok: true });
+    expect(store.mergePage("older", page([candle(100), candle(200)])))
+      .toEqual({ ok: true });
+
+    const materialized = materializeSeriesAroundTime({
+      store,
+      selection,
+      anchorTime: 200,
+      visibleCount: 1,
+      overscanCount: 0
+    });
+
+    expect(materialized.series.candles.map((item) => item.time)).toEqual([200]);
+    expect(materialized.sourceIndexOffset).toBe(1);
+  });
+
   it("moves backward and forward through one cached page larger than the materialized window", () => {
     const store = createPagedSeriesStore();
     store.reset(selection, "v1");

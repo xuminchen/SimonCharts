@@ -163,7 +163,11 @@ export function materializeSeriesAroundTime(options: MaterializeSeriesOptions): 
   let sourceIndexOffset = 0;
   if (sourceMinTime !== undefined) {
     for (const descriptor of [...descriptors].reverse()) {
-      if (sourceMinTime >= descriptor.minTime && sourceMinTime <= descriptor.maxTime) {
+      if (
+        sourceMinTime >= descriptor.minTime &&
+        sourceMinTime <= descriptor.maxTime &&
+        !descriptor.excludedOverlapTimes.includes(sourceMinTime)
+      ) {
         const localIndex = descriptor.candles?.findIndex((candle) => candle.time === sourceMinTime) ?? 0;
         sourceIndexOffset += Math.max(0, localIndex);
         break;

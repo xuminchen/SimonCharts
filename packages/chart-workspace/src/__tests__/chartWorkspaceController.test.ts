@@ -56,6 +56,58 @@ function dependencies(): ChartControllerDependencies {
   };
 }
 
+function replayPage(
+  times: readonly number[],
+  options: { readonly beforeCursor?: string; readonly hasMoreBefore: boolean }
+) {
+  const result = validateSeriesPage({
+    candles: times.map((time) => ({
+      time,
+      open: 10,
+      high: 11,
+      low: 9,
+      close: 10.5,
+      volume: 1,
+      turnover: 10.5
+    })),
+    ...(options.beforeCursor === undefined ? {} : { beforeCursor: options.beforeCursor }),
+    hasMoreBefore: options.hasMoreBefore,
+    dataVersion: "v1"
+  }, { seenCursors: new Set() });
+  if (!result.ok) throw new Error("fixture invalid");
+  return result.page;
+}
+
+async function prepareEvictedReplay() {
+  const deps = dependencies();
+  deps.store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 10_000 });
+  const selection = { symbol: stock, timeframe: "1d" as const, adjustMode: "forward" as const };
+  const newest = replayPage([5, 6, 7], { beforeCursor: "older", hasMoreBefore: true });
+  const older = replayPage([1, 2, 3, 4], { hasMoreBefore: false });
+  deps.store.reset(selection, "v1");
+  deps.store.mergePage(undefined, newest);
+  const controller = createChartController(deps);
+  controller.handleDataEvent({
+    type: "initialPageAccepted",
+    selection,
+    generation: 1,
+    dataVersion: "v1"
+  });
+  controller.setVisibleRange({ from: 1, to: 4 });
+  deps.store.mergePage("older", older);
+  controller.handleDataEvent({
+    type: "historyPageAccepted",
+    selection,
+    generation: 1,
+    dataVersion: "v1"
+  });
+  await vi.waitFor(() => expect(deps.runtime.setVisibleRange).toHaveBeenCalledWith({
+    from: 1,
+    to: 4
+  }));
+  return { controller, deps, newest, selection };
+}
+
 describe("chart workspace controller", () => {
   it("atomically replaces comparisons, fixes percentage mode, and restores the prior scale", () => {
     const deps = dependencies();
@@ -1233,6 +1285,691 @@ describe("chart workspace controller", () => {
     expect(controller.getViewModel().replay.cursorTime).toBe(afterWindow);
     expect(vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0].sourceMaxTime)
       .toBeGreaterThanOrEqual(afterWindow);
+  });
+
+  it("reloads an evicted newer page before advancing replay across the cache boundary", async () => {
+    const { controller, deps, newest, selection } = await prepareEvictedReplay();
+    deps.onDataLoaded = vi.fn();
+    deps.onPresentationPending = vi.fn();
+    deps.onPresentationReady = vi.fn();
+    vi.mocked(deps.dataCoordinator.reloadPage).mockImplementation(async (cursor) => {
+      expect(cursor).toBeUndefined();
+      expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+      controller.handleDataEvent({
+        type: "historyPageAccepted",
+        selection,
+        generation: 1,
+        dataVersion: "v1"
+      });
+    });
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(3);
+    expect(
+      vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0]
+        .series.candles.at(-1)?.time
+    ).toBe(3);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(5));
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+    expect(deps.store.getDiagnostics().cachedPageCount).toBe(1);
+    expect(deps.onPresentationPending).toHaveBeenCalledTimes(1);
+    expect(deps.onPresentationReady).toHaveBeenCalledTimes(1);
+    expect(deps.onDataLoaded).toHaveBeenCalledTimes(1);
+    expect(deps.onDataLoaded).toHaveBeenCalledWith(expect.objectContaining({
+      phase: "history",
+      dataVersion: "v1"
+    }));
+  });
+
+  it("coalesces concurrent replay steps on one evicted page without losing requested steps", async () => {
+    const { controller, deps, newest } = await prepareEvictedReplay();
+    let resolveReload!: () => void;
+    deps.dataCoordinator.reloadPage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveReload = () => {
+        expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+        resolve();
+      };
+    }));
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    expect(controller.stepReplay()).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(3);
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+
+    resolveReload();
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(7));
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+    expect(deps.store.getDiagnostics().cachedPageCount).toBe(1);
+  });
+
+  it("rejects a pending replay step when the accumulated count would stop being a safe integer", async () => {
+    const { controller, deps } = await prepareEvictedReplay();
+    deps.dataCoordinator.reloadPage = vi.fn(() => new Promise<void>(() => undefined));
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(Number.MAX_SAFE_INTEGER)).toBe(true);
+    expect(controller.stepReplay()).toBe(false);
+    expect(controller.getViewModel().replay.cursorTime).toBe(3);
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues one accumulated replay command across multiple evicted pages", async () => {
+    const deps = dependencies();
+    deps.store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 10_000 });
+    const selection = { symbol: stock, timeframe: "1d" as const, adjustMode: "forward" as const };
+    const newest = replayPage([8, 9], { beforeCursor: "middle", hasMoreBefore: true });
+    const middle = replayPage([5, 6, 7], { beforeCursor: "older", hasMoreBefore: true });
+    const older = replayPage([1, 2, 3, 4], { hasMoreBefore: false });
+    deps.store.reset(selection, "v1");
+    deps.store.mergePage(undefined, newest);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    controller.setVisibleRange({ from: 1, to: 4 });
+    deps.store.mergePage("middle", middle);
+    deps.store.mergePage("older", older);
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    await vi.waitFor(() => expect(deps.runtime.setVisibleRange).toHaveBeenCalledWith({
+      from: 1,
+      to: 4
+    }));
+    deps.dataCoordinator.reloadPage = vi.fn(async (cursor) => {
+      expect(
+        deps.store.mergePage(cursor, cursor === "middle" ? middle : newest)
+      ).toEqual({ ok: true });
+    });
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(6)).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(3);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(9));
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenNthCalledWith(1, undefined);
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenNthCalledWith(2, "middle");
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(2);
+    expect(deps.store.getDiagnostics().cachedPageCount).toBe(1);
+  });
+
+  it("keeps the replay cursor stable after a reload failure and allows a manual retry", async () => {
+    const { controller, deps, newest } = await prepareEvictedReplay();
+    deps.dataCoordinator.reloadPage = vi.fn(async () => undefined);
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(3);
+    await vi.waitFor(() => expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.getViewModel().replay).toMatchObject({
+      status: "paused",
+      cursorTime: 3
+    });
+
+    deps.dataCoordinator.reloadPage = vi.fn(async () => {
+      expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+    });
+    expect(controller.stepReplay(2)).toBe(true);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(5));
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("suppresses an evicted-page result after stop and restart of replay", async () => {
+    const { controller, deps, newest } = await prepareEvictedReplay();
+    deps.onPresentationPending = vi.fn();
+    deps.onPresentationReady = vi.fn();
+    let resolveReload!: () => void;
+    deps.dataCoordinator.reloadPage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveReload = () => {
+        expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+        resolve();
+      };
+    }));
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay()).toBe(true);
+    expect(controller.stepReplay()).toBe(true);
+    expect(deps.onPresentationPending).toHaveBeenCalledTimes(1);
+    expect(deps.onPresentationReady).not.toHaveBeenCalled();
+    controller.stopReplay();
+    expect(deps.onPresentationReady).toHaveBeenCalledTimes(1);
+    expect(controller.startReplay(2)).toBe(true);
+    resolveReload();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.getViewModel().replay).toMatchObject({
+      status: "paused",
+      cursorTime: 2
+    });
+    expect(deps.onPresentationReady).toHaveBeenCalledTimes(1);
+    expect(controller.stepReplay()).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(3);
+  });
+
+  it("restores readiness when startReplay replaces a pending replay transaction", async () => {
+    const { controller, deps, newest } = await prepareEvictedReplay();
+    deps.onPresentationPending = vi.fn();
+    deps.onPresentationReady = vi.fn();
+    let resolveReload!: () => void;
+    deps.dataCoordinator.reloadPage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveReload = () => {
+        expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+        resolve();
+      };
+    }));
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    expect(deps.onPresentationPending).toHaveBeenCalledTimes(1);
+    expect(controller.startReplay(2)).toBe(true);
+    expect(deps.onPresentationReady).toHaveBeenCalledTimes(1);
+
+    resolveReload();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.getViewModel().replay).toMatchObject({
+      status: "paused",
+      cursorTime: 2
+    });
+    expect(deps.onPresentationReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits accepted replay history once after a stopped page is reused synchronously", async () => {
+    const { controller, deps, newest, selection } = await prepareEvictedReplay();
+    deps.onDataLoaded = vi.fn();
+    deps.onPresentationPending = vi.fn();
+    deps.onPresentationReady = vi.fn();
+    let releaseReload!: () => void;
+    let pageAccepted = false;
+    deps.dataCoordinator.reloadPage = vi.fn(async () => {
+      expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+      controller.handleDataEvent({
+        type: "historyPageAccepted",
+        selection,
+        generation: 1,
+        dataVersion: "v1"
+      });
+      pageAccepted = true;
+      await new Promise<void>((resolve) => {
+        releaseReload = resolve;
+      });
+    });
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    await vi.waitFor(() => expect(pageAccepted).toBe(true));
+    controller.stopReplay();
+    expect(deps.onDataLoaded).not.toHaveBeenCalled();
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(5);
+    expect(deps.onDataLoaded).toHaveBeenCalledTimes(1);
+    expect(deps.onDataLoaded).toHaveBeenCalledWith(expect.objectContaining({
+      phase: "history",
+      dataVersion: "v1"
+    }));
+
+    releaseReload();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(deps.onDataLoaded).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not flush the awaited replay page when another history cursor is accepted", async () => {
+    const { controller, deps, newest, selection } = await prepareEvictedReplay();
+    deps.onDataLoaded = vi.fn();
+    let resolveReload!: () => void;
+    deps.dataCoordinator.reloadPage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    }));
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(2)).toBe(true);
+    expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1",
+      cursor: "unrelated"
+    });
+    expect(deps.onDataLoaded).not.toHaveBeenCalled();
+
+    resolveReload();
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(5));
+    expect(deps.onDataLoaded).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat an unrelated cached cursor as consumed by replay materialization", async () => {
+    const deps = dependencies();
+    deps.store = createPagedSeriesStore({ maxPages: 3, maxEstimatedBytes: 10_000 });
+    deps.onDataLoaded = vi.fn();
+    vi.mocked(deps.runtime.getMaterializationDemand).mockReturnValue({
+      visibleCount: 2,
+      overscanCount: 0
+    });
+    const selection = { symbol: stock, timeframe: "1d" as const, adjustMode: "forward" as const };
+    const newest = replayPage([10, 11, 12], { beforeCursor: "p1", hasMoreBefore: true });
+    const p1 = replayPage([7, 8, 9], { beforeCursor: "p2", hasMoreBefore: true });
+    const p2 = replayPage([4, 5, 6], { beforeCursor: "p3", hasMoreBefore: true });
+    const p3 = replayPage([1, 2, 3], { hasMoreBefore: false });
+    deps.store.reset(selection, "v1");
+    expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    controller.setVisibleRange({ from: 1, to: 3 });
+    expect(deps.store.mergePage("p1", p1)).toEqual({ ok: true });
+    expect(deps.store.mergePage("p2", p2)).toEqual({ ok: true });
+    expect(deps.store.mergePage("p3", p3)).toEqual({ ok: true });
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1",
+      cursor: "p3"
+    });
+    await vi.waitFor(() => expect(deps.runtime.setVisibleRange).toHaveBeenCalledWith({
+      from: 1,
+      to: 3
+    }));
+    vi.mocked(deps.onDataLoaded).mockClear();
+
+    let pageAccepted = false;
+    let releaseReload!: () => void;
+    deps.dataCoordinator.reloadPage = vi.fn(async (cursor) => {
+      const page = cursor === undefined ? newest : cursor === "p1" ? p1 : cursor === "p2" ? p2 : p3;
+      expect(deps.store.mergePage(cursor, page)).toEqual({ ok: true });
+      controller.handleDataEvent({
+        type: "historyPageAccepted",
+        selection,
+        generation: 1,
+        dataVersion: "v1",
+        ...(cursor === undefined ? {} : { cursor })
+      });
+      if (cursor === undefined) {
+        pageAccepted = true;
+        await new Promise<void>((resolve) => {
+          releaseReload = resolve;
+        });
+      }
+    });
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay(7)).toBe(true);
+    await vi.waitFor(() => expect(pageAccepted).toBe(true));
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1",
+      cursor: "p3"
+    });
+    expect(deps.onDataLoaded).not.toHaveBeenCalled();
+
+    releaseReload();
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(10));
+    expect(vi.mocked(deps.dataCoordinator.reloadPage).mock.calls.map(([cursor]) => cursor))
+      .toEqual([undefined, "p1"]);
+    expect(deps.onDataLoaded).toHaveBeenCalledTimes(2);
+  });
+
+  it("locates a distant replay target from descriptors without retaining intermediate pages", async () => {
+    const deps = dependencies();
+    deps.store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 10_000 });
+    vi.mocked(deps.runtime.getMaterializationDemand).mockReturnValue({
+      visibleCount: 64,
+      overscanCount: 0
+    });
+    const selection = { symbol: stock, timeframe: "1d" as const, adjustMode: "forward" as const };
+    const pages = Array.from({ length: 32 }, (_, pageIndex) => {
+      const oldestPageIndex = 31 - pageIndex;
+      const first = oldestPageIndex * 64 + 1;
+      return replayPage(
+        Array.from({ length: 64 }, (_, candleIndex) => first + candleIndex),
+        {
+          ...(pageIndex === 31 ? {} : { beforeCursor: `page-${pageIndex + 1}` }),
+          hasMoreBefore: pageIndex !== 31
+        }
+      );
+    });
+    deps.store.reset(selection, "v1");
+    expect(deps.store.mergePage(undefined, pages[0]!)).toEqual({ ok: true });
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    controller.setVisibleRange({ from: 1, to: 64 });
+    for (let index = 1; index < pages.length; index += 1) {
+      expect(deps.store.mergePage(`page-${index}`, pages[index]!)).toEqual({ ok: true });
+    }
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1",
+      cursor: "page-31"
+    });
+    await vi.waitFor(() => expect(deps.runtime.setVisibleRange).toHaveBeenCalledWith({
+      from: 1,
+      to: 64
+    }));
+    deps.dataCoordinator.reloadPage = vi.fn(async (cursor) => {
+      const index = cursor === undefined ? 0 : Number(cursor.slice("page-".length));
+      expect(deps.store.mergePage(cursor, pages[index]!)).toEqual({ ok: true });
+    });
+    vi.mocked(deps.runtime.setMaterializedSeries).mockClear();
+
+    expect(controller.startReplay(1)).toBe(true);
+    vi.mocked(deps.runtime.setMaterializedSeries).mockClear();
+    expect(controller.stepReplay(2_047)).toBe(true);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(2_048));
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledWith(undefined);
+    expect(deps.store.getDiagnostics().cachedPageCount).toBe(1);
+    expect(deps.runtime.setMaterializedSeries).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads an evicted origin owner before continuing from its exact page offset", async () => {
+    const deps = dependencies();
+    deps.store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 40_000 });
+    vi.mocked(deps.runtime.getMaterializationDemand).mockReturnValue({
+      visibleCount: 100,
+      overscanCount: 0
+    });
+    const selection = { symbol: stock, timeframe: "1d" as const, adjustMode: "forward" as const };
+    const newest = replayPage(
+      Array.from({ length: 500 }, (_, index) => index + 501),
+      { beforeCursor: "older", hasMoreBefore: true }
+    );
+    const older = replayPage(
+      Array.from({ length: 500 }, (_, index) => index + 1),
+      { hasMoreBefore: false }
+    );
+    deps.store.reset(selection, "v1");
+    deps.store.mergePage(undefined, newest);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    controller.setVisibleRange({ from: 400, to: 500 });
+    deps.store.mergePage("older", older);
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1",
+      cursor: "older"
+    });
+    await vi.waitFor(() => expect(deps.runtime.setVisibleRange).toHaveBeenCalledWith({
+      from: 400,
+      to: 500
+    }));
+    deps.dataCoordinator.reloadPage = vi.fn(async (cursor) => {
+      expect(cursor).toBeUndefined();
+      expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+    });
+
+    expect(controller.startReplay(450)).toBe(true);
+    expect(controller.stepReplay(100)).toBe(true);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(550));
+    expect(deps.store.mergePage("older", older)).toEqual({ ok: true });
+    expect(controller.stepReplay(100)).toBe(true);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(650));
+    expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps replay authoritative when a canceled visible-range request later succeeds", async () => {
+    const deps = dependencies();
+    const selection = { symbol: stock, timeframe: "1d" as const, adjustMode: "forward" as const };
+    const newest = replayPage([5, 6, 7], { beforeCursor: "older", hasMoreBefore: true });
+    const older = replayPage([1, 2, 3, 4], { hasMoreBefore: false });
+    deps.store.reset(selection, "v1");
+    deps.store.mergePage(undefined, newest);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    let resolveRange!: () => void;
+    deps.dataCoordinator.loadMoreBefore = vi.fn(() => new Promise<void>((resolve) => {
+      resolveRange = () => {
+        expect(deps.store.mergePage("older", older)).toEqual({ ok: true });
+        controller.handleDataEvent({
+          type: "historyPageAccepted",
+          selection,
+          generation: 1,
+          dataVersion: "v1",
+          cursor: "older"
+        });
+        resolve();
+      };
+    }));
+
+    controller.setVisibleRange({ from: 1, to: 3 });
+    await vi.waitFor(() => expect(deps.dataCoordinator.loadMoreBefore).toHaveBeenCalledTimes(1));
+    expect(controller.startReplay(5)).toBe(true);
+    resolveRange();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(controller.getViewModel().replay).toMatchObject({
+      status: "paused",
+      cursorTime: 5
+    });
+    expect(deps.runtime.setVisibleRange).not.toHaveBeenCalledWith({ from: 1, to: 3 });
+  });
+
+  it("exits replay when an evicted-page request refreshes the data version", async () => {
+    const { controller, deps, selection } = await prepareEvictedReplay();
+    let resolveReload!: () => void;
+    deps.dataCoordinator.reloadPage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    }));
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.stepReplay()).toBe(true);
+    expect(controller.stepReplay()).toBe(true);
+    controller.handleDataEvent({
+      type: "snapshotRefreshing",
+      selection,
+      generation: 2
+    });
+    expect(controller.getViewModel().replay).toEqual({ status: "inactive", speed: 1 });
+
+    resolveReload();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.getViewModel().replay).toEqual({ status: "inactive", speed: 1 });
+    expect(
+      vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0]
+        .series.candles.at(-1)?.time
+    ).toBe(4);
+  });
+
+  it("pauses autoplay after one failed evicted-page reload without retry spinning", async () => {
+    const { controller, deps } = await prepareEvictedReplay();
+    deps.dataCoordinator.reloadPage = vi.fn(async () => {
+      throw new Error("controlled reload failure");
+    });
+    expect(controller.startReplay(4)).toBe(true);
+
+    vi.useFakeTimers();
+    try {
+      controller.playReplay();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(controller.getViewModel().replay).toMatchObject({
+        status: "paused",
+        cursorTime: 4
+      });
+      expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("publishes pause immediately when a manual step joins a pending autoplay reload", async () => {
+    const { controller, deps, newest } = await prepareEvictedReplay();
+    let resolveReload!: () => void;
+    deps.dataCoordinator.reloadPage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveReload = () => {
+        expect(deps.store.mergePage(undefined, newest)).toEqual({ ok: true });
+        resolve();
+      };
+    }));
+    expect(controller.startReplay(4)).toBe(true);
+
+    vi.useFakeTimers();
+    try {
+      controller.playReplay();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(controller.getViewModel().replay).toMatchObject({
+        status: "playing",
+        cursorTime: 4
+      });
+      vi.mocked(deps.onViewModelChanged).mockClear();
+
+      expect(controller.stepReplay()).toBe(true);
+      expect(controller.getViewModel().replay).toMatchObject({
+        status: "paused",
+        cursorTime: 4
+      });
+      expect(deps.onViewModelChanged).toHaveBeenCalledWith(
+        expect.objectContaining({
+          replay: expect.objectContaining({ status: "paused", cursorTime: 4 })
+        }),
+        expect.any(Number)
+      );
+
+      resolveReload();
+      await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(6));
+      expect(controller.getViewModel().replay.status).toBe("paused");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("jumps across a 20000-candle retained replay window in one commit", () => {
+    const deps = dependencies();
+    vi.mocked(deps.runtime.getMaterializationDemand).mockReturnValue({
+      visibleCount: 20_000,
+      overscanCount: 0
+    });
+    const times = Array.from({ length: 20_000 }, (_, index) => index + 1);
+    const valid = validateSeriesPage({
+      candles: times.map((time) => ({
+        time,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10.5,
+        volume: 1,
+        turnover: 10.5
+      })),
+      hasMoreBefore: false,
+      dataVersion: "v1"
+    }, { seenCursors: new Set() });
+    if (!valid.ok) throw new Error("fixture invalid");
+    deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    deps.store.mergePage(undefined, valid.page);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+    vi.mocked(deps.runtime.setMaterializedSeries).mockClear();
+
+    expect(controller.startReplay(1)).toBe(true);
+    vi.mocked(deps.runtime.setMaterializedSeries).mockClear();
+    expect(controller.stepReplay(19_999)).toBe(true);
+    expect(controller.getViewModel().replay).toMatchObject({
+      status: "paused",
+      cursorTime: 20_000
+    });
+    expect(deps.runtime.setMaterializedSeries).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates wide overlapping evicted pages before choosing a replay target", async () => {
+    const deps = dependencies();
+    deps.store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 10_000 });
+    const selection = { symbol: stock, timeframe: "1d" as const, adjustMode: "forward" as const };
+    const newest = replayPage([300, 400, 500], {
+      beforeCursor: "middle",
+      hasMoreBefore: true
+    });
+    const middle = replayPage([200, 300, 400], {
+      beforeCursor: "oldest",
+      hasMoreBefore: true
+    });
+    const oldest = replayPage([100, 200, 300], { hasMoreBefore: false });
+    deps.store.reset(selection, "v1");
+    deps.store.mergePage(undefined, newest);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1"
+    });
+    controller.setVisibleRange({ from: 100, to: 100 });
+    deps.store.mergePage("middle", middle);
+    deps.store.mergePage("oldest", oldest);
+    deps.dataCoordinator.reloadPage = vi.fn(async (cursor) => {
+      const page = cursor === undefined ? newest : cursor === "middle" ? middle : oldest;
+      expect(deps.store.mergePage(cursor, page)).toEqual({ ok: true });
+    });
+    controller.handleDataEvent({
+      type: "historyPageAccepted",
+      selection,
+      generation: 1,
+      dataVersion: "v1",
+      cursor: "oldest"
+    });
+    await vi.waitFor(() => expect(deps.runtime.setVisibleRange).toHaveBeenCalledWith({
+      from: 100,
+      to: 100
+    }));
+
+    expect(controller.startReplay(100)).toBe(true);
+    expect(controller.stepReplay()).toBe(true);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(200));
+    expect(controller.stepReplay(3)).toBe(true);
+    await vi.waitFor(() => expect(controller.getViewModel().replay.cursorTime).toBe(500));
   });
 
   it("stops replay before applying an explicit visible-range command", () => {

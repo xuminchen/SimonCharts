@@ -1,5 +1,15 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.48 - 2026-07-30
+
+- Continued Historical Replay across evicted cursor pages by reusing the existing descriptor chain, `DataCoordinator.reloadPage()`, bounded materialization, and exact host Candle timestamps.
+- Coalesced concurrent manual steps onto one page request, preserved every requested step across multiple evicted pages, and kept the current cursor presentation unchanged while recovery is pending.
+- Added replay-session, selection-revision, data-generation, and data-version guards so stop/start, A→B→A, snapshot refresh, destruction, and stale completions cannot publish old candles.
+- Paused autoplay without retry spinning when a page cannot be restored, while preserving manual retry and the existing synchronous Replay API.
+- Added controller and million-Candle Chrome/Edge coverage for one-page cache bounds, future-data isolation, multi-page recovery, failure/retry, concurrent steps, stop/start ABA, and data-version invalidation.
+- Kept the public API, datafeed contract, cache limits, Layout V3, dependencies, and production-data ownership unchanged.
+- Accepted the exact 8-file immutable package after `79 files / 1,367 tests`, combined Chrome `161/161`, Charts `23 files / 345 tests`, Charts Chrome/Edge `110/110` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer execution; SHA-256 is `6a83d8bf662ecd798bef6988a25b91e90d8f084c662a32fe0ee0d9a910c7fdfb`, SHA-512 is `c59ddf6f36f6e762ab2ebf6df3091a935be47c2e15a29bfcf370505724a19902f43b6b997bbafb76c212f1bd8eb2430b5ea8a5931b9e4608680759a149e854e5`. Two independent adversarial reviews found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.47 - 2026-07-30
 
 - Added a frozen `getDrawingGroupsApi()` controller for create, rename, membership, visibility, locking, block movement, ungroup, and grouped deletion.
