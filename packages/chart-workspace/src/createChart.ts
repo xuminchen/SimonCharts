@@ -1,5 +1,6 @@
 import type {
   AdjustMode,
+  ChartActionId,
   ChartCrosshairEvent,
   ChartCrosshairListener,
   ChartCrosshairSnapshot,
@@ -41,6 +42,7 @@ import type {
   ChartSymbol,
   ChartTheme,
   ChartThemeOverrides,
+  ChartTimeScaleApi,
   ChartView,
   ChartVisibleRange,
   IntradayDayCount,
@@ -60,6 +62,7 @@ import { createBrowserPersistence, defaultLayoutState, defaultPreferences } from
 import {
   fromEngineDrawings,
   mergeIndicatorInputs,
+  parseChartActionId,
   parseEntity,
   parseEntityId,
   parseEntityInput,
@@ -78,6 +81,9 @@ import {
   parseSeriesType,
   parseStudyDefinitions,
   parseThemeOverrides,
+  parseTimeScaleBars,
+  parseTimeScaleCoordinate,
+  parseTimeScaleSpacing,
   parseVisibleRange,
   resolveSeriesProperties,
   studyDefinitionKey,
@@ -588,11 +594,38 @@ export function createChart(
       }
     }
     const layout = layoutSnapshot(blockedViewModel(state, error), studyDefinitions);
+    const timeScale = Object.freeze<ChartTimeScaleApi>({
+      getVisibleRange: () => undefined,
+      setVisibleRange: (range) => {
+        parseVisibleRange(range);
+      },
+      timeToCoordinate: (time) => {
+        parseTimeScaleCoordinate(time, "Chart time scale time");
+        return undefined;
+      },
+      coordinateToTime: (coordinate) => {
+        parseTimeScaleCoordinate(coordinate, "Chart time scale coordinate");
+        return undefined;
+      },
+      getBarSpacing: () => 0,
+      setBarSpacing: (spacing) => {
+        parseTimeScaleSpacing(spacing);
+      },
+      getWidth: () => 0,
+      scrollByBars: (bars) => {
+        parseTimeScaleBars(bars);
+      },
+      zoomIn: () => undefined,
+      zoomOut: () => undefined,
+      fitContent: () => undefined,
+      reset: () => undefined
+    });
     return Object.freeze({
       getState: () => structuredClone(state),
       getTheme: () => theme,
       getThemeOverrides: () => structuredClone(themeOverrides),
       getVisibleRange: () => undefined,
+      getTimeScale: () => timeScale,
       getSeriesType: () => layout.seriesType,
       getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
         resolveSeriesProperties(type, []),
@@ -650,6 +683,9 @@ export function createChart(
       setExecutions: () => undefined,
       setExecutionsVisible: () => undefined,
       setVisibleRange: () => undefined,
+      executeActionById: (actionId: ChartActionId) => {
+        parseChartActionId(actionId);
+      },
       startReplay: () => false,
       stepReplay: () => false,
       playReplay: () => undefined,
@@ -1351,12 +1387,64 @@ export function createChart(
       getPriceScale: () => priceScale
     });
   };
+  const timeScale = Object.freeze<ChartTimeScaleApi>({
+    getVisibleRange: () => controller!.getVisibleRange(),
+    setVisibleRange: (range) => controller!.setVisibleRange(parseVisibleRange(range)),
+    timeToCoordinate: (time) => {
+      const parsed = parseTimeScaleCoordinate(time, "Chart time scale time");
+      return controller!.getVisibleRange() === undefined
+        ? undefined
+        : runtime.timeToCoordinate(parsed);
+    },
+    coordinateToTime: (coordinate) => {
+      const parsed = parseTimeScaleCoordinate(coordinate, "Chart time scale coordinate");
+      return controller!.getVisibleRange() === undefined
+        ? undefined
+        : runtime.coordinateToTime(parsed);
+    },
+    getBarSpacing: () => runtime.getBarSpacing(),
+    setBarSpacing: (spacing) => {
+      const parsed = parseTimeScaleSpacing(spacing);
+      if (controller!.prepareTimeScaleMutation()) runtime.setBarSpacing(parsed);
+    },
+    getWidth: () => runtime.getWidth(),
+    scrollByBars: (bars) => {
+      const parsed = parseTimeScaleBars(bars);
+      if (controller!.prepareTimeScaleMutation()) runtime.scrollByBars(parsed);
+    },
+    zoomIn: () => {
+      if (controller!.prepareTimeScaleMutation()) runtime.zoomIn();
+    },
+    zoomOut: () => {
+      if (controller!.prepareTimeScaleMutation()) runtime.zoomOut();
+    },
+    fitContent: () => {
+      if (controller!.prepareTimeScaleMutation()) runtime.fitContent();
+    },
+    reset: () => controller!.resetToLatest(false)
+  });
+  const executeActionById = (value: ChartActionId): void => {
+    const actionId = parseChartActionId(value);
+    if (actionId === "chartReset") {
+      for (const pane of runtime.getPanes()) {
+        if (!pane.priceScale.autoScale) runtime.setPaneAutoScale(pane.id, true);
+      }
+      controller!.resetToLatest();
+      return;
+    }
+    if (actionId === "timeScaleReset") {
+      timeScale.reset();
+      return;
+    }
+    timeScale[actionId]();
+  };
 
   return Object.freeze({
     getState: () => controller!.getState(),
     getTheme: () => theme,
     getThemeOverrides: () => structuredClone(themeOverrides),
     getVisibleRange: () => controller!.getVisibleRange(),
+    getTimeScale: () => timeScale,
     getSeriesType: () => controller!.getViewModel().seriesType,
     getSeriesProperties: <T extends ChartConfigurableSeriesType>(type: T) =>
       resolveSeriesProperties(type, controller!.getViewModel().seriesProperties),
@@ -1665,6 +1753,7 @@ export function createChart(
     setVisibleRange: (range: ChartVisibleRange) => {
       controller!.setVisibleRange(parseVisibleRange(range));
     },
+    executeActionById,
     startReplay: (time: number) => {
       if (!validExecutionTime(time)) {
         throw new TypeError("Chart replay time must be a positive finite epoch");

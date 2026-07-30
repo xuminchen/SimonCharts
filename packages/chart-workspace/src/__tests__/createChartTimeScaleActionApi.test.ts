@@ -1,0 +1,400 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  ChartActionId,
+  ChartOptions,
+  ChartState,
+  ChartTimeScaleApi
+} from "../contracts";
+
+const mocks = vi.hoisted(() => ({
+  controllerOptions: undefined as undefined | Record<string, unknown>,
+  createChartController: vi.fn(),
+  createChartEngineRuntime: vi.fn(),
+  createComparisonCoordinator: vi.fn(),
+  controller: {
+    getVisibleRange: vi.fn(() => ({ from: 100, to: 200 })),
+    prepareTimeScaleMutation: vi.fn(() => true),
+    setVisibleRange: vi.fn(),
+    resetToLatest: vi.fn(),
+    undoDrawing: vi.fn(),
+    redoDrawing: vi.fn()
+  },
+  runtime: {
+    getVisibleRange: vi.fn(() => ({ from: 100, to: 200 })),
+    getBarSpacing: vi.fn(() => 8),
+    setBarSpacing: vi.fn(),
+    getWidth: vi.fn(() => 720),
+    timeToCoordinate: vi.fn((time: number) => time === 150 ? 360 : undefined),
+    coordinateToTime: vi.fn((coordinate: number) => coordinate === 360 ? 150 : undefined),
+    scrollByBars: vi.fn(),
+    zoomIn: vi.fn(),
+    zoomOut: vi.fn(),
+    fitContent: vi.fn(),
+    getPanes: vi.fn(() => []),
+    setPaneAutoScale: vi.fn(),
+    resetToLatest: vi.fn()
+  }
+}));
+
+vi.mock("../controller/chartController", () => ({
+  createChartController: mocks.createChartController
+}));
+vi.mock("../data/calculationCheckpointStore", () => ({
+  createCalculationCheckpointStore: () => ({ clear: vi.fn() })
+}));
+vi.mock("../data/comparisonCoordinator", () => ({
+  createComparisonCoordinator: mocks.createComparisonCoordinator
+}));
+vi.mock("../data/dataCoordinator", () => ({
+  createDataCoordinator: () => ({})
+}));
+vi.mock("../data/pagedSeriesStore", () => ({
+  createPagedSeriesStore: () => ({})
+}));
+vi.mock("../data/symbolSearchCoordinator", () => ({
+  createSymbolSearchCoordinator: () => ({})
+}));
+vi.mock("../persistence/browserPersistence", async (loadOriginal) => {
+  const actual = await loadOriginal<typeof import("../persistence/browserPersistence")>();
+  return {
+    ...actual,
+    createBrowserPersistence: () => ({})
+  };
+});
+vi.mock("../runtime/chartEngineRuntime", () => ({
+  createChartEngineRuntime: mocks.createChartEngineRuntime
+}));
+vi.mock("../runtime/checkpointedCalculationRuntime", () => ({
+  createCheckpointedCalculationRuntime: () => ({})
+}));
+vi.mock("../runtime/workspaceTheme", () => ({
+  applyWorkspaceThemeOverrides: vi.fn()
+}));
+vi.mock("../ui/workspaceShell", () => ({
+  createWorkspaceShell: () => ({
+    root: { dataset: {}, remove: vi.fn() },
+    staticCanvas: {},
+    overlayCanvas: {},
+    chartRegion: {},
+    render: vi.fn(),
+    renderDataWindow: vi.fn(),
+    renderExecutionTooltip: vi.fn(),
+    bind: () => vi.fn(),
+    destroy: vi.fn()
+  })
+}));
+
+import { createChart } from "../createChart";
+
+const symbol = {
+  id: "stock:SSE:600000",
+  code: "600000",
+  name: "浦发银行",
+  exchange: "SSE",
+  kind: "stock"
+} as const;
+
+class FakeElement {
+  ownerDocument = { defaultView: null };
+  append = vi.fn();
+}
+
+function options(): ChartOptions {
+  return {
+    chartId: "time-scale-actions",
+    persistenceScopeId: "tests",
+    dataContextId: "offline",
+    initialSymbol: { ...symbol },
+    datafeed: {
+      getCapabilities: vi.fn(async () => ({
+        series: [{ timeframe: "1d" as const, adjustModes: ["forward" as const] }]
+      })),
+      searchSymbols: vi.fn(async () => []),
+      loadSeries: vi.fn()
+    }
+  };
+}
+
+type Rc44Chart = ReturnType<typeof createChart> & {
+  getTimeScale(): ChartTimeScaleApi;
+  executeActionById(actionId: ChartActionId): void;
+};
+
+describe("createChart rc.44 time-scale and action API", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("HTMLElement", FakeElement);
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+    vi.stubGlobal("localStorage", {});
+    mocks.runtime.getVisibleRange.mockReturnValue({ from: 100, to: 200 });
+    mocks.runtime.getBarSpacing.mockReturnValue(8);
+    mocks.runtime.getWidth.mockReturnValue(720);
+    mocks.runtime.timeToCoordinate.mockImplementation((time) => time === 150 ? 360 : undefined);
+    mocks.runtime.coordinateToTime.mockImplementation(
+      (coordinate) => coordinate === 360 ? 150 : undefined
+    );
+    mocks.controller.getVisibleRange.mockReturnValue({ from: 100, to: 200 });
+    mocks.controller.prepareTimeScaleMutation.mockReturnValue(true);
+    mocks.createComparisonCoordinator.mockReturnValue({
+      setContext: vi.fn(async () => true),
+      ensureTimeRange: vi.fn(async () => true),
+      getSnapshots: () => [],
+      destroy: vi.fn()
+    });
+    mocks.createChartEngineRuntime.mockReturnValue({
+      ...mocks.runtime,
+      getPaneLayouts: () => [],
+      getPanes: mocks.runtime.getPanes,
+      setExecutions: vi.fn(),
+      setPricePrecision: vi.fn(),
+      refreshTheme: vi.fn(),
+      selectDrawings: vi.fn()
+    });
+    mocks.createChartController.mockImplementation((value) => {
+      mocks.controllerOptions = value;
+      const state: ChartState = {
+        symbol: structuredClone(symbol),
+        timeframe: "1d",
+        view: "timeframe",
+        intradayDays: 1,
+        adjustMode: "forward",
+        loading: false
+      };
+      const viewModel = {
+        state,
+        status: { type: "ready" },
+        intradayView: false,
+        seriesType: "candles",
+        seriesProperties: [],
+        favoriteTimeframes: [],
+        priceScaleMode: "linear",
+        indicators: [],
+        drawings: [],
+        marks: [],
+        comparisons: [],
+        comparisonData: [],
+        selectedDrawingIds: [],
+        bottomPanel: "hidden",
+        drawingPalette: "expanded",
+        canUndoDrawing: false,
+        canRedoDrawing: false,
+        gridVisible: true,
+        executionsVisible: false,
+        replay: { status: "inactive", speed: 1 },
+        calculationStatus: { type: "idle" },
+        search: { query: "", loading: false, results: [] }
+      };
+      return {
+        getViewModel: () => viewModel,
+        getState: () => structuredClone(state),
+        getVisibleRange: mocks.controller.getVisibleRange,
+        prepareTimeScaleMutation: mocks.controller.prepareTimeScaleMutation,
+        shouldPublishVisibleRange: () => true,
+        setMarks: vi.fn(),
+        setComparisons: vi.fn(),
+        setVisibleRange: mocks.controller.setVisibleRange,
+        resetToLatest: mocks.controller.resetToLatest,
+        undoDrawing: mocks.controller.undoDrawing,
+        redoDrawing: mocks.controller.redoDrawing,
+        start: () => {
+          value.onViewModelChanged?.(viewModel, 1);
+          value.onDataLoaded?.({
+            state: structuredClone(state),
+            dataVersion: "main-v1",
+            phase: "initial"
+          });
+          value.onPresentationReady?.(structuredClone(state));
+        },
+        deactivate: vi.fn(),
+        retry: vi.fn(),
+        destroy: vi.fn()
+      };
+    });
+  });
+
+  it("returns one immutable handle and reuses the top-level visible-range path", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    ) as Rc44Chart;
+    const first = chart.getTimeScale();
+    const second = chart.getTimeScale();
+
+    expect(second).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(first.getVisibleRange()).toEqual({ from: 100, to: 200 });
+    first.setVisibleRange({ from: 120, to: 180 });
+    chart.setVisibleRange({ from: 130, to: 170 });
+    expect(mocks.controller.setVisibleRange.mock.calls).toEqual([
+      [{ from: 120, to: 180 }],
+      [{ from: 130, to: 170 }]
+    ]);
+  });
+
+  it("delegates geometry and viewport operations to the native runtime", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    ) as Rc44Chart;
+    const timeScale = chart.getTimeScale();
+
+    expect(timeScale.getBarSpacing()).toBe(8);
+    expect(timeScale.getWidth()).toBe(720);
+    expect(timeScale.timeToCoordinate(150)).toBe(360);
+    expect(timeScale.coordinateToTime(360)).toBe(150);
+    timeScale.setBarSpacing(12);
+    timeScale.scrollByBars(5);
+    timeScale.zoomIn();
+    timeScale.zoomOut();
+    timeScale.fitContent();
+    timeScale.reset();
+
+    expect(mocks.runtime.setBarSpacing).toHaveBeenCalledWith(12);
+    expect(mocks.runtime.scrollByBars).toHaveBeenCalledWith(5);
+    expect(mocks.runtime.zoomIn).toHaveBeenCalledOnce();
+    expect(mocks.runtime.zoomOut).toHaveBeenCalledOnce();
+    expect(mocks.runtime.fitContent).toHaveBeenCalledOnce();
+    expect(mocks.controller.prepareTimeScaleMutation).toHaveBeenCalledTimes(5);
+    expect(mocks.controller.resetToLatest).toHaveBeenCalledWith(false);
+  });
+
+  it("rejects invalid public values before mutating runtime or controller state", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    ) as Rc44Chart;
+    const timeScale = chart.getTimeScale();
+
+    for (const spacing of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => timeScale.setBarSpacing(spacing)).toThrow();
+    }
+    for (const bars of [1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => timeScale.scrollByBars(bars)).toThrow();
+    }
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => timeScale.timeToCoordinate(value)).toThrow();
+      expect(() => timeScale.coordinateToTime(value)).toThrow();
+    }
+    expect(() => timeScale.setVisibleRange({ from: 3, to: 2 })).toThrow();
+    expect(() => timeScale.setVisibleRange({ from: 1, to: 2, extra: true } as never))
+      .toThrow();
+
+    expect(mocks.runtime.setBarSpacing).not.toHaveBeenCalled();
+    expect(mocks.runtime.scrollByBars).not.toHaveBeenCalled();
+    expect(mocks.runtime.timeToCoordinate).not.toHaveBeenCalled();
+    expect(mocks.runtime.coordinateToTime).not.toHaveBeenCalled();
+    expect(mocks.controller.setVisibleRange).not.toHaveBeenCalled();
+  });
+
+  it("hides and freezes old viewport geometry while the current presentation is unavailable", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    ) as Rc44Chart;
+    const timeScale = chart.getTimeScale();
+    mocks.controller.getVisibleRange.mockReturnValue(undefined);
+    mocks.controller.prepareTimeScaleMutation.mockReturnValue(false);
+    vi.mocked(mocks.runtime.timeToCoordinate).mockClear();
+    vi.mocked(mocks.runtime.coordinateToTime).mockClear();
+    vi.mocked(mocks.runtime.setBarSpacing).mockClear();
+    vi.mocked(mocks.runtime.scrollByBars).mockClear();
+    vi.mocked(mocks.runtime.zoomIn).mockClear();
+    vi.mocked(mocks.runtime.zoomOut).mockClear();
+    vi.mocked(mocks.runtime.fitContent).mockClear();
+    vi.mocked(mocks.controller.setVisibleRange).mockClear();
+    vi.mocked(mocks.controller.resetToLatest).mockClear();
+    vi.mocked(mocks.controller.prepareTimeScaleMutation).mockClear();
+
+    expect(timeScale.getVisibleRange()).toBeUndefined();
+    expect(timeScale.timeToCoordinate(150)).toBeUndefined();
+    expect(timeScale.coordinateToTime(360)).toBeUndefined();
+    timeScale.setBarSpacing(12);
+    timeScale.scrollByBars(5);
+    timeScale.zoomIn();
+    timeScale.zoomOut();
+    timeScale.fitContent();
+
+    expect(mocks.runtime.timeToCoordinate).not.toHaveBeenCalled();
+    expect(mocks.runtime.coordinateToTime).not.toHaveBeenCalled();
+    expect(mocks.runtime.setBarSpacing).not.toHaveBeenCalled();
+    expect(mocks.runtime.scrollByBars).not.toHaveBeenCalled();
+    expect(mocks.runtime.zoomIn).not.toHaveBeenCalled();
+    expect(mocks.runtime.zoomOut).not.toHaveBeenCalled();
+    expect(mocks.runtime.fitContent).not.toHaveBeenCalled();
+    expect(mocks.controller.prepareTimeScaleMutation).toHaveBeenCalledTimes(5);
+
+    for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => timeScale.timeToCoordinate(invalid)).toThrow();
+      expect(() => timeScale.coordinateToTime(invalid)).toThrow();
+    }
+    expect(() => timeScale.setBarSpacing(0)).toThrow();
+    expect(() => timeScale.scrollByBars(1.5)).toThrow();
+
+    timeScale.setVisibleRange({ from: 120, to: 180 });
+    timeScale.reset();
+    expect(mocks.controller.setVisibleRange).toHaveBeenCalledWith({ from: 120, to: 180 });
+    expect(mocks.controller.resetToLatest).toHaveBeenCalledWith(false);
+    expect(mocks.controller.prepareTimeScaleMutation).toHaveBeenCalledTimes(5);
+  });
+
+  it("keeps public time-scale validation active for a blocked chart", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      { ...options(), chartId: "" }
+    ) as Rc44Chart;
+    const timeScale = chart.getTimeScale();
+
+    expect(() => timeScale.setVisibleRange({ from: 3, to: 2 })).toThrow();
+    expect(() => timeScale.setVisibleRange({ from: 1, to: 2, extra: true } as never))
+      .toThrow();
+    for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => timeScale.timeToCoordinate(invalid)).toThrow();
+      expect(() => timeScale.coordinateToTime(invalid)).toThrow();
+    }
+    expect(() => timeScale.setBarSpacing(0)).toThrow();
+    expect(() => timeScale.scrollByBars(1.5)).toThrow();
+    expect(() => chart.executeActionById("unknown" as ChartActionId)).toThrow();
+
+    expect(timeScale.getVisibleRange()).toBeUndefined();
+    expect(timeScale.timeToCoordinate(1)).toBeUndefined();
+    expect(timeScale.coordinateToTime(1)).toBeUndefined();
+    timeScale.setVisibleRange({ from: 1, to: 2 });
+    timeScale.setBarSpacing(8);
+    timeScale.scrollByBars(1);
+    chart.executeActionById("fitContent");
+  });
+
+  it("routes only the finite public action identifiers", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    ) as Rc44Chart;
+
+    mocks.runtime.getPanes.mockReturnValueOnce([{
+      id: "main",
+      kind: "main",
+      title: "Main",
+      visible: true,
+      heightRatio: 3,
+      collapsed: false,
+      priceScale: {
+        mode: "linear",
+        autoScale: false,
+        inverted: false,
+        visibleRange: { from: 90, to: 110 }
+      }
+    }]);
+    chart.executeActionById("timeScaleReset");
+    chart.executeActionById("chartReset");
+    chart.executeActionById("zoomIn");
+    chart.executeActionById("zoomOut");
+    chart.executeActionById("fitContent");
+
+    expect(mocks.controller.resetToLatest.mock.calls).toEqual([[false], []]);
+    expect(mocks.runtime.setPaneAutoScale).toHaveBeenCalledWith("main", true);
+    expect(mocks.runtime.zoomIn).toHaveBeenCalledOnce();
+    expect(mocks.runtime.zoomOut).toHaveBeenCalledOnce();
+    expect(mocks.runtime.fitContent).toHaveBeenCalledOnce();
+    expect(() => chart.executeActionById("unknown" as ChartActionId)).toThrow();
+  });
+});

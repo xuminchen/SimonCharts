@@ -6,6 +6,7 @@ export { advancedChartFeatures, defaultChartFeatures } from "./contracts";
 export type {
   AdjustMode,
   Candle,
+  ChartActionId,
   ChartDataCapabilities,
   ChartDataSeriesCapability,
   ChartDatafeed,
@@ -75,6 +76,7 @@ export type {
   ChartSymbol,
   ChartTheme,
   ChartThemeOverrides,
+  ChartTimeScaleApi,
   ChartView,
   ChartVisibleRange,
   Exchange,

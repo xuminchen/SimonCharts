@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.43.tgz
+npm install ./simoncharts-charts-1.0.0-rc.44.tgz
 ```
 
 ## Embed the default chart
@@ -117,6 +117,40 @@ chart.resetToLatest();
 const visibleRange = chart.getVisibleRange();
 // On host teardown: unsubscribeEvents();
 ```
+
+`getTimeScale()` returns one frozen live handle over the same native viewport used by wheel,
+drag, keyboard, and `setVisibleRange()`. Coordinates are CSS pixels relative to the plot's
+left edge; conversion returns only exact loaded Candle timestamps and never invents a time
+inside a market gap.
+
+```ts
+const timeScale = chart.getTimeScale();
+timeScale.setVisibleRange({ from: rangeStartEpochMs, to: rangeEndEpochMs });
+timeScale.setBarSpacing(10);
+timeScale.scrollByBars(20); // positive moves toward older real bars
+timeScale.zoomIn();
+timeScale.zoomOut();
+timeScale.fitContent(); // bounded by the existing minimum bar spacing
+timeScale.reset(); // latest default time scale, preserving manual price ranges
+
+const x = timeScale.timeToCoordinate(candleTime);
+const time = x === undefined ? undefined : timeScale.coordinateToTime(x);
+
+chart.executeActionById("timeScaleReset");
+chart.executeActionById("chartReset");
+chart.executeActionById("zoomIn");
+chart.executeActionById("zoomOut");
+chart.executeActionById("fitContent");
+```
+
+`ChartActionId` is a closed union; arbitrary commands are rejected. `chartReset` also
+returns pane price scales to automatic mode. Fixed 1–9 day intraday presentations keep
+their current range and spacing for every time-scale mutation. Viewport state and command
+history remain transient and outside `ChartLayoutV3` and browser persistence. A later
+scroll, zoom, spacing, fit, range, or reset command cancels an older pending range request.
+While the current presentation is unavailable, coordinate conversion returns `undefined`
+and direct viewport mutations are ignored; retained handles report zero geometry after
+`destroy()`. Invalid arguments are still rejected in either state.
 
 For imperative host workflows, `dataReady()` waits for the exact current symbol, timeframe, adjustment mode, view, and intraday-day selection to finish materializing and commit its first scheduled paint. It resolves `true` once that presentation is usable, or `false` if the selection is replaced, cannot be materialized, becomes blocked, or the chart is destroyed. Calling `retry()` before `dataReady()` binds the new Promise to that retry instead of the failed attempt.
 
@@ -556,4 +590,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.43 adds Historical Replay over accepted host candles. Replay exposes an exact candle cursor, paused/playing state, and fixed `1×`, `2×`, `4×`, or `8×` speed; it advances by real candle timestamps and never constructs calendar rows. Each replay commit sends the existing runtime only candles at or before the cursor, so studies, stateful series, comparisons, marks, executions, the data window, volume, and price scale share one causal presentation. An execution time range is withheld until its `lastTime` maps to a revealed candle. Explicit range or selection changes stop replay, blocking render/calculation failures pause it, and replay state is not exported or persisted. rc.43 preserves rc.42 and every earlier RC contract.
+Current rc.44 adds a frozen `ChartTimeScaleApi` and finite `ChartActionId` command surface over the existing native viewport, bounded paging, and Drawing history paths. It exposes visible ranges, bar spacing, plot width, exact loaded-time coordinate conversion, Bar-based scrolling, zoom, bounded fit, time-scale reset, and chart reset without publishing the internal engine dispatcher. Fixed intraday remains immutable, and viewport state stays outside Layout V3 and browser persistence. rc.44 preserves rc.43 and every earlier RC contract.

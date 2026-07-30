@@ -39,7 +39,7 @@ function dependencies(): ChartControllerDependencies {
     },
     searchCoordinator: { search: vi.fn(async () => undefined), destroy: vi.fn() },
     runtime: {
-      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setComparisonData: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
+      setMaterializedSeries: vi.fn(), getMaterializationDemand: vi.fn(() => ({ visibleCount: 300, overscanCount: 100 })), getVisibleRange: vi.fn(), setVisibleRange: vi.fn(() => true), getBarSpacing: vi.fn(() => 8), setBarSpacing: vi.fn(), getWidth: vi.fn(() => 800), timeToCoordinate: vi.fn(), coordinateToTime: vi.fn(), scrollByBars: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn(), fitContent: vi.fn(), resetToLatest: vi.fn(), clearCrosshair: vi.fn(), setSeriesType: vi.fn(), setIndicators: vi.fn(), setComparisonData: vi.fn(), setMarks: vi.fn(), setExecutions: vi.fn(), setExecutionsVisible: vi.fn(), setPricePrecision: vi.fn(), setPriceScaleMode: vi.fn(), setDrawings: vi.fn(), selectDrawings: vi.fn(), setDrawingTool: vi.fn(), executeDrawingCommand: vi.fn(), undoDrawing: vi.fn(), redoDrawing: vi.fn(), setGridVisible: vi.fn(), cancelCalculations: vi.fn(), retryRender: vi.fn(), getMetrics: vi.fn(() => ({ totalRenderCount: 0, renderCountByPass: { static: 0, dynamic: 0, overlay: 0 }, lastRenderDuration: 0, lastInvalidationReasons: [], dirtyLayerCount: 0, slowFrameCount: 0, maxMaterializedCandleCount: 0 })), destroy: vi.fn()
     },
     persistence: {
       loadLayout: vi.fn(() => structuredClone(defaultLayoutState)), saveLayout: vi.fn(),
@@ -1253,6 +1253,65 @@ describe("chart workspace controller", () => {
     expect(intraday.series.dataVersion).toBe(continuous.series.dataVersion);
   });
 
+  it("keeps a fixed intraday visible-range command to replay exit only", async () => {
+    const deps = dependencies();
+    deps.initialTimeframe = "1m";
+    deps.getCapabilities = vi.fn(async () => ({
+      series: [{ timeframe: "1m" as const, adjustModes: ["forward" as const] }]
+    }));
+    deps.onPresentationUnavailable = vi.fn();
+    vi.mocked(deps.runtime.setVisibleRange).mockReturnValue(false);
+    const controller = createChartController(deps);
+    controller.start();
+    await vi.waitFor(() => expect(deps.dataCoordinator.start).toHaveBeenCalledOnce());
+
+    const first = Date.UTC(2026, 6, 15, 1, 30);
+    const valid = validateSeriesPage({
+      candles: [first, first + 60_000].map((time) => ({
+        time,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10.5,
+        volume: 1,
+        turnover: 10.5
+      })),
+      hasMoreBefore: false,
+      dataVersion: "intraday-range"
+    }, { seenCursors: new Set() });
+    if (!valid.ok) throw new Error("fixture invalid");
+    deps.store.reset({ symbol: stock, timeframe: "1m", adjustMode: "forward" }, "intraday-range");
+    deps.store.mergePage(undefined, valid.page);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1m", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "intraday-range"
+    });
+    controller.setView("intraday");
+    expect(controller.startReplay(first)).toBe(true);
+
+    vi.mocked(deps.runtime.setMaterializedSeries).mockClear();
+    vi.mocked(deps.runtime.setVisibleRange).mockClear();
+    vi.mocked(deps.dataCoordinator.loadMoreBefore).mockClear();
+    vi.mocked(deps.dataCoordinator.reloadPage).mockClear();
+    vi.mocked(deps.onError).mockClear();
+    vi.mocked(deps.onPresentationUnavailable).mockClear();
+
+    controller.setVisibleRange({ from: first, to: first + 60_000 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(controller.getViewModel().replay.status).toBe("inactive");
+    expect(deps.runtime.setMaterializedSeries).toHaveBeenCalledTimes(1);
+    expect(deps.runtime.setVisibleRange).not.toHaveBeenCalled();
+    expect(deps.dataCoordinator.loadMoreBefore).not.toHaveBeenCalled();
+    expect(deps.dataCoordinator.reloadPage).not.toHaveBeenCalled();
+    expect(deps.onPresentationUnavailable).not.toHaveBeenCalled();
+    expect(deps.onError).not.toHaveBeenCalled();
+    controller.destroy();
+  });
+
   it("exposes intraday and timeframe views without reloading an existing 1m revision", async () => {
     const deps = dependencies();
     deps.initialTimeframe = "1m";
@@ -1631,7 +1690,7 @@ describe("chart workspace controller", () => {
       expect(requests).toEqual([undefined, "page-2", "page-3", undefined])
     );
     expect(deps.runtime.setMaterializedSeries).not.toHaveBeenCalled();
-    controller.resetToLatest();
+    controller.resetToLatest(false);
     resolveNewestReload(newestPage);
 
     await vi.waitFor(() => {
@@ -1644,6 +1703,7 @@ describe("chart workspace controller", () => {
     expect(requests).toEqual([undefined, "page-2", "page-3", undefined, "page-2"]);
     expect(requests).not.toContain("older-day");
     expect(deps.runtime.resetToLatest).toHaveBeenCalledTimes(1);
+    expect(deps.runtime.resetToLatest).toHaveBeenCalledWith(false);
     expect(deps.onPresentationReady).toHaveBeenCalledTimes(1);
     expect(deps.onPresentationUnavailable).not.toHaveBeenCalled();
     expect(store.getDiagnostics()).toMatchObject({
@@ -1822,6 +1882,250 @@ describe("chart workspace controller", () => {
     expect(deps.runtime.setVisibleRange).toHaveBeenCalledTimes(appliedCount);
     controller.destroy();
   });
+
+  it("does not let an older descriptor reload failure cancel the latest range", async () => {
+    const makeCandles = (from: number) => Array.from({ length: 20 }, (_, index) => ({
+      time: from + index,
+      open: 10,
+      high: 11,
+      low: 9,
+      close: 10.5,
+      volume: 1,
+      turnover: 10.5
+    }));
+    const validate = (
+      page: SeriesPage,
+      requestCursor?: string,
+      currentEarliestTime?: number
+    ) => {
+      const result = validateSeriesPage(page, {
+        ...(requestCursor === undefined ? {} : { requestCursor }),
+        seenCursors: new Set(),
+        ...(currentEarliestTime === undefined ? {} : { currentEarliestTime })
+      });
+      if (!result.ok) throw new Error(`fixture invalid: ${result.code}`);
+      return result.page;
+    };
+    const newest = validate({
+      candles: makeCandles(300),
+      beforeCursor: "c1",
+      hasMoreBefore: true,
+      dataVersion: "v1"
+    });
+    const middle = validate({
+      candles: makeCandles(200),
+      beforeCursor: "c2",
+      hasMoreBefore: true,
+      dataVersion: "v1"
+    }, "c1", 300);
+    const oldest = validate({
+      candles: makeCandles(100),
+      hasMoreBefore: false,
+      dataVersion: "v1"
+    }, "c2", 200);
+    const store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 10_000 });
+    store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    store.mergePage(undefined, newest);
+
+    let resolveOlder!: () => void;
+    let resolveLatest!: () => void;
+    const olderReload = new Promise<void>((resolve) => { resolveOlder = resolve; });
+    const latestReload = new Promise<void>((resolve) => { resolveLatest = resolve; });
+    const deps = dependencies();
+    deps.store = store;
+    vi.mocked(deps.runtime.getMaterializationDemand).mockReturnValue({
+      visibleCount: 10,
+      overscanCount: 0
+    });
+    deps.dataCoordinator.reloadPage = vi.fn((cursor) =>
+      cursor === "c1" ? olderReload : latestReload
+    );
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+    store.mergePage("c1", middle);
+    store.mergePage("c2", oldest);
+    vi.mocked(deps.runtime.setVisibleRange).mockClear();
+    vi.mocked(deps.onError).mockClear();
+
+    const olderRange = { from: 205, to: 210 };
+    const latestRange = { from: 305, to: 310 };
+    controller.setVisibleRange(olderRange);
+    await vi.waitFor(() => expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledWith("c1"));
+    controller.setVisibleRange(latestRange);
+    await vi.waitFor(() => expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledWith(undefined));
+
+    controller.handleDataEvent({
+      type: "historyRequestFailed",
+      cursor: "c1",
+      error: new Error("older reload failed")
+    });
+    resolveOlder();
+    expect(store.mergePage(undefined, newest)).toEqual({ ok: true });
+    resolveLatest();
+
+    await vi.waitFor(() =>
+      expect(deps.runtime.setVisibleRange).toHaveBeenCalledWith(latestRange)
+    );
+    expect(deps.runtime.setVisibleRange).not.toHaveBeenCalledWith(olderRange);
+    expect(deps.onError).not.toHaveBeenCalled();
+    expect(controller.getViewModel().status).toEqual({ type: "ready" });
+    controller.destroy();
+  });
+
+  it("fails the latest range once when two commands share one rejected reload", async () => {
+    const makePage = (
+      from: number,
+      beforeCursor?: string
+    ): SeriesPage => ({
+      candles: Array.from({ length: 20 }, (_, index) => ({
+        time: from + index,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10.5,
+        volume: 1,
+        turnover: 10.5
+      })),
+      ...(beforeCursor === undefined ? {} : { beforeCursor }),
+      hasMoreBefore: beforeCursor !== undefined,
+      dataVersion: "v1"
+    });
+    const newest = validateSeriesPage(makePage(300, "c1"), {
+      seenCursors: new Set()
+    });
+    const oldest = validateSeriesPage(makePage(200), {
+      requestCursor: "c1",
+      currentEarliestTime: 300,
+      seenCursors: new Set()
+    });
+    if (!newest.ok || !oldest.ok) throw new Error("fixture invalid");
+
+    const store = createPagedSeriesStore({ maxPages: 1, maxEstimatedBytes: 10_000 });
+    store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    store.mergePage(undefined, newest.page);
+    const deps = dependencies();
+    deps.store = store;
+    deps.onPresentationUnavailable = vi.fn();
+    let resolveShared!: () => void;
+    const sharedReload = new Promise<void>((resolve) => { resolveShared = resolve; });
+    deps.dataCoordinator.reloadPage = vi.fn(() => sharedReload);
+    vi.mocked(deps.runtime.getMaterializationDemand).mockReturnValue({
+      visibleCount: 10,
+      overscanCount: 0
+    });
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+    store.mergePage("c1", oldest.page);
+    vi.mocked(deps.runtime.setVisibleRange).mockClear();
+    vi.mocked(deps.onError).mockClear();
+
+    const firstRange = { from: 305, to: 310 };
+    const latestRange = { from: 311, to: 315 };
+    controller.setVisibleRange(firstRange);
+    await vi.waitFor(() =>
+      expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledWith(undefined)
+    );
+    controller.setVisibleRange(latestRange);
+    await vi.waitFor(() =>
+      expect(deps.dataCoordinator.reloadPage).toHaveBeenCalledTimes(2)
+    );
+
+    controller.handleDataEvent({
+      type: "historyRequestFailed",
+      error: new Error("shared reload failed")
+    });
+    resolveShared();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(deps.runtime.setVisibleRange).not.toHaveBeenCalledWith(firstRange);
+    expect(deps.runtime.setVisibleRange).not.toHaveBeenCalledWith(latestRange);
+    expect(deps.onPresentationUnavailable).toHaveBeenCalledTimes(1);
+    expect(deps.onError).toHaveBeenCalledTimes(1);
+    expect(deps.onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "HISTORY_DATA_FAILED" })
+    );
+    expect(controller.getViewModel().status).toEqual(
+      expect.objectContaining({ type: "readyWithWarning" })
+    );
+    controller.destroy();
+  });
+
+  it.each(["resolved", "failed"] as const)(
+    "cancels a pending range before a direct time-scale mutation when history is %s",
+    async (outcome) => {
+      let resolveHistory!: () => void;
+      const history = new Promise<void>((resolve) => { resolveHistory = resolve; });
+      const deps = dependencies();
+      deps.onPresentationUnavailable = vi.fn();
+      deps.dataCoordinator.loadMoreBefore = vi.fn(() => history);
+      const valid = validateSeriesPage({
+        candles: Array.from({ length: 100 }, (_, index) => ({
+          time: index + 1_001,
+          open: 10,
+          high: 11,
+          low: 9,
+          close: 10.5,
+          volume: 1,
+          turnover: 10.5
+        })),
+        beforeCursor: "older",
+        hasMoreBefore: true,
+        dataVersion: "v1"
+      }, { seenCursors: new Set() });
+      if (!valid.ok) throw new Error("fixture invalid");
+      deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+      deps.store.mergePage(undefined, valid.page);
+      vi.mocked(deps.runtime.getMaterializationDemand).mockReturnValue({
+        visibleCount: 10,
+        overscanCount: 0
+      });
+      const controller = createChartController(deps);
+      controller.handleDataEvent({
+        type: "initialPageAccepted",
+        selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+        generation: 1,
+        dataVersion: "v1"
+      });
+      vi.mocked(deps.runtime.setVisibleRange).mockClear();
+      vi.mocked(deps.onError).mockClear();
+      vi.mocked(deps.onPresentationUnavailable).mockClear();
+
+      const pendingRange = { from: 1, to: 10 };
+      controller.setVisibleRange(pendingRange);
+      await vi.waitFor(() =>
+        expect(deps.dataCoordinator.loadMoreBefore).toHaveBeenCalledOnce()
+      );
+
+      expect(controller.prepareTimeScaleMutation()).toBe(true);
+      if (outcome === "failed") {
+        controller.handleDataEvent({
+          type: "historyRequestFailed",
+          cursor: "older",
+          error: new Error("stale direct-mutation history failed")
+        });
+      }
+      resolveHistory();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.runtime.setVisibleRange).not.toHaveBeenCalledWith(pendingRange);
+      expect(deps.onPresentationUnavailable).not.toHaveBeenCalled();
+      expect(deps.onError).not.toHaveBeenCalled();
+      expect(controller.getViewModel().status).toEqual({ type: "ready" });
+      controller.destroy();
+    }
+  );
 
   it("applies only the latest reset or visible-range command", async () => {
     let resolveHistory!: () => void;

@@ -31,6 +31,7 @@ import {
   getDrawingHoverState,
   hitTestDrawing,
   hitTestDrawingEditHandle,
+  indexToX,
   mergeVisualAutoscaleRanges,
   panViewportByPixels,
   priceToScaleValue,
@@ -42,6 +43,7 @@ import {
   unprojectDrawingObject,
   updateDrawingHandleDrag,
   updateDrawingMoveDrag,
+  xToIndex,
   zoomViewportAtIndex,
   type ChartCrosshairState,
   type DrawingEditor,
@@ -181,7 +183,16 @@ export interface ChartEngineRuntime {
   getMaterializationDemand(): Readonly<MaterializationDemand>;
   getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
   setVisibleRange(range: ChartVisibleRange): boolean;
-  resetToLatest(): void;
+  getBarSpacing(): number;
+  setBarSpacing(spacing: number): void;
+  getWidth(): number;
+  timeToCoordinate(time: number): number | undefined;
+  coordinateToTime(coordinate: number): number | undefined;
+  scrollByBars(bars: number): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  fitContent(): void;
+  resetToLatest(resetPriceScale?: boolean): void;
   clearCrosshair(): void;
   setSeriesType(type: SeriesType, properties?: ChartSeriesProperties): void;
   setIndicators(configs: readonly IndicatorConfig[]): void;
@@ -1740,8 +1751,22 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     return false;
   }
 
-  function resetChartView(): void {
-    manualPriceScale = undefined;
+  function resetChartView(resetPriceScale = true): void {
+    let paneScaleReset = false;
+    if (resetPriceScale) {
+      manualPriceScale = undefined;
+      for (const [id, pane] of paneLayouts) {
+        if (pane.priceScale.autoScale && pane.priceScale.visibleRange === undefined) continue;
+        paneScaleReset = true;
+        paneLayouts.set(id, {
+          ...pane,
+          priceScale: {
+            autoScale: true,
+            inverted: pane.priceScale.inverted
+          }
+        });
+      }
+    }
     const initial = materialized === undefined
       ? createInitialViewport(chartEngine.getState().series.candles.length, layout.plotArea.width)
       : initialViewportFor(materialized);
@@ -1749,6 +1774,18 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       ...initial,
       priceScaleMode: viewport.priceScaleMode
     }, "resetToLatest", true);
+    if (paneScaleReset) options.onPaneLayoutChanged?.();
+  }
+
+  function fitContent(): void {
+    if (intradayLocked()) return;
+    const candles = chartEngine.getState().series.candles;
+    if (candles.length === 0) return;
+    applyViewport(constrainViewportToWidth({
+      ...viewport,
+      candleWidth: layout.plotArea.width / candles.length,
+      scrollOffset: 0
+    }, candles.length, layout.plotArea.width), "fitContent", true);
   }
 
   function zoomChart(deltaY: number): void {
@@ -2491,6 +2528,66 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     },
     getMaterializationDemand,
     getVisibleRange,
+    getBarSpacing() {
+      if (destroyed) return 0;
+      return timeCoordinates?.barWidth ?? viewport.candleWidth;
+    },
+    setBarSpacing(spacing) {
+      if (destroyed || intradayLocked() || !Number.isFinite(spacing) || spacing <= 0) return;
+      const candles = chartEngine.getState().series.candles;
+      if (candles.length === 0) return;
+      applyViewport(constrainViewportToWidth({
+        ...viewport,
+        candleWidth: spacing
+      }, candles.length, layout.plotArea.width), "barSpacingChanged", true);
+    },
+    getWidth() {
+      return destroyed ? 0 : layout.plotArea.width;
+    },
+    timeToCoordinate(time) {
+      if (destroyed || materialized === undefined || !Number.isFinite(time)) return undefined;
+      const candles = chartEngine.getState().series.candles;
+      const index = candles.findIndex((candle) => candle.time === time);
+      if (
+        index < Math.max(0, viewport.visibleRange.from) ||
+        index > Math.min(candles.length - 1, viewport.visibleRange.to)
+      ) return undefined;
+      return indexToX(index, viewport, layout.plotArea.x, timeCoordinates) - layout.plotArea.x;
+    },
+    coordinateToTime(coordinate) {
+      if (
+        destroyed ||
+        materialized === undefined ||
+        !Number.isFinite(coordinate) ||
+        coordinate < 0 ||
+        coordinate > layout.plotArea.width
+      ) return undefined;
+      const candles = chartEngine.getState().series.candles;
+      const index = xToIndex(
+        coordinate + layout.plotArea.x,
+        viewport,
+        layout.plotArea.x,
+        timeCoordinates
+      );
+      if (
+        index < Math.max(0, viewport.visibleRange.from) ||
+        index > Math.min(candles.length - 1, viewport.visibleRange.to)
+      ) return undefined;
+      return candles[index]?.time;
+    },
+    scrollByBars(bars) {
+      if (destroyed || intradayLocked() || !Number.isSafeInteger(bars) || bars === 0) return;
+      panChart(bars * viewport.candleWidth, "programmaticPan");
+    },
+    zoomIn() {
+      if (destroyed || intradayLocked()) return;
+      zoomChart(-1);
+    },
+    zoomOut() {
+      if (destroyed || intradayLocked()) return;
+      zoomChart(1);
+    },
+    fitContent,
     setVisibleRange(range) {
       if (
         destroyed ||
@@ -2525,9 +2622,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       scheduler.invalidate({ layers: ["axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair"], reason: "visibleRangeChanged" });
       return true;
     },
-    resetToLatest() {
+    resetToLatest(resetPriceScale = true) {
       if (destroyed) return;
-      resetChartView();
+      resetChartView(resetPriceScale);
     },
     clearCrosshair() {
       if (destroyed) return;

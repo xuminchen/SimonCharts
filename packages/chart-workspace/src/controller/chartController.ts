@@ -174,8 +174,9 @@ export interface ChartController extends WorkspaceUiActions {
     type: SeriesType,
     properties: readonly ChartSeriesProperties[]
   ): void;
+  prepareTimeScaleMutation(): boolean;
   setVisibleRange(range: ChartVisibleRange): void;
-  resetToLatest(): void;
+  resetToLatest(resetPriceScale?: boolean): void;
   retry(): void;
   handleDataEvent(event: DataCoordinatorEvent): void;
   handleSearchEvent(event: SymbolSearchCoordinatorEvent): void;
@@ -413,7 +414,9 @@ export function createChartController(
   let requestedVisibleRange: ChartVisibleRange | undefined;
   let requestedVisibleRangeCommand = 0;
   let activeRangeCommand: number | undefined;
+  const rangeRequestOwners = new Map<string | undefined, Set<number>>();
   let requestedLatestCommand: number | undefined;
+  let requestedLatestResetPriceScale = true;
   let applyingRequestedVisibleRange = false;
   let applyingRequestedLatest = false;
   let rangeCommandGeneration = 0;
@@ -449,6 +452,7 @@ export function createChartController(
     currentMaterialized = undefined;
     pendingDataLoads = [];
     boundaryMaterializing = undefined;
+    rangeRequestOwners.clear();
     viewModel = {
       ...viewModel,
       drawings: [],
@@ -901,6 +905,7 @@ export function createChartController(
 
   const applyRequestedLatest = (): void => {
     const command = requestedLatestCommand;
+    const resetPriceScale = requestedLatestResetPriceScale;
     if (
       command === undefined ||
       command !== rangeCommandGeneration ||
@@ -909,7 +914,7 @@ export function createChartController(
     ) return;
     applyingRequestedLatest = true;
     try {
-      dependencies.runtime.resetToLatest();
+      dependencies.runtime.resetToLatest(resetPriceScale);
     } finally {
       applyingRequestedLatest = false;
       if (requestedLatestCommand === command) requestedLatestCommand = undefined;
@@ -976,6 +981,22 @@ export function createChartController(
     );
   };
 
+  const awaitRangeRequest = async (
+    command: number,
+    cursor: string | undefined,
+    request: () => Promise<void>
+  ): Promise<void> => {
+    const owners = rangeRequestOwners.get(cursor) ?? new Set<number>();
+    owners.add(command);
+    rangeRequestOwners.set(cursor, owners);
+    try {
+      await request();
+    } finally {
+      owners.delete(command);
+      if (owners.size === 0) rangeRequestOwners.delete(cursor);
+    }
+  };
+
   const fulfillVisibleRange = async (
     range: ChartVisibleRange,
     command: number,
@@ -1012,7 +1033,11 @@ export function createChartController(
         descriptor.minTime <= range.to
       );
       if (missing !== undefined) {
-        await dependencies.dataCoordinator.reloadPage(missing.requestCursor);
+        await awaitRangeRequest(
+          command,
+          missing.requestCursor,
+          () => dependencies.dataCoordinator.reloadPage(missing.requestCursor)
+        );
         continue;
       }
 
@@ -1050,7 +1075,11 @@ export function createChartController(
         failVisibleRange(command, range);
         return;
       }
-      await dependencies.dataCoordinator.loadMoreBefore();
+      await awaitRangeRequest(
+        command,
+        cursor,
+        () => dependencies.dataCoordinator.loadMoreBefore()
+      );
     }
   };
 
@@ -1423,6 +1452,7 @@ export function createChartController(
     setVisibleRange(range) {
       if (!active) return;
       api.stopReplay();
+      if (state.view === "intraday") return;
       materializationIntentGeneration += 1;
       rangeCommandGeneration += 1;
       requestedLatestCommand = undefined;
@@ -1431,7 +1461,17 @@ export function createChartController(
       activeRangeCommand = undefined;
       startRequestedVisibleRange();
     },
-    resetToLatest() {
+    prepareTimeScaleMutation() {
+      if (!active) return false;
+      api.stopReplay();
+      if (state.loading || state.view === "intraday" || currentMaterialized === undefined) {
+        return false;
+      }
+      materializationIntentGeneration += 1;
+      cancelVisibleRangeCommand();
+      return true;
+    },
+    resetToLatest(resetPriceScale = true) {
       if (!active) return;
       api.stopReplay();
       materializationIntentGeneration += 1;
@@ -1439,6 +1479,7 @@ export function createChartController(
       requestedVisibleRange = undefined;
       activeRangeCommand = undefined;
       requestedLatestCommand = command;
+      requestedLatestResetPriceScale = resetPriceScale;
       materializedAnchorTime = undefined;
       const snapshot = dependencies.store.getSnapshot();
       if (
@@ -1540,7 +1581,9 @@ export function createChartController(
       }
       if (event.type === "historyRequestFailed") {
         if (isAbortError(event.error)) return;
-        const requestedRangeFailed = requestedVisibleRange !== undefined;
+        const owners = rangeRequestOwners.get(event.cursor);
+        if (owners !== undefined && !owners.has(rangeCommandGeneration)) return;
+        const requestedRangeFailed = owners?.has(rangeCommandGeneration) === true;
         if (requestedRangeFailed) cancelVisibleRangeCommand();
         const failure = datafeedFailure(event.error, "Earlier market data could not be loaded");
         failedHistoryCursor = failure.recoverable ? event.cursor ?? null : undefined;
@@ -1561,7 +1604,11 @@ export function createChartController(
         return;
       }
       const blocking = event.phase === "initial";
-      const requestedRangeFailed = requestedVisibleRange !== undefined;
+      const owners = blocking ? undefined : rangeRequestOwners.get(event.cursor);
+      if (!blocking && owners !== undefined && !owners.has(rangeCommandGeneration)) return;
+      const requestedRangeFailed = blocking
+        ? requestedVisibleRange !== undefined
+        : owners?.has(rangeCommandGeneration) === true;
       if (requestedRangeFailed) cancelVisibleRangeCommand();
       if (!blocking) materializePartialIntradayAfterHistoryFailure();
       if (!blocking && requestedRangeFailed) {

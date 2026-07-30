@@ -194,6 +194,7 @@ describe("data coordinator", () => {
     expect(historyEvents).toContainEqual(expect.objectContaining({
       type: "pageRejected",
       phase: "history",
+      cursor: "older",
       code: "CANDLE_AFTER_CUTOFF"
     }));
     expect(historyEvents.some((event) => event.type === "snapshotRefreshing")).toBe(false);

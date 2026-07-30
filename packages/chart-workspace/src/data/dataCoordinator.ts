@@ -17,7 +17,13 @@ export type DataCoordinatorEvent =
       dataVersion: string;
     }
   | { type: "snapshotRefreshing"; selection: SeriesSelection; generation: number }
-  | { type: "pageRejected"; phase: "initial" | "history"; code: string; message: string }
+  | {
+      type: "pageRejected";
+      phase: "initial" | "history";
+      cursor?: string;
+      code: string;
+      message: string;
+    }
   | { type: "initialRequestFailed"; error: unknown }
   | { type: "historyRequestFailed"; cursor?: string; error: unknown };
 
@@ -222,6 +228,7 @@ export function createDataCoordinator(options: DataCoordinatorOptions): DataCoor
         options.onEvent({
           type: "pageRejected",
           phase: "history",
+          ...(requestCursor === undefined ? {} : { cursor: requestCursor }),
           code: result.code,
           message: result.message
         });
@@ -249,6 +256,7 @@ export function createDataCoordinator(options: DataCoordinatorOptions): DataCoor
         options.onEvent({
           type: "pageRejected",
           phase: "history",
+          ...(requestCursor === undefined ? {} : { cursor: requestCursor }),
           code: merged.code,
           message: merged.message
         });

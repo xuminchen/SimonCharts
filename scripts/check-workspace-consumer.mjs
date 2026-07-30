@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.43";
+const expectedVersion = "1.0.0-rc.44";
 const suppliedTarball = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
 let tempRoot;
 
@@ -140,6 +140,7 @@ function consumerSource() {
   ChartDatafeedError,
   advancedChartFeatures,
   createChart,
+  type ChartActionId,
   type ChartDatafeed,
   type ChartCustomStudyDefinition,
   type ChartDrawing,
@@ -156,6 +157,7 @@ function consumerSource() {
   type ChartSelectableEntityId,
   type ChartStudyApi,
   type ChartThemeOverrides,
+  type ChartTimeScaleApi,
   type ChartVisibleRange,
   type ChartState
 } from "@simoncharts/charts";
@@ -321,6 +323,28 @@ const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
 });
 async function verifyConsumer(): Promise<void> {
 if (!await chart.dataReady()) throw new Error("initial chart presentation was not usable");
+const timeScale: ChartTimeScaleApi = chart.getTimeScale();
+const actionId: ChartActionId = "fitContent";
+const timeScaleRange = timeScale.getVisibleRange();
+const candleCoordinate = timeScale.timeToCoordinate(1_784_192_400_000);
+if (
+  timeScale !== chart.getTimeScale() ||
+  !timeScaleRange ||
+  candleCoordinate === undefined ||
+  timeScale.coordinateToTime(candleCoordinate) !== 1_784_192_400_000 ||
+  timeScale.getBarSpacing() <= 0 ||
+  timeScale.getWidth() <= 0
+) {
+  throw new Error("time-scale API was not usable from the packed package");
+}
+timeScale.setVisibleRange(timeScaleRange);
+timeScale.setBarSpacing(timeScale.getBarSpacing());
+timeScale.scrollByBars(0);
+timeScale.zoomIn();
+timeScale.zoomOut();
+timeScale.fitContent();
+timeScale.reset();
+chart.executeActionById(actionId);
 const replaySpeed: ChartReplaySpeed = 2;
 chart.setReplaySpeed(replaySpeed);
 const replayState: Readonly<ChartReplayState> = chart.getReplayState();

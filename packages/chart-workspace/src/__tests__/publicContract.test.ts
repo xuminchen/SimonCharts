@@ -6,6 +6,7 @@ import {
   defaultChartFeatures
 } from "../index";
 import type {
+  ChartActionId,
   ChartDatafeed,
   ChartComparison,
   ChartCrosshairComparisonValue,
@@ -50,6 +51,7 @@ import type {
   ChartSymbol,
   ChartTheme,
   ChartThemeOverrides,
+  ChartTimeScaleApi,
   ChartView,
   IntradayDayCount,
   SeriesPage,
@@ -99,6 +101,34 @@ const customStudyDefinition = {
 } satisfies ChartCustomStudyDefinition;
 
 describe("charts public contract", () => {
+  it("exposes the finite chart action and time-scale API contracts", () => {
+    expectTypeOf<ChartActionId>().toEqualTypeOf<
+      "timeScaleReset" | "chartReset" | "zoomIn" | "zoomOut" | "fitContent"
+    >();
+    expectTypeOf<ChartTimeScaleApi["getVisibleRange"]>()
+      .toEqualTypeOf<() => Readonly<import("../index").ChartVisibleRange> | undefined>();
+    expectTypeOf<ChartTimeScaleApi["setVisibleRange"]>()
+      .toEqualTypeOf<(range: import("../index").ChartVisibleRange) => void>();
+    expectTypeOf<ChartTimeScaleApi["timeToCoordinate"]>()
+      .toEqualTypeOf<(time: number) => number | undefined>();
+    expectTypeOf<ChartTimeScaleApi["coordinateToTime"]>()
+      .toEqualTypeOf<(coordinate: number) => number | undefined>();
+    expectTypeOf<ChartTimeScaleApi["getBarSpacing"]>().toEqualTypeOf<() => number>();
+    expectTypeOf<ChartTimeScaleApi["setBarSpacing"]>()
+      .toEqualTypeOf<(spacing: number) => void>();
+    expectTypeOf<ChartTimeScaleApi["getWidth"]>().toEqualTypeOf<() => number>();
+    expectTypeOf<ChartTimeScaleApi["scrollByBars"]>()
+      .toEqualTypeOf<(bars: number) => void>();
+    expectTypeOf<ChartTimeScaleApi["zoomIn"]>().toEqualTypeOf<() => void>();
+    expectTypeOf<ChartTimeScaleApi["zoomOut"]>().toEqualTypeOf<() => void>();
+    expectTypeOf<ChartTimeScaleApi["fitContent"]>().toEqualTypeOf<() => void>();
+    expectTypeOf<ChartTimeScaleApi["reset"]>().toEqualTypeOf<() => void>();
+    expectTypeOf<ChartInstance["getTimeScale"]>()
+      .toEqualTypeOf<() => ChartTimeScaleApi>();
+    expectTypeOf<ChartInstance["executeActionById"]>()
+      .toEqualTypeOf<(actionId: ChartActionId) => void>();
+  });
+
   it("exposes optional symbol-owned price precision", () => {
     expectTypeOf<ChartSymbol["pricePrecision"]>().toEqualTypeOf<number | undefined>();
   });

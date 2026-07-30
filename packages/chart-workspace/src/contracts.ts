@@ -511,6 +511,28 @@ export interface ChartVisibleRange {
   readonly to: number;
 }
 
+export type ChartActionId =
+  | "timeScaleReset"
+  | "chartReset"
+  | "zoomIn"
+  | "zoomOut"
+  | "fitContent";
+
+export interface ChartTimeScaleApi {
+  getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
+  setVisibleRange(range: ChartVisibleRange): void;
+  timeToCoordinate(time: number): number | undefined;
+  coordinateToTime(coordinate: number): number | undefined;
+  getBarSpacing(): number;
+  setBarSpacing(spacing: number): void;
+  getWidth(): number;
+  scrollByBars(bars: number): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  fitContent(): void;
+  reset(): void;
+}
+
 export type ChartCrosshairStudyOutput =
   | {
       readonly id: string;
@@ -646,6 +668,7 @@ export interface ChartInstance {
   getTheme(): ChartTheme;
   getThemeOverrides(): Readonly<ChartThemeOverrides>;
   getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
+  getTimeScale(): ChartTimeScaleApi;
   getSeriesType(): ChartSeriesType;
   getSeriesProperties<T extends ChartConfigurableSeriesType>(
     type: T
@@ -696,6 +719,7 @@ export interface ChartInstance {
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
   setVisibleRange(range: ChartVisibleRange): void;
+  executeActionById(actionId: ChartActionId): void;
   startReplay(time: number): boolean;
   stepReplay(steps?: number): boolean;
   playReplay(): void;

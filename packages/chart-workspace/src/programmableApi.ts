@@ -12,6 +12,7 @@ import type {
   ChartDrawing,
   ChartDrawingStyle,
   ChartDrawingTool,
+  ChartActionId,
   ChartEntity,
   ChartEntityId,
   ChartEntityInput,
@@ -70,6 +71,13 @@ const maxSeriesCountProperty = 10_000;
 const maxLineBreakCount = 500;
 const maxPaneHeightRatio = 100;
 const maxThemeColorLength = 128;
+const chartActionIds = new Set<ChartActionId>([
+  "timeScaleReset",
+  "chartReset",
+  "zoomIn",
+  "zoomOut",
+  "fitContent"
+]);
 const cssNumber = String.raw`[-+]?(?:\d+(?:\.\d*)?|\.\d+)`;
 const rgbComponent = `${cssNumber}%?`;
 const alphaComponent = `${cssNumber}%?`;
@@ -1095,6 +1103,30 @@ export function parseVisibleRange(value: unknown): ChartVisibleRange {
   const to = finite(range.to, "Chart visible range to");
   if (from > to) throw new RangeError("Chart visible range must be ascending");
   return { from, to };
+}
+
+export function parseChartActionId(value: unknown): ChartActionId {
+  if (typeof value !== "string" || !chartActionIds.has(value as ChartActionId)) {
+    throw new TypeError("Chart action id is unsupported");
+  }
+  return value as ChartActionId;
+}
+
+export function parseTimeScaleCoordinate(value: unknown, label: string): number {
+  return finite(value, label);
+}
+
+export function parseTimeScaleSpacing(value: unknown): number {
+  const spacing = finite(value, "Chart time scale bar spacing");
+  if (spacing <= 0) throw new RangeError("Chart time scale bar spacing must be positive");
+  return spacing;
+}
+
+export function parseTimeScaleBars(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new TypeError("Chart time scale bars must be a safe integer");
+  }
+  return value;
 }
 
 export function paneIdForIndicator(

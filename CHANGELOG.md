@@ -1,5 +1,14 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.44 - 2026-07-30
+
+- Added a frozen public `ChartTimeScaleApi` with visible-range control, bounded bar spacing, plot width, exact loaded-Candle coordinate conversion, Bar-based scrolling, zoom, fit, and reset.
+- Added the finite `ChartActionId` and `executeActionById()` surface for `timeScaleReset`, `chartReset`, `zoomIn`, `zoomOut`, and `fitContent`; arbitrary commands and the internal engine dispatcher remain private.
+- Reused the existing paged visible-range controller and native viewport helpers, kept 1–9 day intraday fixed, preserved latest right alignment and zoom bounds, and kept viewport/command state outside Layout V3 and browser persistence.
+- Made every time-scale command last-intent-wins across concurrent page reloads, kept stale failures silent, isolated loading selections from old coordinates, separated time-only reset from full price-scale reset, and invalidated retained geometry after destroy.
+- Added public-contract, runtime, controller-facade, Chrome, and Edge tests for strict validation, handle identity, coordinate round trips, action parity, bounded behavior, and intraday no-ops.
+- Published the immutable eight-file package after `76 files / 1,306 tests`, combined Chrome `156/156`, Charts `21 files / 295 tests`, Charts Chrome/Edge `105/105` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer checks. SHA-256: `f4de89dba92174d87a2dac1765de0e253e24a6377675f3c441ff1f4ff5052c9f`; SHA-512: `650fe5b99d305bc794ff4c0cd9a185d5ede5f907e3ffcb2f3216e593f15366ab7899ff47237dcfb4726b959c20e29aefd0bd50b5eefa79895f51c4bb2144cae8`. Final adversarial review found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.43 - 2026-07-30
 
 - Added public Historical Replay state and controls through `getReplayState()`, `startReplay()`, `stepReplay()`, `playReplay()`, `pauseReplay()`, `setReplaySpeed()`, and `stopReplay()`, plus the `replay-changed` event and native advanced-workspace controls.
