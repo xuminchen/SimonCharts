@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   setContext: vi.fn<() => Promise<boolean>>(),
   ensureTimeRange: vi.fn<(range: unknown) => Promise<boolean>>(),
   destroyComparisons: vi.fn(),
+  shellRender: vi.fn(),
   createChartController: vi.fn(),
   createChartEngineRuntime: vi.fn(),
   createComparisonCoordinator: vi.fn()
@@ -60,7 +61,7 @@ vi.mock("../ui/workspaceShell", () => ({
     staticCanvas: {},
     overlayCanvas: {},
     chartRegion: {},
-    render: vi.fn(),
+    render: mocks.shellRender,
     renderDataWindow: vi.fn(),
     renderExecutionTooltip: vi.fn(),
     bind: () => vi.fn(),
@@ -169,6 +170,7 @@ describe("createChart comparison wiring", () => {
         canRedoDrawing: false,
         gridVisible: true,
         executionsVisible: false,
+        replay: { status: "inactive", speed: 1 },
         calculationStatus: { type: "idle" },
         search: { query: "", loading: false, results: [] }
       } as any;
@@ -196,6 +198,20 @@ describe("createChart comparison wiring", () => {
         },
         setView: (view: string) => {
           viewModel = { ...viewModel, state: { ...viewModel.state, view } };
+          publish();
+        },
+        playReplay: () => {
+          viewModel = {
+            ...viewModel,
+            replay: { status: "playing", speed: 1, cursorTime: 100 }
+          };
+          publish();
+        },
+        pauseReplay: () => {
+          viewModel = {
+            ...viewModel,
+            replay: { status: "paused", speed: 1, cursorTime: 100 }
+          };
           publish();
         },
         setAdjustMode: (adjustMode: string) => {
@@ -510,5 +526,23 @@ describe("createChart comparison wiring", () => {
     await chart.dataReady();
 
     expect(chart.exportLayout()).not.toHaveProperty("comparisons");
+  });
+
+  it("does not render a stale replay state after a replay listener mutates it", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options({ features: ["replay"] })
+    );
+    chart.subscribeEvents((event) => {
+      if (event.type === "replay-changed" && event.replay.status === "playing") {
+        chart.pauseReplay();
+      }
+    });
+
+    chart.playReplay();
+
+    expect(mocks.shellRender).toHaveBeenLastCalledWith(
+      expect.objectContaining({ replay: expect.objectContaining({ status: "paused" }) })
+    );
   });
 });

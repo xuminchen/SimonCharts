@@ -120,6 +120,16 @@ function appendResult(target: IndicatorResult | undefined, incoming: IndicatorRe
 const duplicateIndicatorColors = ["#f59e0b", "#2563eb", "#dc2626", "#16a34a", "#9333ea", "#0891b2"];
 const maxSeriesRenderPoints = 50_000;
 
+function lastIndexAtOrBefore(
+  descriptors: readonly { readonly minTime: number }[],
+  time: number
+): number {
+  for (let index = descriptors.length - 1; index >= 0; index -= 1) {
+    if (descriptors[index]!.minTime <= time) return index;
+  }
+  return -1;
+}
+
 function scopeIndicatorResult(
   config: IndicatorConfig,
   result: IndicatorResult,
@@ -229,10 +239,12 @@ export function createCheckpointedCalculationRuntime(
       const dataVersion = options.store.getSnapshot().dataVersion ?? "";
       const metadata = options.store.listDescriptors().slice().reverse();
       const targetMin = Math.min(...input.targetTimes);
+      const targetMax = Math.max(...input.targetTimes);
       const targetIndex = Math.max(
         0,
         metadata.findIndex((descriptor) => descriptor.maxTime >= targetMin)
       );
+      const lastTargetIndex = lastIndexAtOrBefore(metadata, targetMax);
       let startIndex = 0;
       if (targetIndex > 0) {
         const predecessor = metadata[targetIndex - 1];
@@ -262,10 +274,12 @@ export function createCheckpointedCalculationRuntime(
           startIndex = targetIndex;
         }
       }
-      for (let pageIndex = startIndex; pageIndex < cursors.length; pageIndex += 1) {
+      for (let pageIndex = startIndex; pageIndex <= lastTargetIndex; pageIndex += 1) {
         const descriptor = await loadDescriptor(cursors[pageIndex]);
         assertCurrent(generation, input.signal);
-        const chunk = chunkFor(input.selection, dataVersion, descriptor.candles!);
+        const candles = descriptor.candles!.filter((candle) => candle.time <= targetMax);
+        const chunk = chunkFor(input.selection, dataVersion, candles);
+        const completeDescriptor = candles.length === descriptor.candles!.length;
         for (const config of input.configs) {
           const currentCheckpoint = checkpoints.get(config.instanceId);
           const calculated = config.definitionVersion === undefined
@@ -274,7 +288,7 @@ export function createCheckpointedCalculationRuntime(
                 chunk,
                 config.params,
                 checkpoints.get(config.instanceId) as CoreIndicatorCheckpoint | undefined,
-                { finalize: pageIndex === cursors.length - 1 }
+                { finalize: pageIndex === lastTargetIndex }
               )
             : calculateCustomStudyChunk({
                 definition: options.studyDefinitions?.get(
@@ -297,17 +311,19 @@ export function createCheckpointedCalculationRuntime(
             config.instanceId,
             appendResult(results.get(config.instanceId), filtered)
           );
-          options.checkpointStore.set(
-            checkpointKey(
-              input.selection,
-              dataVersion,
-              "indicator",
-              config.instanceId,
-              indicatorParamsHash(config),
-              descriptor.requestCursor
-            ),
-            calculated.checkpoint
-          );
+          if (completeDescriptor) {
+            options.checkpointStore.set(
+              checkpointKey(
+                input.selection,
+                dataVersion,
+                "indicator",
+                config.instanceId,
+                indicatorParamsHash(config),
+                descriptor.requestCursor
+              ),
+              calculated.checkpoint
+            );
+          }
         }
       }
       assertCurrent(generation, input.signal);
@@ -355,10 +371,12 @@ export function createCheckpointedCalculationRuntime(
       let sourceIndexOffset = 0;
       let processedBefore = 0;
       const targetMin = Math.min(...input.targetTimes);
+      const targetMax = Math.max(...input.targetTimes);
       const targetIndex = Math.max(
         0,
         metadata.findIndex((descriptor) => descriptor.maxTime >= targetMin)
       );
+      const lastTargetIndex = lastIndexAtOrBefore(metadata, targetMax);
       let startIndex = 0;
       if (targetIndex > 0) {
         const predecessor = metadata[targetIndex - 1];
@@ -379,10 +397,12 @@ export function createCheckpointedCalculationRuntime(
         }
       }
       let foundSourceOffset = false;
-      for (let pageIndex = startIndex; pageIndex < cursors.length; pageIndex += 1) {
+      for (let pageIndex = startIndex; pageIndex <= lastTargetIndex; pageIndex += 1) {
         const descriptor = await loadDescriptor(cursors[pageIndex]);
         assertCurrent(generation, input.signal);
-        const chunk = chunkFor(input.selection, dataVersion, descriptor.candles!);
+        const candles = descriptor.candles!.filter((candle) => candle.time <= targetMax);
+        const chunk = chunkFor(input.selection, dataVersion, candles);
+        const completeDescriptor = candles.length === descriptor.candles!.length;
         const transformed = transformSeriesChunk(input.type, chunk, input.options, checkpoint);
         checkpoint = transformed.checkpoint;
         if (transformed.replaceTailCount > 0 && lastLogicalPoint !== undefined) {
@@ -407,17 +427,19 @@ export function createCheckpointedCalculationRuntime(
           targetCandles.push(candle);
         });
         processedBefore += chunk.candles.length;
-        options.checkpointStore.set(
-          checkpointKey(
-            input.selection,
-            dataVersion,
-            "series",
-            input.type,
-            canonicalJson(input.options),
-            descriptor.requestCursor
-          ),
-          checkpoint
-        );
+        if (completeDescriptor) {
+          options.checkpointStore.set(
+            checkpointKey(
+              input.selection,
+              dataVersion,
+              "series",
+              input.type,
+              canonicalJson(input.options),
+              descriptor.requestCursor
+            ),
+            checkpoint
+          );
+        }
       }
       assertCurrent(generation, input.signal);
       return {

@@ -30,6 +30,7 @@ import type {
   ChartPriceRange,
   ChartPriceScaleApi,
   ChartPriceScaleMode,
+  ChartReplaySpeed,
   ChartConfigurableSeriesType,
   ChartSeriesProperties,
   ChartSeriesType,
@@ -106,6 +107,7 @@ const validFeatures = new Set<ChartFeature>([
   "drawing-history",
   "settings",
   "bottom-panel",
+  "replay",
   "executions"
 ]);
 const drawingSurfaceFeatures: readonly ChartFeature[] = [
@@ -136,6 +138,8 @@ function validExecutionTime(value: unknown): value is number {
     value > 0 &&
     Number.isFinite(new Date(value).getTime());
 }
+
+const replaySpeeds = new Set<ChartReplaySpeed>([1, 2, 4, 8]);
 
 function validExecutions(executions: unknown): executions is readonly ChartExecution[] {
   return Array.isArray(executions) && executions.every((execution) => (
@@ -249,6 +253,7 @@ function blockedViewModel(state: ChartState, error: ChartError): WorkspaceViewMo
     canRedoDrawing: false,
     gridVisible: true,
     executionsVisible: false,
+    replay: { status: "inactive", speed: 1 },
     calculationStatus: { type: "idle" },
     search: { query: "", loading: false, results: [] }
   };
@@ -303,6 +308,7 @@ function presentationKey(state: Readonly<ChartState>): string {
 function presentationReadinessKey(viewModel: Readonly<WorkspaceViewModel>): string {
   return JSON.stringify([
     presentationKey(viewModel.state),
+    viewModel.replay.status === "inactive" ? null : viewModel.replay.cursorTime,
     viewModel.comparisons.map((comparison) => [
       ...symbolKey(comparison.symbol),
       comparison.color ?? null,
@@ -397,6 +403,7 @@ export function createChart(
   const eventListeners = new Set<ChartEventListener>();
   const crosshairListeners = new Set<ChartCrosshairListener>();
   let lastNotifiedState = "";
+  let lastNotifiedReplay = JSON.stringify({ status: "inactive", speed: 1 });
   let lastNotifiedLayout = "";
   let applyingLayout = false;
   let latestViewModelRevision = 0;
@@ -597,6 +604,7 @@ export function createChart(
       getDrawings: () => [],
       getMarks: () => [],
       getComparisons: () => [],
+      getReplayState: () => ({ status: "inactive" as const, speed: 1 as const }),
       dataReady: () => Promise.resolve(false),
       createStudy: () => {
         throw new DOMException("Chart study API is unavailable", "InvalidStateError");
@@ -642,6 +650,12 @@ export function createChart(
       setExecutions: () => undefined,
       setExecutionsVisible: () => undefined,
       setVisibleRange: () => undefined,
+      startReplay: () => false,
+      stepReplay: () => false,
+      playReplay: () => undefined,
+      pauseReplay: () => undefined,
+      setReplaySpeed: () => undefined,
+      stopReplay: () => undefined,
       resetToLatest: () => undefined,
       retry: () => undefined,
       subscribe: () => () => undefined,
@@ -1101,6 +1115,12 @@ export function createChart(
         activePricePrecision = viewModel.state.symbol.pricePrecision;
         runtime.setPricePrecision(activePricePrecision);
       }
+      const nextReplay = JSON.stringify(viewModel.replay);
+      if (nextReplay !== lastNotifiedReplay) {
+        lastNotifiedReplay = nextReplay;
+        emitEvent({ type: "replay-changed", replay: structuredClone(viewModel.replay) });
+        if (destroyed || latestViewModelRevision !== revision) return;
+      }
       shell.render(viewModel);
       emitEntityChanges(viewModel);
       if (destroyed || latestViewModelRevision !== revision) return;
@@ -1362,6 +1382,7 @@ export function createChart(
     getDrawings: () => fromEngineDrawings(controller!.getViewModel().drawings),
     getMarks: () => structuredClone(controller!.getViewModel().marks),
     getComparisons: () => structuredClone(controller!.getViewModel().comparisons),
+    getReplayState: () => structuredClone(controller!.getViewModel().replay),
     dataReady: () => {
       if (destroyed) return Promise.resolve(false);
       const viewModel = controller!.getViewModel();
@@ -1644,6 +1665,28 @@ export function createChart(
     setVisibleRange: (range: ChartVisibleRange) => {
       controller!.setVisibleRange(parseVisibleRange(range));
     },
+    startReplay: (time: number) => {
+      if (!validExecutionTime(time)) {
+        throw new TypeError("Chart replay time must be a positive finite epoch");
+      }
+      requireReadyLayout(controller!.getViewModel(), readySelectionKey);
+      return controller!.startReplay(time);
+    },
+    stepReplay: (steps = 1) => {
+      if (!Number.isSafeInteger(steps) || steps < 1) {
+        throw new RangeError("Chart replay steps must be a positive safe integer");
+      }
+      return controller!.stepReplay(steps);
+    },
+    playReplay: () => controller!.playReplay(),
+    pauseReplay: () => controller!.pauseReplay(),
+    setReplaySpeed: (speed: ChartReplaySpeed) => {
+      if (!replaySpeeds.has(speed)) {
+        throw new RangeError("Chart replay speed must be 1, 2, 4, or 8");
+      }
+      controller!.setReplaySpeed(speed);
+    },
+    stopReplay: () => controller!.stopReplay(),
     resetToLatest: () => controller!.resetToLatest(),
     retry: () => {
       controller!.retry();

@@ -294,6 +294,57 @@ describe("checkpointed calculation runtime", () => {
     expect(checkpointStore.getDiagnostics().entryCount).toBe(4);
   });
 
+  it("does not expose or checkpoint candles after the requested replay time", async () => {
+    const full = createSeries(4);
+    const store = createPagedSeriesStore();
+    store.reset(selection, full.dataVersion);
+    store.mergePage(undefined, validatedPage(full, 0, full.candles.length));
+    const seenTimes: number[][] = [];
+    const definition = {
+      id: "custom:acme.last-close",
+      version: "1",
+      title: "Last close",
+      pane: "main",
+      inputs: [],
+      outputs: [{ id: "line", title: "Line", type: "line" }],
+      calculate(input) {
+        seenTimes.push(input.candles.map((candle) => candle.time));
+        const last = input.candles.at(-1)?.close ?? null;
+        return { outputs: { line: input.candles.map(() => last) } };
+      }
+    } satisfies ChartCustomStudyDefinition;
+    const checkpointStore = createCalculationCheckpointStore();
+    const runtime = createCheckpointedCalculationRuntime({
+      store,
+      checkpointStore,
+      studyDefinitions: parseStudyDefinitions([definition]),
+      reloadPage: async () => undefined
+    });
+
+    await runtime.calculateIndicators({
+      selection,
+      configs: [{
+        instanceId: "last-close",
+        id: definition.id,
+        definitionVersion: definition.version,
+        params: {},
+        visible: true
+      }],
+      targetTimes: new Set([1, 2])
+    });
+
+    expect(seenTimes).toEqual([[1, 2]]);
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(0);
+    const series = await runtime.calculateSeries({
+      selection,
+      type: "heikinAshi",
+      options: {},
+      targetTimes: new Set([1, 2])
+    });
+    expect(series.source.candles.map((candle) => candle.time)).toEqual([1, 2]);
+    expect(checkpointStore.getDiagnostics().entryCount).toBe(0);
+  });
+
   it("rejects an invalid custom result before publishing output or checkpoint", async () => {
     const full = createSeries(20);
     const store = createPagedSeriesStore();

@@ -40,6 +40,8 @@ import type {
   ChartPriceRange,
   ChartPriceScaleApi,
   ChartPriceScaleState,
+  ChartReplaySpeed,
+  ChartReplayState,
   ChartSeriesProperties,
   ChartSelectableEntityId,
   ChartStateListener,
@@ -308,6 +310,26 @@ describe("charts public contract", () => {
       .toEqualTypeOf<(entityId: ChartIndicatorEntityId) => boolean>();
     expectTypeOf<ChartInstance["dataReady"]>()
       .toEqualTypeOf<() => Promise<boolean>>();
+    expectTypeOf<ChartReplaySpeed>().toEqualTypeOf<1 | 2 | 4 | 8>();
+    expectTypeOf<ChartReplayState>().toEqualTypeOf<{
+      readonly status: "inactive" | "paused" | "playing";
+      readonly speed: ChartReplaySpeed;
+      readonly cursorTime?: number;
+    }>();
+    expectTypeOf<ChartInstance["getReplayState"]>()
+      .toEqualTypeOf<() => Readonly<ChartReplayState>>();
+    expectTypeOf<ChartInstance["startReplay"]>()
+      .toEqualTypeOf<(time: number) => boolean>();
+    expectTypeOf<ChartInstance["stepReplay"]>()
+      .toEqualTypeOf<(steps?: number) => boolean>();
+    expectTypeOf<ChartInstance["playReplay"]>()
+      .toEqualTypeOf<() => void>();
+    expectTypeOf<ChartInstance["pauseReplay"]>()
+      .toEqualTypeOf<() => void>();
+    expectTypeOf<ChartInstance["setReplaySpeed"]>()
+      .toEqualTypeOf<(speed: ChartReplaySpeed) => void>();
+    expectTypeOf<ChartInstance["stopReplay"]>()
+      .toEqualTypeOf<() => void>();
     expectTypeOf<ChartStudyApi["entityId"]>().toEqualTypeOf<ChartIndicatorEntityId>();
     expectTypeOf<ChartStudyApi["getInputs"]>()
       .toEqualTypeOf<() => Readonly<Record<string, number>>>();
@@ -437,6 +459,8 @@ describe("charts public contract", () => {
       .toEqualTypeOf<string>();
     expectTypeOf<Extract<ChartEvent, { type: "data-loaded" }>["phase"]>()
       .toEqualTypeOf<"initial" | "history">();
+    expectTypeOf<Extract<ChartEvent, { type: "replay-changed" }>["replay"]>()
+      .toEqualTypeOf<Readonly<ChartReplayState>>();
     expectTypeOf<Extract<ChartEvent, { type: "layout-changed" }>["layout"]>()
       .toEqualTypeOf<Readonly<ChartLayoutV3>>();
     expectTypeOf<Extract<ChartEvent, { type: "mark-clicked" }>["mark"]>()
@@ -512,7 +536,8 @@ describe("charts public contract", () => {
       "drawing-tools",
       "drawing-history",
       "settings",
-      "bottom-panel"
+      "bottom-panel",
+      "replay"
     ]);
     expect(Object.isFrozen(defaultChartFeatures)).toBe(true);
     expect(Object.isFrozen(advancedChartFeatures)).toBe(true);

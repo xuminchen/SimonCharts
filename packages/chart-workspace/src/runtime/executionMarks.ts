@@ -112,7 +112,13 @@ export function createExecutionMarkerOutput(
   const groups = new Map<string, ExecutionGroup>();
   for (const execution of executions) {
     const index = executionCandleIndex(candles, execution.time, timeframe);
-    if (index === undefined) continue;
+    if (
+      index === undefined ||
+      (
+        execution.lastTime !== undefined &&
+        executionCandleIndex(candles, execution.lastTime, timeframe) === undefined
+      )
+    ) continue;
     const label = execution.label?.trim() || (execution.side === "buy" ? "B" : "S");
     const key = JSON.stringify([index, execution.side, label]);
     const group = groups.get(key) ?? { index, side: execution.side, label, executions: [] };

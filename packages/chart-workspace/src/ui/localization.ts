@@ -40,6 +40,12 @@ export interface ChartLabels {
   readonly grid: string;
   readonly bottomPanel: string;
   readonly executions: string;
+  readonly replay: string;
+  readonly replayPlay: string;
+  readonly replayPause: string;
+  readonly replayStep: string;
+  readonly replaySpeed: string;
+  readonly replayExit: string;
   readonly more: string;
   readonly fullscreen: string;
   readonly exitFullscreen: string;
@@ -233,6 +239,12 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       grid: "Grid",
       bottomPanel: "Inspector",
       executions: "Executions",
+      replay: "Historical replay",
+      replayPlay: "Play replay",
+      replayPause: "Pause replay",
+      replayStep: "Next bar",
+      replaySpeed: "Replay speed",
+      replayExit: "Exit replay",
       more: "More",
       fullscreen: "Fullscreen",
       exitFullscreen: "Exit fullscreen",
@@ -281,6 +293,12 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     grid: "网格",
     bottomPanel: "检查器",
     executions: "成交标记",
+    replay: "历史回放",
+    replayPlay: "播放回放",
+    replayPause: "暂停回放",
+    replayStep: "下一根 K 线",
+    replaySpeed: "回放速度",
+    replayExit: "退出回放",
     more: "更多",
     fullscreen: "全屏",
     exitFullscreen: "退出全屏",

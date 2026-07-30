@@ -1,5 +1,14 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.43 - 2026-07-30
+
+- Added public Historical Replay state and controls through `getReplayState()`, `startReplay()`, `stepReplay()`, `playReplay()`, `pauseReplay()`, `setReplaySpeed()`, and `stopReplay()`, plus the `replay-changed` event and native advanced-workspace controls.
+- Reused the accepted host Candle, bounded materialization, checkpointed calculation, compare, mark, execution, crosshair, price-scale, readiness, and event paths; no tick, calendar row, market value, or second replay engine is constructed.
+- Truncated every replay presentation at the exact real Candle cursor, continued across cached materialized windows by real timestamps, restored the full current presentation on exit, and kept replay transient outside Layout V3 and browser persistence.
+- Prevented future execution-range disclosure by withholding an aggregate until its optional `lastTime` maps to a revealed Candle; blocked render/calculation failures pause replay and reentrant replay listeners cannot render stale UI state.
+- Added public, controller, calculation-runtime, execution, Chrome, and Edge coverage for validation, causal Custom Study/stateful-series input, timer backpressure, cross-window steps, lifecycle reset, native controls, and future-series isolation.
+- Published the immutable eight-file package after `74 files / 1,289 tests`, combined Chrome `155/155`, Charts `19 files / 278 tests`, Charts Chrome/Edge `104/104` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer checks. SHA-256: `c3f8222e8519df72c2e49545b6cf5bbfa84b41968f9b8c6437734857c1c53a5e`; SHA-512: `54c94bd0fee88eafaabb0fda771118dc4ef9a5db15a95b83ce36270db5d95e96524dd48d73425585117e7597dd2184d3f27d7ac2be33d67c78b1b08e38ca0c7a`.
+
 ## @simoncharts/charts 1.0.0-rc.42 - 2026-07-30
 
 - Added public host-owned Symbol Compare through `ChartComparison`, `ChartOptions.comparisons`, `getComparisons()`, and atomic `setComparisons()` replacement, with at most four distinct non-main symbols and defensive snapshots.

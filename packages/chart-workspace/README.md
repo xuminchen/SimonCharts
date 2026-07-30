@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.42.tgz
+npm install ./simoncharts-charts-1.0.0-rc.43.tgz
 ```
 
 ## Embed the default chart
@@ -488,7 +488,7 @@ const chart = createChart(container, {
 
 `getSeriesProperties(type)` returns a defensive, normalized full object. `setSeriesProperties(properties)` replaces one configurable type without switching the current series. Defaults are Renko `brickSize: 1`, Line Break `lineCount: 3`, Kagi `reversalAmount: 2`, and Point & Figure `boxSize: 1, reversalBoxes: 3`. Amounts must be positive finite numbers; `lineCount` is an integer from 1 to 500 and `reversalBoxes` from 1 to 10,000. Non-default values are stored sparsely in the portable layout and browser preferences; explicit `ChartOptions.seriesProperties` wins for matching types. Importing a legacy layout without the field restores defaults. Intraday stays a fixed line, though properties may be prepared for the next timeframe view.
 
-`ChartFeature` is a stable union of `symbol-search`, `timeframes`, `adjustment`, `series-type`, `price-scale`, `indicators`, `drawing-tools`, `drawing-history`, `settings`, and `bottom-panel`. Passing a feature controls construction: disabled controls are not mounted and do not bind listeners. `advancedChartFeatures` explicitly enables the complete 17-series, 16-indicator, 63-drawing, three-scale workbench.
+`ChartFeature` is a stable union of `symbol-search`, `timeframes`, `adjustment`, `series-type`, `price-scale`, `indicators`, `drawing-tools`, `drawing-history`, `settings`, `bottom-panel`, `symbol-compare`, `executions`, and `replay`. Passing a feature controls construction: disabled controls are not mounted and do not bind listeners. `advancedChartFeatures` explicitly enables the complete 17-series, 16-indicator, 63-drawing, three-scale workbench, Symbol Compare, and Historical Replay; host executions remain opt-in.
 
 The advanced shell is chart-first: a 40 px market toolbar, fixed 44 px drawing rail, uninterrupted chart and native axes, collapsed 40 px object/property/data inspector, and 26 px status bar. The crosshair updates OHLC, volume, indicator rows, and price/time axis badges directly. Wheel/keyboard zoom, captured drag pan, price-axis and time-axis drag, double-click reset, drawing body/handle editing, chart/axis context menus, and native fullscreen are included. The inspector expands only on demand and reuses the existing versioned layout namespace.
 
@@ -505,6 +505,28 @@ Charts intentionally does not create watchlists, news, broker/order/account pane
 - `AbortSignal` cancellation is normal control flow and is not surfaced as an error.
 
 Host adapters may throw `ChartDatafeedError` with a safe code (`NOT_CONFIGURED`, `UNAUTHORIZED`, `FORBIDDEN`, `RATE_LIMITED`, `NO_DATA`, or `UNAVAILABLE`), a user-facing message, and a recoverable flag. `onError` receives a normalized `ChartError`; known datafeed codes are available at `error.context?.datafeedCode`. Indicator and stateful-series calculation failures use `CALCULATION_FAILED` with scope `calculation` and `error.context?.calculationKind`; Canvas paint failures remain `RENDER_FAILED` with scope `render`. Both are recoverable through `retry()`, and readiness returns only after the failed calculation or paint is actually replaced. TypeScript hosts with exhaustive `ChartErrorCode` or `ChartErrorScope` switches must add the new calculation cases when upgrading from rc.31. Unknown upstream details are never exposed.
+
+## Replay accepted history
+
+Historical Replay is transient and uses only accepted host Candle timestamps. `startReplay(time)` requires an exact available Candle time before the latest Candle. `stepReplay()` advances to the next real Candle, so weekends, suspensions, and missing host rows are never synthesized. `playReplay()` uses the selected fixed speed and pauses at the final Candle or on a blocking render/calculation failure.
+
+```ts
+chart.startReplay(replayStartEpochMs);
+chart.setReplaySpeed(4); // 1 | 2 | 4 | 8
+chart.stepReplay();
+chart.playReplay();
+chart.pauseReplay();
+
+const state = chart.getReplayState(); // inactive | paused | playing
+const unsubscribeReplay = chart.subscribeEvents((event) => {
+  if (event.type === "replay-changed") updateReplayUi(event.replay);
+});
+
+chart.stopReplay();
+unsubscribeReplay();
+```
+
+Each commit gives the existing chart runtime only Candles through the cursor. Studies, stateful series, comparisons, marks, executions, volume, crosshair values, and automatic price scaling therefore share the same causal cutoff. Programmatic visible-range, symbol, timeframe, view, intraday-day, and adjustment changes exit replay before applying the new selection. Replay state is intentionally absent from `ChartLayoutV3`, export/import, and browser persistence.
 
 ## Persistence and lifecycle
 
@@ -534,4 +556,4 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.42 adds the host-owned Symbol Compare contract described above without adding a second time axis, filling missing market data, or persisting comparison state. rc.41 hardens browser performance and long-history lifecycle without changing the public API. A lazy one-million-candle fixture proves exact navigation through at least 50,000 real fixture candles, a 2,000-page descriptor chain remains complete while cached payloads stay bounded, and Chrome/Edge exercise crosshair, pan, and zoom with 63 Drawings plus MA/RSI/MACD. Static frames perform one layout reconciliation instead of repeating it across empty dynamic and overlay passes, while price-axis geometry still follows scale, precision, Drawing, and Study changes. Same-selection history recovery cannot reuse stale readiness; a failed requested range settles `dataReady()` as `false`; and `destroy()` releases cached and materialized market/visual data even during reentry or host callback failure. rc.42 preserves rc.41 and every earlier RC contract.
+Current rc.43 adds Historical Replay over accepted host candles. Replay exposes an exact candle cursor, paused/playing state, and fixed `1×`, `2×`, `4×`, or `8×` speed; it advances by real candle timestamps and never constructs calendar rows. Each replay commit sends the existing runtime only candles at or before the cursor, so studies, stateful series, comparisons, marks, executions, the data window, volume, and price scale share one causal presentation. An execution time range is withheld until its `lastTime` maps to a revealed candle. Explicit range or selection changes stop replay, blocking render/calculation failures pause it, and replay state is not exported or persisted. rc.43 preserves rc.42 and every earlier RC contract.

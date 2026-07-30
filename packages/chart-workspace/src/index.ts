@@ -63,6 +63,8 @@ export type {
   ChartPriceScaleApi,
   ChartPriceScaleMode,
   ChartPriceScaleState,
+  ChartReplaySpeed,
+  ChartReplayState,
   ChartConfigurableSeriesType,
   ChartSeriesProperties,
   ChartSeriesType,

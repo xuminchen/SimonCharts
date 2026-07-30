@@ -783,6 +783,182 @@ describe("chart workspace controller", () => {
     expect(clearStore).toHaveBeenCalledTimes(1);
   });
 
+  it("replays only accepted candles at or before the cursor and restores the full series", () => {
+    const deps = dependencies();
+    const valid = validateSeriesPage({
+      candles: Array.from({ length: 5 }, (_, index) => ({
+        time: index + 1,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10.5,
+        volume: 1,
+        turnover: 10.5
+      })),
+      hasMoreBefore: false,
+      dataVersion: "v1"
+    }, { seenCursors: new Set() });
+    if (!valid.ok) throw new Error("fixture invalid");
+    deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    deps.store.mergePage(undefined, valid.page);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+
+    expect(controller.startReplay(3)).toBe(true);
+    expect(controller.getViewModel().replay).toEqual({
+      status: "paused",
+      speed: 1,
+      cursorTime: 3
+    });
+    expect(vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0].series.candles)
+      .toEqual(valid.page.candles.slice(0, 3));
+
+    expect(controller.stepReplay()).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(4);
+    expect(vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0].series.candles)
+      .toEqual(valid.page.candles.slice(0, 4));
+
+    controller.stopReplay();
+    expect(controller.getViewModel().replay).toEqual({ status: "inactive", speed: 1 });
+    expect(vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0].series.candles)
+      .toEqual(valid.page.candles);
+
+    expect(controller.startReplay(2)).toBe(true);
+    controller.setSymbol(index);
+    expect(controller.getViewModel().replay).toEqual({ status: "inactive", speed: 1 });
+  });
+
+  it("does not start replay for an unavailable or terminal candle", () => {
+    const deps = dependencies();
+    const valid = validateSeriesPage({
+      candles: [1, 2].map((time) => ({
+        time,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10.5,
+        volume: 1,
+        turnover: 10.5
+      })),
+      hasMoreBefore: false,
+      dataVersion: "v1"
+    }, { seenCursors: new Set() });
+    if (!valid.ok) throw new Error("fixture invalid");
+    deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    deps.store.mergePage(undefined, valid.page);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+    const calls = vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.length;
+
+    expect(controller.startReplay(99)).toBe(false);
+    expect(controller.startReplay(2)).toBe(false);
+    expect(controller.getViewModel().replay).toEqual({ status: "inactive", speed: 1 });
+    expect(deps.runtime.setMaterializedSeries).toHaveBeenCalledTimes(calls);
+  });
+
+  it("does not advance playback while the current calculation is pending", () => {
+    vi.useFakeTimers();
+    try {
+      const deps = dependencies();
+      const valid = validateSeriesPage({
+        candles: [1, 2, 3].map((time) => ({
+          time,
+          open: 10,
+          high: 11,
+          low: 9,
+          close: 10.5,
+          volume: 1,
+          turnover: 10.5
+        })),
+        hasMoreBefore: false,
+        dataVersion: "v1"
+      }, { seenCursors: new Set() });
+      if (!valid.ok) throw new Error("fixture invalid");
+      deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+      deps.store.mergePage(undefined, valid.page);
+      const controller = createChartController(deps);
+      controller.handleDataEvent({
+        type: "initialPageAccepted",
+        selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+        generation: 1,
+        dataVersion: "v1"
+      });
+      controller.startReplay(1);
+      controller.playReplay();
+      controller.handleCalculationStatus({
+        type: "calculating",
+        kind: "indicator",
+        id: "MA",
+        generation: 1
+      });
+
+      vi.advanceTimersByTime(1_000);
+      expect(controller.getViewModel().replay.cursorTime).toBe(1);
+      controller.handleCalculationStatus({ type: "idle" });
+      vi.advanceTimersByTime(1_000);
+      expect(controller.getViewModel().replay.cursorTime).toBe(2);
+      controller.destroy();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses replay immediately when rendering becomes blocked", () => {
+    vi.useFakeTimers();
+    try {
+      const deps = dependencies();
+      const valid = validateSeriesPage({
+        candles: [1, 4, 9].map((time) => ({
+          time,
+          open: 10,
+          high: 11,
+          low: 9,
+          close: 10.5,
+          volume: 1,
+          turnover: 10.5
+        })),
+        hasMoreBefore: false,
+        dataVersion: "v1"
+      }, { seenCursors: new Set() });
+      if (!valid.ok) throw new Error("fixture invalid");
+      deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+      deps.store.mergePage(undefined, valid.page);
+      const controller = createChartController(deps);
+      controller.handleDataEvent({
+        type: "initialPageAccepted",
+        selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+        generation: 1,
+        dataVersion: "v1"
+      });
+
+      expect(controller.startReplay(1)).toBe(true);
+      controller.playReplay();
+      controller.handleRenderError(new Error("controlled render failure"));
+      expect(controller.getViewModel().replay).toEqual({
+        status: "paused",
+        speed: 1,
+        cursorTime: 1
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      controller.playReplay();
+      vi.advanceTimersByTime(2_000);
+      expect(controller.getViewModel().replay.cursorTime).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rematerializes both directions inside a cached page before requesting remote history", async () => {
     const deps = dependencies();
     const candles = Array.from({ length: 2_000 }, (_, index) => ({
@@ -823,6 +999,84 @@ describe("chart workspace controller", () => {
     controller.handleMaterializedBoundary("after", newer?.sourceMaxTime);
     await vi.waitFor(() => expect(vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0].sourceMaxTime).toBe(2_000));
     expect(deps.dataCoordinator.loadMoreBefore).not.toHaveBeenCalled();
+  });
+
+  it("continues replay across cached materialized windows using actual candle times", async () => {
+    const deps = dependencies();
+    const times = Array.from({ length: 2_000 }, (_, index) => index * 3 + 1);
+    const valid = validateSeriesPage({
+      candles: times.map((time) => ({
+        time,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10.5,
+        volume: 1,
+        turnover: 10.5
+      })),
+      hasMoreBefore: false,
+      dataVersion: "v1"
+    }, { seenCursors: new Set() });
+    if (!valid.ok) throw new Error("fixture invalid");
+    deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    deps.store.mergePage(undefined, valid.page);
+    const controller = createChartController(deps);
+
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+    const latest = vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0];
+    controller.handleMaterializedBoundary("before", latest?.sourceMinTime);
+    await vi.waitFor(() => {
+      expect(vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0].sourceMinTime)
+        .toBe(times[1_250]);
+    });
+    const older = vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0];
+    const cursor = older.series.candles.at(-2)!.time;
+    const next = older.series.candles.at(-1)!.time;
+    const afterWindow = times[times.indexOf(next) + 1]!;
+
+    expect(controller.startReplay(cursor)).toBe(true);
+    expect(controller.stepReplay()).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(next);
+    expect(controller.stepReplay()).toBe(true);
+    expect(controller.getViewModel().replay.cursorTime).toBe(afterWindow);
+    expect(vi.mocked(deps.runtime.setMaterializedSeries).mock.calls.at(-1)?.[0].sourceMaxTime)
+      .toBeGreaterThanOrEqual(afterWindow);
+  });
+
+  it("stops replay before applying an explicit visible-range command", () => {
+    const deps = dependencies();
+    const valid = validateSeriesPage({
+      candles: [1, 4, 9].map((time) => ({
+        time,
+        open: 10,
+        high: 11,
+        low: 9,
+        close: 10.5,
+        volume: 1,
+        turnover: 10.5
+      })),
+      hasMoreBefore: false,
+      dataVersion: "v1"
+    }, { seenCursors: new Set() });
+    if (!valid.ok) throw new Error("fixture invalid");
+    deps.store.reset({ symbol: stock, timeframe: "1d", adjustMode: "forward" }, "v1");
+    deps.store.mergePage(undefined, valid.page);
+    const controller = createChartController(deps);
+    controller.handleDataEvent({
+      type: "initialPageAccepted",
+      selection: { symbol: stock, timeframe: "1d", adjustMode: "forward" },
+      generation: 1,
+      dataVersion: "v1"
+    });
+
+    expect(controller.startReplay(1)).toBe(true);
+    controller.setVisibleRange({ from: 1, to: 9 });
+    expect(controller.getViewModel().replay).toEqual({ status: "inactive", speed: 1 });
   });
 
   it("reloads a known evicted older 1m page instead of issuing a no-op chain-tail request", async () => {

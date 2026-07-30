@@ -2388,6 +2388,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       const eventsWereSuspended = crosshairEventsSuspended;
       const previousMaterialized = materialized;
       const previousSeries = chartEngine.getState().series;
+      const crosshairPointToRestore = crosshairPoint === undefined
+        ? undefined
+        : { ...crosshairPoint };
       const previousAnchorIndex = anchorTime === undefined
         ? -1
         : previousSeries.candles.findIndex((candle) => candle.time === anchorTime);
@@ -2416,6 +2419,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       clearCrosshairState();
       lastDataWindowIndex = undefined;
       visualOutputs = [];
+      seriesModel = undefined;
       materialized = input;
       currentIntradaySummary = summarizeLatestIntradayDay(input);
       intradayAverage = input.intradayDays === undefined
@@ -2461,6 +2465,10 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       }
       chartEngine.setViewport(viewport);
       rebuildInteraction();
+      if (sameSelection && crosshairPointToRestore !== undefined) {
+        crosshairPoint = crosshairPointToRestore;
+        refreshCrosshairAtPoint();
+      }
       if (
         eventsWereSuspended &&
         pendingCrosshairEvent?.crosshair === undefined

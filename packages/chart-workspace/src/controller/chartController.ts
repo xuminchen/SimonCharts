@@ -12,6 +12,8 @@ import type {
   ChartComparison,
   ChartDataCapabilities,
   ChartMark,
+  ChartReplaySpeed,
+  ChartReplayState,
   ChartSeriesProperties,
   ChartState,
   ChartSymbol,
@@ -111,6 +113,7 @@ export interface WorkspaceViewModel {
   canRedoDrawing: boolean;
   gridVisible: boolean;
   executionsVisible: boolean;
+  replay: ChartReplayState;
   calculationStatus: CalculationStatus;
   search: WorkspaceSearchState;
 }
@@ -146,6 +149,12 @@ export interface WorkspaceUiActions {
   redoDrawing(): void;
   setGridVisible(visible: boolean): void;
   setExecutionsVisible(visible: boolean): void;
+  startReplay(time?: number): boolean;
+  stepReplay(steps?: number): boolean;
+  playReplay(): void;
+  pauseReplay(): void;
+  setReplaySpeed(speed: ChartReplaySpeed): void;
+  stopReplay(): void;
   setBottomPanel(state: BottomPanelState): void;
   setDrawingPalette(state: DrawingPaletteState): void;
 }
@@ -266,6 +275,22 @@ function withoutDefaultSeriesProperties(
   );
 }
 
+function materializedThrough(
+  input: Readonly<MaterializedSeries>,
+  cursorTime: number
+): MaterializedSeries {
+  const candles = input.series.candles
+    .filter((candle) => candle.time <= cursorTime)
+    .map((candle) => ({ ...candle }));
+  return {
+    ...input,
+    series: { ...input.series, candles },
+    ...(candles.at(-1) === undefined ? {} : { sourceMaxTime: candles.at(-1)!.time }),
+    hasKnownNewerPages:
+      input.hasKnownNewerPages || candles.length < input.series.candles.length
+  };
+}
+
 export function createChartController(
   dependencies: ChartControllerDependencies
 ): ChartController {
@@ -324,6 +349,7 @@ export function createChartController(
     canRedoDrawing: false,
     gridVisible: preferences.gridVisible,
     executionsVisible: dependencies.executionsEnabled,
+    replay: { status: "inactive", speed: 1 },
     calculationStatus: { type: "idle" },
     search: { query: "", loading: false, results: [] }
   };
@@ -404,10 +430,18 @@ export function createChartController(
   let capabilityGeneration = 0;
   let capabilityController: AbortController | undefined;
   let viewModelRevision = 0;
+  let replayTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const clearReplayTimer = (): void => {
+    if (replayTimer === undefined) return;
+    clearTimeout(replayTimer);
+    replayTimer = undefined;
+  };
 
   const deactivate = (): void => {
     if (!active) return;
     active = false;
+    clearReplayTimer();
     materializationIntentGeneration += 1;
     capabilityGeneration += 1;
     capabilityController?.abort();
@@ -421,6 +455,7 @@ export function createChartController(
       marks: [],
       selectedDrawingIds: [],
       dataWindow: undefined,
+      replay: { status: "inactive", speed: viewModel.replay.speed },
       search: { ...viewModel.search, results: [] }
     };
     dependencies.dataCoordinator.destroy();
@@ -432,8 +467,130 @@ export function createChartController(
     dependencies.onViewModelChanged?.(structuredClone(viewModel), ++viewModelRevision);
   };
 
+  const replayPresentation = (
+    input: MaterializedSeries
+  ): MaterializedSeries =>
+    viewModel.replay.status === "inactive"
+      ? input
+      : materializedThrough(input, viewModel.replay.cursorTime!);
+
+  const replayCandles = (): readonly Candle[] => {
+    const snapshot = dependencies.store.getSnapshot();
+    return sameSelection(snapshot.selection, selectionOf(state)) ? snapshot.candles : [];
+  };
+
+  const ensureReplayWindow = (time: number): boolean => {
+    if (currentMaterialized?.series.candles.some((candle) => candle.time === time)) return true;
+    const demand = dependencies.runtime.getMaterializationDemand();
+    const intradayDayCount = state.view === "intraday" ? state.intradayDays : undefined;
+    const result = materializeSeriesAroundTime({
+      store: dependencies.store,
+      selection: selectionOf(state),
+      anchorTime: time,
+      visibleCount: demand.visibleCount,
+      overscanCount: demand.overscanCount,
+      ...(intradayDayCount === undefined ? {} : {
+        intradayDayCount,
+        ...(state.capabilities?.intradayScale === undefined
+          ? {}
+          : { intradayScale: state.capabilities.intradayScale })
+      })
+    });
+    if (
+      result.missingRequestCursors.length > 0 ||
+      !result.series.candles.some((candle) => candle.time === time)
+    ) return false;
+    currentMaterialized = result;
+    materializedAnchorTime = time;
+    return true;
+  };
+
+  const commitReplayPresentation = (anchorTime?: number): boolean => {
+    if (currentMaterialized === undefined) return false;
+    const presentation = replayPresentation(currentMaterialized);
+    if (presentation.series.candles.length === 0) return false;
+    dependencies.runtime.setMaterializedSeries(presentation, anchorTime);
+    return true;
+  };
+
+  const replayCursorIndex = (): number =>
+    viewModel.replay.status === "inactive"
+      ? -1
+      : replayCandles().findIndex(
+          (candle) => candle.time === viewModel.replay.cursorTime
+        );
+
+  const advanceReplay = (steps: number, keepPlaying: boolean): boolean => {
+    const index = replayCursorIndex();
+    const candles = replayCandles();
+    if (index < 0 || candles.length === 0) return false;
+    const nextIndex = Math.min(candles.length - 1, index + steps);
+    if (nextIndex <= index) return false;
+    const cursorTime = candles[nextIndex]!.time;
+    if (!ensureReplayWindow(cursorTime)) return false;
+    viewModel = {
+      ...viewModel,
+      replay: {
+        status: keepPlaying && nextIndex < candles.length - 1 ? "playing" : "paused",
+        speed: viewModel.replay.speed,
+        cursorTime
+      }
+    };
+    if (!commitReplayPresentation(cursorTime)) return false;
+    publish();
+    return true;
+  };
+
+  const scheduleReplay = (): void => {
+    clearReplayTimer();
+    if (!active || viewModel.replay.status !== "playing") return;
+    replayTimer = setTimeout(() => {
+      replayTimer = undefined;
+      if (viewModel.status.type === "blocked") {
+        viewModel = {
+          ...viewModel,
+          replay: {
+            status: "paused",
+            speed: viewModel.replay.speed,
+            cursorTime: viewModel.replay.cursorTime!
+          }
+        };
+        publish();
+        return;
+      }
+      if (viewModel.calculationStatus.type !== "idle") {
+        scheduleReplay();
+        return;
+      }
+      if (!advanceReplay(1, true)) {
+        viewModel = {
+          ...viewModel,
+          replay: {
+            status: "paused",
+            speed: viewModel.replay.speed,
+            cursorTime: viewModel.replay.cursorTime!
+          }
+        };
+        publish();
+        return;
+      }
+      scheduleReplay();
+    }, 1_000 / viewModel.replay.speed);
+  };
+
   const report = (error: ChartError, blocking: boolean): void => {
     if (!active) return;
+    if (blocking && viewModel.replay.status === "playing") {
+      clearReplayTimer();
+      viewModel = {
+        ...viewModel,
+        replay: {
+          status: "paused",
+          speed: viewModel.replay.speed,
+          cursorTime: viewModel.replay.cursorTime!
+        }
+      };
+    }
     const status: WorkspaceStatus = blocking
       ? { type: "blocked", error }
       : viewModel.status.type === "blocked"
@@ -720,7 +877,7 @@ export function createChartController(
       return false;
     }
     currentMaterialized = result;
-    dependencies.runtime.setMaterializedSeries(result, anchorTime);
+    if (!commitReplayPresentation(anchorTime)) return false;
     dependencies.runtime.setSeriesType(
       viewModel.seriesType,
       activeSeriesProperties(viewModel.seriesType)
@@ -1075,6 +1232,7 @@ export function createChartController(
     },
     setSymbol(symbol) {
       if (!active || sameSymbol(symbol, state.symbol)) return;
+      api.stopReplay();
       if (viewModel.comparisons.some((comparison) => comparison.symbol.id === symbol.id)) {
         api.setComparisons(
           viewModel.comparisons.filter((comparison) => comparison.symbol.id !== symbol.id)
@@ -1110,6 +1268,7 @@ export function createChartController(
         if (state.view === "intraday") api.setView("timeframe");
         return;
       }
+      api.stopReplay();
       const adjustMode = selectSupportedAdjustMode(
         state.symbol,
         state.capabilities,
@@ -1150,6 +1309,7 @@ export function createChartController(
       }
       requestedView = undefined;
       if (view === state.view) return;
+      api.stopReplay();
       if (view === "intraday") {
         if (!state.capabilities?.series.some((item) => item.timeframe === "1m")) return;
         cancelVisibleRangeCommand();
@@ -1214,6 +1374,7 @@ export function createChartController(
         return;
       }
       if (days === state.intradayDays) return;
+      api.stopReplay();
       cancelVisibleRangeCommand();
       state = { ...state, intradayDays: days };
       invalidateViewMaterialization();
@@ -1249,6 +1410,7 @@ export function createChartController(
         normalized === state.adjustMode ||
         !adjustModesForTimeframe(state.capabilities, state.timeframe).includes(normalized)
       ) return;
+      api.stopReplay();
       cancelVisibleRangeCommand();
       state = { ...state, adjustMode: normalized };
       viewModel = {
@@ -1260,6 +1422,7 @@ export function createChartController(
     },
     setVisibleRange(range) {
       if (!active) return;
+      api.stopReplay();
       materializationIntentGeneration += 1;
       rangeCommandGeneration += 1;
       requestedLatestCommand = undefined;
@@ -1270,6 +1433,7 @@ export function createChartController(
     },
     resetToLatest() {
       if (!active) return;
+      api.stopReplay();
       materializationIntentGeneration += 1;
       const command = ++rangeCommandGeneration;
       requestedVisibleRange = undefined;
@@ -1726,6 +1890,93 @@ export function createChartController(
       if (!active || !dependencies.executionsEnabled || visible === viewModel.executionsVisible) return;
       viewModel = { ...viewModel, executionsVisible: visible };
       dependencies.runtime.setExecutionsVisible(visible);
+      publish();
+    },
+    startReplay(time) {
+      if (!active || state.loading || currentMaterialized === undefined) return false;
+      const requested = time ?? dependencies.runtime.getVisibleRange()?.from;
+      if (requested === undefined) return false;
+      const candles = replayCandles();
+      const index = candles.findIndex((candle) => candle.time === requested);
+      if (index < 0 || index >= candles.length - 1 || !ensureReplayWindow(requested)) return false;
+      clearReplayTimer();
+      viewModel = {
+        ...viewModel,
+        replay: {
+          status: "paused",
+          speed: viewModel.replay.speed,
+          cursorTime: requested
+        }
+      };
+      if (!commitReplayPresentation(requested)) return false;
+      publish();
+      return true;
+    },
+    stepReplay(steps = 1) {
+      if (!active || !Number.isSafeInteger(steps) || steps < 1) return false;
+      clearReplayTimer();
+      const wasPlaying = viewModel.replay.status === "playing";
+      if (wasPlaying) {
+        viewModel = {
+          ...viewModel,
+          replay: {
+            status: "paused",
+            speed: viewModel.replay.speed,
+            cursorTime: viewModel.replay.cursorTime!
+          }
+        };
+      }
+      const advanced = advanceReplay(steps, false);
+      if (!advanced && wasPlaying) publish();
+      return advanced;
+    },
+    playReplay() {
+      if (
+        !active ||
+        viewModel.status.type === "blocked" ||
+        viewModel.replay.status === "inactive"
+      ) return;
+      if (viewModel.replay.status === "playing") return;
+      if (replayCursorIndex() >= replayCandles().length - 1) return;
+      viewModel = {
+        ...viewModel,
+        replay: {
+          status: "playing",
+          speed: viewModel.replay.speed,
+          cursorTime: viewModel.replay.cursorTime!
+        }
+      };
+      publish();
+      scheduleReplay();
+    },
+    pauseReplay() {
+      clearReplayTimer();
+      if (!active || viewModel.replay.status !== "playing") return;
+      viewModel = {
+        ...viewModel,
+        replay: {
+          status: "paused",
+          speed: viewModel.replay.speed,
+          cursorTime: viewModel.replay.cursorTime!
+        }
+      };
+      publish();
+    },
+    setReplaySpeed(speed) {
+      if (!active || speed === viewModel.replay.speed) return;
+      viewModel = { ...viewModel, replay: { ...viewModel.replay, speed } };
+      publish();
+      if (viewModel.replay.status === "playing") scheduleReplay();
+    },
+    stopReplay() {
+      clearReplayTimer();
+      if (!active || viewModel.replay.status === "inactive") return;
+      const cursorTime = viewModel.replay.cursorTime;
+      viewModel = {
+        ...viewModel,
+        replay: { status: "inactive", speed: viewModel.replay.speed }
+      };
+      commitReplayPresentation(cursorTime);
       publish();
     },
     setBottomPanel(bottomPanel) {

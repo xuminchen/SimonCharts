@@ -95,6 +95,7 @@ export type ChartFeature =
   | "drawing-history"
   | "settings"
   | "bottom-panel"
+  | "replay"
   | "executions";
 
 export type ChartTheme = "dark" | "light";
@@ -142,6 +143,13 @@ export type ChartSeriesProperties =
     };
 export type ChartConfigurableSeriesType = ChartSeriesProperties["type"];
 export type ChartPriceScaleMode = "linear" | "log" | "percentage";
+export type ChartReplaySpeed = 1 | 2 | 4 | 8;
+
+export interface ChartReplayState {
+  readonly status: "inactive" | "paused" | "playing";
+  readonly speed: ChartReplaySpeed;
+  readonly cursorTime?: number;
+}
 
 export type ChartPaneId = "main" | `study:${string}`;
 
@@ -461,7 +469,8 @@ export const advancedChartFeatures: readonly ChartFeature[] = Object.freeze([
   "drawing-tools",
   "drawing-history",
   "settings",
-  "bottom-panel"
+  "bottom-panel",
+  "replay"
 ]);
 
 export interface ChartOptions {
@@ -608,6 +617,7 @@ export type ChartEvent =
       readonly dataVersion: string;
       readonly phase: "initial" | "history";
     }
+  | { readonly type: "replay-changed"; readonly replay: Readonly<ChartReplayState> }
   | { readonly type: "visible-range"; readonly range: Readonly<ChartVisibleRange> }
   | { readonly type: "layout-changed"; readonly layout: Readonly<ChartLayoutV3> }
   | { readonly type: "mark-clicked"; readonly mark: Readonly<ChartMark> }
@@ -648,6 +658,7 @@ export interface ChartInstance {
   getDrawings(): readonly ChartDrawing[];
   getMarks(): readonly ChartMark[];
   getComparisons(): readonly ChartComparison[];
+  getReplayState(): Readonly<ChartReplayState>;
   dataReady(): Promise<boolean>;
   createStudy(indicator: ChartIndicatorInput): ChartIndicatorEntityId;
   getStudyById(entityId: ChartIndicatorEntityId): ChartIndicator | undefined;
@@ -685,6 +696,12 @@ export interface ChartInstance {
   setExecutions(executions: readonly ChartExecution[]): void;
   setExecutionsVisible(visible: boolean): void;
   setVisibleRange(range: ChartVisibleRange): void;
+  startReplay(time: number): boolean;
+  stepReplay(steps?: number): boolean;
+  playReplay(): void;
+  pauseReplay(): void;
+  setReplaySpeed(speed: ChartReplaySpeed): void;
+  stopReplay(): void;
   resetToLatest(): void;
   retry(): void;
   subscribe(listener: ChartStateListener): () => void;

@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.42";
+const expectedVersion = "1.0.0-rc.43";
 const suppliedTarball = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
 let tempRoot;
 
@@ -150,6 +150,8 @@ function consumerSource() {
   type ChartLayoutV2,
   type ChartLayoutV3,
   type ChartMark,
+  type ChartReplaySpeed,
+  type ChartReplayState,
   type ChartSeriesProperties,
   type ChartSelectableEntityId,
   type ChartStudyApi,
@@ -282,6 +284,9 @@ const unsubscribeEvents = chart.subscribeEvents((event) => {
   } else if (event.type === "execution-clicked") {
     const clickedExecutions: readonly ChartExecution[] = event.executions;
     void clickedExecutions;
+  } else if (event.type === "replay-changed") {
+    const replay: Readonly<ChartReplayState> = event.replay;
+    void replay;
   }
 });
 const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
@@ -316,6 +321,17 @@ const unsubscribeCrosshair = chart.subscribeCrosshair((event) => {
 });
 async function verifyConsumer(): Promise<void> {
 if (!await chart.dataReady()) throw new Error("initial chart presentation was not usable");
+const replaySpeed: ChartReplaySpeed = 2;
+chart.setReplaySpeed(replaySpeed);
+const replayState: Readonly<ChartReplayState> = chart.getReplayState();
+chart.startReplay(1_784_192_400_000);
+chart.stepReplay();
+chart.playReplay();
+chart.pauseReplay();
+chart.stopReplay();
+if (replayState.status !== "inactive" || replayState.speed !== replaySpeed) {
+  throw new Error("historical replay API was not usable from the packed package");
+}
 const layoutBeforeTheme = chart.exportLayout();
 const priceLegend = document.querySelector<HTMLElement>('[data-testid="chart-ohlc-legend"]')?.textContent ?? "";
 if (

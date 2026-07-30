@@ -1,5 +1,10 @@
 import { createEngineCapabilityManifest } from "@simoncharts/chart-engine";
-import type { ChartFeature, ChartLocale, ChartTheme } from "../contracts";
+import type {
+  ChartFeature,
+  ChartLocale,
+  ChartReplaySpeed,
+  ChartTheme
+} from "../contracts";
 import type { IndicatorConfig } from "../runtime/indicatorRuntime";
 import type {
   WorkspaceUiActions,
@@ -10,6 +15,7 @@ import type {
   ExecutionTooltipSnapshot
 } from "../runtime/chartEngineRuntime";
 import { formatPrice } from "../runtime/priceFormatter";
+import { formatShanghaiTime } from "../runtime/shanghaiTimeFormatter";
 import { createBottomPanel } from "./bottomPanel";
 import { createDrawingPalette } from "./drawingPalette";
 import { createErrorPanel } from "./errorPanel";
@@ -47,7 +53,8 @@ const toolbarFeatures = new Set<ChartFeature>([
   "indicators",
   "drawing-history",
   "settings",
-  "bottom-panel"
+  "bottom-panel",
+  "replay"
 ]);
 
 function number(value: number): string {
@@ -175,6 +182,51 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
   body.append(chartRegion);
   if (bottomHost) body.append(bottomHost);
 
+  const replayControls = options.features.has("replay")
+    ? document.createElement("div")
+    : undefined;
+  const replayTime = replayControls ? document.createElement("span") : undefined;
+  const replayPlay = replayControls ? document.createElement("button") : undefined;
+  const replayStep = replayControls ? document.createElement("button") : undefined;
+  const replaySpeed = replayControls ? document.createElement("select") : undefined;
+  const replayExit = replayControls ? document.createElement("button") : undefined;
+  if (
+    replayControls &&
+    replayTime &&
+    replayPlay &&
+    replayStep &&
+    replaySpeed &&
+    replayExit
+  ) {
+    replayControls.className = "sc-replay-controls";
+    replayControls.dataset.testid = "replay-controls";
+    replayControls.setAttribute("role", "group");
+    replayControls.setAttribute("aria-label", labels.replay);
+    replayControls.hidden = true;
+    replayTime.className = "sc-replay-time";
+    replayTime.dataset.testid = "replay-current-time";
+    replayTime.setAttribute("aria-live", "polite");
+    replayPlay.type = "button";
+    replayPlay.dataset.testid = "replay-play-toggle";
+    replayStep.type = "button";
+    replayStep.dataset.testid = "replay-step-forward";
+    replayStep.textContent = "▶|";
+    replayStep.setAttribute("aria-label", labels.replayStep);
+    replaySpeed.dataset.testid = "replay-speed";
+    replaySpeed.setAttribute("aria-label", labels.replaySpeed);
+    for (const speed of [1, 2, 4, 8] as const) {
+      const option = document.createElement("option");
+      option.value = String(speed);
+      option.textContent = `${speed}×`;
+      replaySpeed.append(option);
+    }
+    replayExit.type = "button";
+    replayExit.dataset.testid = "replay-exit";
+    replayExit.textContent = "×";
+    replayExit.setAttribute("aria-label", labels.replayExit);
+    replayControls.append(replayTime, replayPlay, replayStep, replaySpeed, replayExit);
+  }
+
   const statusBar = advanced ? document.createElement("div") : undefined;
   const statusTime = statusBar ? document.createElement("span") : undefined;
   const statusOhlc = statusBar ? document.createElement("span") : undefined;
@@ -197,12 +249,18 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
     chartRegion.append(contextMenu);
   }
 
-  const rows = [toolbar ? (advanced ? "40px" : "42px") : undefined, "minmax(0, 1fr)", statusBar ? "26px" : undefined]
+  const rows = [
+    toolbar ? (advanced ? "40px" : "42px") : undefined,
+    "minmax(0, 1fr)",
+    replayControls ? "auto" : undefined,
+    statusBar ? "26px" : undefined
+  ]
     .filter((row): row is string => row !== undefined)
     .join(" ");
   root.style.gridTemplateRows = rows;
   if (toolbar) root.append(toolbar.element);
   root.append(body);
+  if (replayControls) root.append(replayControls);
   if (statusBar) root.append(statusBar);
   const cleanup: Array<() => void> = [];
   let destroyed = false;
@@ -258,6 +316,18 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
       const unbindDrawingPalette = drawingPalette?.bind(actions);
       const unbindBottomPanel = bottomPanel?.bind(actions);
       const unbindErrorPanel = errorPanel.bind(() => actions.retry(), () => actions.retryHistory());
+      const toggleReplay = () => {
+        if (currentViewModel?.replay.status === "playing") actions.pauseReplay();
+        else actions.playReplay();
+      };
+      const stepReplay = () => actions.stepReplay();
+      const changeReplaySpeed = () =>
+        actions.setReplaySpeed(Number(replaySpeed!.value) as ChartReplaySpeed);
+      const exitReplay = () => actions.stopReplay();
+      replayPlay?.addEventListener("click", toggleReplay);
+      replayStep?.addEventListener("click", stepReplay);
+      replaySpeed?.addEventListener("change", changeReplaySpeed);
+      replayExit?.addEventListener("click", exitReplay);
       let startX = 0;
       let startWidth = 0;
       const move = (event: PointerEvent) => {
@@ -359,6 +429,10 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         unbindDrawingPalette?.();
         unbindBottomPanel?.();
         unbindErrorPanel();
+        replayPlay?.removeEventListener("click", toggleReplay);
+        replayStep?.removeEventListener("click", stepReplay);
+        replaySpeed?.removeEventListener("change", changeReplaySpeed);
+        replayExit?.removeEventListener("click", exitReplay);
         resizer?.removeEventListener("pointerdown", down);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
@@ -379,7 +453,33 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         viewModel.status.type === "readyWithWarning"
           ? "ready-with-warning"
           : viewModel.status.type;
+      root.dataset.replay = viewModel.replay.status;
       toolbar?.render(viewModel);
+      if (
+        replayControls &&
+        replayTime &&
+        replayPlay &&
+        replayStep &&
+        replaySpeed
+      ) {
+        const active = viewModel.replay.status !== "inactive";
+        const playing = viewModel.replay.status === "playing";
+        replayControls.hidden = !active;
+        replayPlay.textContent = playing ? "Ⅱ" : "▶";
+        replayPlay.setAttribute(
+          "aria-label",
+          playing ? labels.replayPause : labels.replayPlay
+        );
+        replayPlay.setAttribute("aria-pressed", String(playing));
+        replayStep.disabled = playing;
+        replaySpeed.value = String(viewModel.replay.speed);
+        replayTime.textContent = active
+          ? formatShanghaiTime(
+              viewModel.replay.cursorTime!,
+              viewModel.state.timeframe
+            )
+          : "";
+      }
       drawingPalette?.render(viewModel);
       bottomPanel?.render(viewModel);
       if (bottomHost) bottomHost.dataset.collapsed = String(viewModel.bottomPanel.collapsed);

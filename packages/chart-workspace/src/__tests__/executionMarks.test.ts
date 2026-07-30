@@ -170,6 +170,25 @@ describe("execution marks", () => {
     expect(range).toContain("09:33:30");
   });
 
+  it("does not reveal an execution range before its last trade candle is visible", () => {
+    const firstCandle = at("2026-07-17T01:30:00Z");
+    const secondCandle = at("2026-07-17T01:35:00Z");
+    const row = execution({
+      id: "range",
+      time: at("2026-07-17T01:34:00Z"),
+      firstTime: at("2026-07-17T01:31:00Z"),
+      lastTime: at("2026-07-17T01:36:00Z"),
+      side: "buy"
+    });
+
+    expect(createExecutionMarkerOutput([row], [candle(firstCandle)], "5m")).toBeUndefined();
+    expect(createExecutionMarkerOutput(
+      [row],
+      [candle(firstCandle), candle(secondCandle)],
+      "5m"
+    )?.marks).toHaveLength(1);
+  });
+
   it("anchors adjusted daily markers to candle low/high while keeping real prices in metadata", () => {
     const candles = [candle(at("2026-07-17T01:30:00Z"), 8.5, 11.5)];
     const output = createExecutionMarkerOutput([

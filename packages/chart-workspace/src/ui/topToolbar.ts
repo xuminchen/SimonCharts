@@ -277,6 +277,11 @@ export function createTopToolbar(
     executionsToggle.dataset.testid = "executions-toggle";
     iconButton(executionsToggle, labels.executions, "B/S");
   }
+  const replayToggle = features.has("replay") ? document.createElement("button") : undefined;
+  if (replayToggle) {
+    replayToggle.dataset.testid = "chart-replay-toggle";
+    iconButton(replayToggle, labels.replay, "↻");
+  }
   const undo = features.has("drawing-history") ? document.createElement("button") : undefined;
   if (undo) {
     undo.dataset.testid = "drawing-undo";
@@ -318,6 +323,7 @@ export function createTopToolbar(
   actionGroup.className = "sc-toolbar-group sc-toolbar-actions";
   if (executionsToggle) actionGroup.append(executionsToggle);
   if (indicatorManager) actionGroup.append(indicatorManager.element);
+  if (replayToggle) actionGroup.append(replayToggle);
   if (undo) actionGroup.append(undo);
   if (redo) actionGroup.append(redo);
 
@@ -631,6 +637,19 @@ export function createTopToolbar(
         executionsToggle.addEventListener("click", click);
         cleanup.push(() => executionsToggle.removeEventListener("click", click));
       }
+      if (replayToggle) {
+        const click = () => {
+          if (!currentViewModel || currentViewModel.replay.status === "inactive") {
+            actions.startReplay();
+          } else if (currentViewModel.replay.status === "playing") {
+            actions.pauseReplay();
+          } else {
+            actions.playReplay();
+          }
+        };
+        replayToggle.addEventListener("click", click);
+        cleanup.push(() => replayToggle.removeEventListener("click", click));
+      }
       if (grid) {
         const change = () => actions.setGridVisible(grid.checked);
         grid.addEventListener("change", change);
@@ -774,6 +793,17 @@ export function createTopToolbar(
       if (undo) undo.disabled = !viewModel.canUndoDrawing;
       if (redo) redo.disabled = !viewModel.canRedoDrawing;
       if (executionsToggle) executionsToggle.setAttribute("aria-pressed", String(viewModel.executionsVisible));
+      if (replayToggle) {
+        const active = viewModel.replay.status !== "inactive";
+        const playing = viewModel.replay.status === "playing";
+        replayToggle.disabled = viewModel.state.loading;
+        replayToggle.setAttribute("aria-pressed", String(active));
+        iconButton(
+          replayToggle,
+          playing ? labels.replayPause : active ? labels.replayPlay : labels.replay,
+          playing ? "Ⅱ" : active ? "▶" : "↻"
+        );
+      }
       if (grid) grid.checked = viewModel.gridVisible;
       if (bottomToggle) bottomToggle.setAttribute("aria-pressed", String(!viewModel.bottomPanel.collapsed));
       renderComparisons(viewModel);
