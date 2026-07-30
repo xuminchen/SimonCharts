@@ -5,6 +5,15 @@ const executionTimeFormatters: Record<ChartLocale, Intl.DateTimeFormat> = {
   "zh-CN": executionTimeFormatter("zh-CN"),
   "en-US": executionTimeFormatter("en-US")
 };
+const shanghaiPartsFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
 
 function executionTimeFormatter(locale: ChartLocale): Intl.DateTimeFormat {
   return new Intl.DateTimeFormat(locale, {
@@ -21,15 +30,7 @@ function executionTimeFormatter(locale: ChartLocale): Intl.DateTimeFormat {
 
 function parts(epoch: number): Record<string, string> {
   return Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Shanghai",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23"
-    })
+    shanghaiPartsFormatter
       .formatToParts(new Date(epoch))
       .map((part) => [part.type, part.value])
   );

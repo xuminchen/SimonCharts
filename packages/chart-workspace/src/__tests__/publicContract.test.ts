@@ -15,6 +15,7 @@ import type {
   ChartCrosshairStudyOutput,
   ChartCustomStudyDefinition,
   ChartCustomStudyId,
+  ChartDisplayMode,
   ChartDrawing,
   ChartDrawingTool,
   ChartEntity,
@@ -105,6 +106,19 @@ const customStudyDefinition = {
 } satisfies ChartCustomStudyDefinition;
 
 describe("charts public contract", () => {
+  it("exposes the transient chart/table display-mode contract", () => {
+    expectTypeOf<ChartDisplayMode>().toEqualTypeOf<"chart" | "table">();
+    expectTypeOf<ChartInstance["getDisplayMode"]>()
+      .toEqualTypeOf<() => ChartDisplayMode>();
+    expectTypeOf<ChartInstance["setDisplayMode"]>()
+      .toEqualTypeOf<(mode: ChartDisplayMode) => void>();
+    expectTypeOf<Extract<ChartEvent, { type: "display-mode-changed" }>>()
+      .toEqualTypeOf<{
+        readonly type: "display-mode-changed";
+        readonly mode: ChartDisplayMode;
+      }>();
+  });
+
   it("exposes the finite chart action and time-scale API contracts", () => {
     expectTypeOf<ChartActionId>().toEqualTypeOf<
       "timeScaleReset" | "chartReset" | "zoomIn" | "zoomOut" | "fitContent"
@@ -601,6 +615,8 @@ describe("charts public contract", () => {
       | "drawing-history"
       | "settings"
       | "bottom-panel"
+      | "data-table"
+      | "replay"
       | "executions"
     >();
     expectTypeOf<ChartTheme>().toEqualTypeOf<"dark" | "light">();
@@ -622,6 +638,7 @@ describe("charts public contract", () => {
       "drawing-history",
       "settings",
       "bottom-panel",
+      "data-table",
       "replay"
     ]);
     expect(Object.isFrozen(defaultChartFeatures)).toBe(true);

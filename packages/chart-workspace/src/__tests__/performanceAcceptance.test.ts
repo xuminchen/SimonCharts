@@ -1393,6 +1393,21 @@ describe("workspace engine runtime", () => {
     overlayCanvas.dispatch("pointerup", { pointerId: 5, clientX: handleX + viewport.candleWidth, clientY: startY });
     expect(drawingUpdates.at(-1)?.[0]?.anchors[0]?.time).toBe(43);
 
+    const beforeCancelledDrag = structuredClone(drawingUpdates.at(-1));
+    overlayCanvas.dispatch("pointerdown", { pointerId: 22, clientX: bodyX, clientY: startY });
+    runtime.clearTransientInteraction();
+    overlayCanvas.dispatch("pointermove", {
+      pointerId: 22,
+      clientX: bodyX + viewport.candleWidth * 4,
+      clientY: startY
+    });
+    overlayCanvas.dispatch("pointerup", {
+      pointerId: 22,
+      clientX: bodyX + viewport.candleWidth * 4,
+      clientY: startY
+    });
+    expect(drawingUpdates.at(-1)).toEqual(beforeCancelledDrag);
+
     const beforePan = viewports.at(-1)!.scrollOffset;
     overlayCanvas.dispatch("pointerdown", { pointerId: 4, clientX: 700, clientY: 100 });
     overlayCanvas.dispatch("pointermove", { pointerId: 4, clientX: 700 + viewport.candleWidth * 2, clientY: 100 });
@@ -2880,6 +2895,35 @@ describe("workspace engine runtime", () => {
     expect(zoomedOut.visibleCount).toBeGreaterThan(resized.visibleCount);
     expect(zoomedOut.visibleCount + zoomedOut.overscanCount * 2).toBeGreaterThan(500);
     expect(demands.at(-1)).toEqual(zoomedOut);
+    runtime.destroy();
+  });
+
+  it("notifies data-table changes only while the table is active", async () => {
+    let notifications = 0;
+    const runtime = createChartEngineRuntime({
+      staticCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      overlayCanvas: new FakeCanvas() as unknown as HTMLCanvasElement,
+      themeRoot: { clientWidth: 800, clientHeight: 500 } as HTMLElement,
+      observer: { observe() {}, disconnect() {} },
+      calculationRuntime,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined,
+      onDataTableChanged: () => { notifications += 1; }
+    });
+    runtime.setMaterializedSeries(materialized(1, 1_000));
+    runtime.setVisibleRange({ from: 201, to: 250 });
+    await Promise.resolve();
+    expect(notifications).toBe(0);
+
+    runtime.setDataTableActive(true);
+    runtime.setVisibleRange({ from: 301, to: 350 });
+    await Promise.resolve();
+    expect(notifications).toBe(1);
+
+    runtime.setDataTableActive(false);
+    runtime.setVisibleRange({ from: 401, to: 450 });
+    await Promise.resolve();
+    expect(notifications).toBe(1);
     runtime.destroy();
   });
 

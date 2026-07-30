@@ -108,6 +108,10 @@ import {
   comparisonValueAtTime,
   createComparisonLineOutput
 } from "./comparisonProjection";
+import {
+  createDataTableSnapshot,
+  type DataTableSnapshot
+} from "./dataTable";
 
 export interface WorkspaceRuntimeMetrics extends RenderMetrics {
   maxMaterializedCandleCount: number;
@@ -188,6 +192,8 @@ export interface ChartEngineRuntime {
   getBarSpacing(): number;
   setBarSpacing(spacing: number): void;
   getWidth(): number;
+  getDataTableSnapshot(): Readonly<DataTableSnapshot>;
+  setDataTableActive(active: boolean): void;
   timeToCoordinate(time: number): number | undefined;
   coordinateToTime(coordinate: number): number | undefined;
   scrollByBars(bars: number): void;
@@ -195,6 +201,7 @@ export interface ChartEngineRuntime {
   zoomOut(): void;
   fitContent(): void;
   resetToLatest(resetPriceScale?: boolean): void;
+  clearTransientInteraction(): void;
   clearCrosshair(): void;
   setSeriesType(type: SeriesType, properties?: ChartSeriesProperties): void;
   setSeriesVisualOverrides(overrides: ChartSeriesVisualOverrides | undefined): void;
@@ -253,6 +260,7 @@ export interface ChartEngineRuntimeOptions {
   onPaneLayoutChanged?: () => void;
   onCalculationStatusChanged?: (status: CalculationStatus) => void;
   onDataWindowChanged?: (snapshot: DataWindowSnapshot | undefined) => void;
+  onDataTableChanged?: () => void;
   hasCrosshairListeners?: () => boolean;
   onCrosshairChanged?: (snapshot: RuntimeCrosshairSnapshot | undefined) => void;
   onExecutionTooltipChanged?: (snapshot: ExecutionTooltipSnapshot | undefined) => void;
@@ -356,6 +364,9 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   let formatPrice: ((price: number) => string) | undefined = priceFormatter(currentPricePrecision);
   let indicatorConfigs: readonly IndicatorConfig[] = [];
   let seriesModel: SeriesRenderModel | undefined;
+  let dataTableSnapshot: DataTableSnapshot | undefined;
+  let dataTableNotificationPending = false;
+  let dataTableActive = false;
   let activeSeriesProperties: ChartSeriesProperties | undefined;
   let activeSeriesVisualOverrides: ChartSeriesVisualOverrides | undefined;
   let crosshair: ChartCrosshairState | undefined;
@@ -484,6 +495,41 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
   const syncVisualOutputs = (): void => {
     chartEngine.setVisualOutputs(activeVisualOutputs());
   };
+  const invalidateDataTable = (): void => {
+    dataTableSnapshot = undefined;
+    if (
+      !dataTableActive ||
+      dataTableNotificationPending ||
+      options.onDataTableChanged === undefined
+    ) return;
+    dataTableNotificationPending = true;
+    queueMicrotask(() => {
+      dataTableNotificationPending = false;
+      if (!destroyed && dataTableActive) options.onDataTableChanged?.();
+    });
+  };
+  const getDataTableSnapshot = (): DataTableSnapshot => {
+    if (dataTableSnapshot !== undefined) return dataTableSnapshot;
+    const state = chartEngine.getState();
+    dataTableSnapshot = createDataTableSnapshot({
+      seriesType: state.seriesType,
+      timeframe: state.series.timeframe,
+      candles: state.series.candles,
+      ...(seriesModel?.type === state.seriesType ? { seriesModel } : {}),
+      ...(currentPricePrecision === undefined
+        ? {}
+        : { pricePrecision: currentPricePrecision }),
+      locale: options.themeRoot.lang === "en-US" ? "en-US" : "zh-CN",
+      indicators: indicatorConfigs,
+      studyOutputs: resolvedStudyOutputs(),
+      comparisons: comparisonData,
+      visibleRange: viewport.visibleRange,
+      ...(options.studyTitleFor === undefined
+        ? {}
+        : { studyTitleFor: options.studyTitleFor })
+    });
+    return dataTableSnapshot;
+  };
 
   const rebuildExecutionOutput = (): void => {
     executionOutput = materialized === undefined || !executionsVisible
@@ -562,6 +608,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     const key = `${series.symbol}:${series.timeframe}:${range.from}:${range.to}`;
     if (key === lastVisibleRangeKey) return;
     lastVisibleRangeKey = key;
+    invalidateDataTable();
     options.onVisibleRangeChanged?.(range);
   }
 
@@ -2371,6 +2418,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         visiblePaneIds !== JSON.stringify(paneOrder.filter(paneIsVisible))
       ) syncLayout();
       syncVisualOutputs();
+      invalidateDataTable();
       updatePriceScale();
       refreshCrosshairAtPoint();
       if (crosshair !== undefined && crosshairPoint !== undefined) {
@@ -2426,6 +2474,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (destroyed || generation !== seriesGeneration) return;
       seriesModel = model;
       chartEngine.setSeriesType(type);
+      invalidateDataTable();
       scheduler.invalidate({ layers: ["series"], reason: "seriesCalculated" });
     } catch (error) {
       if (
@@ -2608,6 +2657,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       }
       options.onViewportChanged?.(viewport);
       emitVisibleRange();
+      invalidateDataTable();
       emitMaterializationDemand();
       emitDataWindow(true);
       scheduler.invalidate({ layers: ["grid", "axis", "series", "volume", "indicators", "visuals", "drawings", "crosshair", "tooltip"], reason: "seriesChanged", layoutRequired: true });
@@ -2620,6 +2670,12 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
     },
     getMaterializationDemand,
     getVisibleRange,
+    getDataTableSnapshot,
+    setDataTableActive(active) {
+      if (destroyed || active === dataTableActive) return;
+      dataTableActive = active;
+      if (!active) dataTableSnapshot = undefined;
+    },
     getBarSpacing() {
       if (destroyed) return 0;
       return timeCoordinates?.barWidth ?? viewport.candleWidth;
@@ -2718,14 +2774,23 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (destroyed) return;
       resetChartView(resetPriceScale);
     },
+    clearTransientInteraction() {
+      if (destroyed) return;
+      cancelPointerInteraction("blur");
+      clearExecutionTooltip();
+    },
     clearCrosshair() {
       if (destroyed) return;
+      const tooltipCleared = executionTooltip !== undefined || executionTooltipPinned;
+      clearExecutionTooltip();
       const cleared = clearCrosshairState();
       crosshairEventsSuspended = true;
       resumeCrosshairEventsAfterFlush = false;
-      if (!cleared) return;
-      emitDataWindow();
-      rebuildInteraction();
+      if (!cleared && !tooltipCleared) return;
+      if (cleared) {
+        emitDataWindow();
+        rebuildInteraction();
+      }
       scheduler.invalidate({ layers: ["crosshair", "tooltip"], reason: "crosshairCleared" });
     },
     setSeriesType(type, properties) {
@@ -2746,6 +2811,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
         }
         seriesModel = undefined;
         chartEngine.setSeriesType(type);
+        invalidateDataTable();
         scheduler.invalidate({ layers: ["series"], reason: "seriesTypeChanged" });
         scheduleCalculationRecovery();
         return;
@@ -2780,6 +2846,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       indicatorConfigs = nextConfigs;
       if (!visualOnly) visualOutputs = [];
       syncVisualOutputs();
+      invalidateDataTable();
       if (
         paneSetChanged ||
         visiblePaneIds !== JSON.stringify(paneOrder.filter(paneIsVisible))
@@ -2805,6 +2872,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (destroyed) return;
       comparisonData = snapshots;
       syncVisualOutputs();
+      invalidateDataTable();
       updatePriceScale();
       refreshCrosshairAtPoint();
       if (crosshair !== undefined && crosshairPoint !== undefined) {
@@ -2824,6 +2892,7 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       if (destroyed || currentPricePrecision === precision) return;
       currentPricePrecision = precision;
       formatPrice = priceFormatter(precision);
+      invalidateDataTable();
       lastDataWindowIndex = undefined;
       emitDataWindow(true);
       scheduler.invalidate({
@@ -3021,6 +3090,8 @@ export function createChartEngineRuntime(options: ChartEngineRuntimeOptions): Ch
       executions = [];
       indicatorConfigs = [];
       seriesModel = undefined;
+      dataTableSnapshot = undefined;
+      dataTableNotificationPending = false;
       currentIntradaySummary = undefined;
       intradayAverage = undefined;
       timeCoordinates = undefined;

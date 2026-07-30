@@ -95,10 +95,12 @@ export type ChartFeature =
   | "drawing-history"
   | "settings"
   | "bottom-panel"
+  | "data-table"
   | "replay"
   | "executions";
 
 export type ChartTheme = "dark" | "light";
+export type ChartDisplayMode = "chart" | "table";
 export interface ChartThemeOverrides {
   readonly backgroundColor?: string;
   readonly surfaceColor?: string;
@@ -542,6 +544,7 @@ export const advancedChartFeatures: readonly ChartFeature[] = Object.freeze([
   "drawing-history",
   "settings",
   "bottom-panel",
+  "data-table",
   "replay"
 ]);
 
@@ -716,6 +719,7 @@ export type ChartEvent =
       readonly phase: "initial" | "history";
     }
   | { readonly type: "replay-changed"; readonly replay: Readonly<ChartReplayState> }
+  | { readonly type: "display-mode-changed"; readonly mode: ChartDisplayMode }
   | { readonly type: "visible-range"; readonly range: Readonly<ChartVisibleRange> }
   | { readonly type: "layout-changed"; readonly layout: Readonly<ChartLayoutV3> }
   | { readonly type: "mark-clicked"; readonly mark: Readonly<ChartMark> }
@@ -741,6 +745,7 @@ export type ChartEventListener = (event: Readonly<ChartEvent>) => void;
 
 export interface ChartInstance {
   getState(): Readonly<ChartState>;
+  getDisplayMode(): ChartDisplayMode;
   getTheme(): ChartTheme;
   getThemeOverrides(): Readonly<ChartThemeOverrides>;
   getVisibleRange(): Readonly<ChartVisibleRange> | undefined;
@@ -777,6 +782,7 @@ export interface ChartInstance {
   removeEntity(entityId: ChartEntityId): boolean;
   exportLayout(): ChartLayoutV3;
   setTheme(theme: ChartTheme): void;
+  setDisplayMode(mode: ChartDisplayMode): void;
   setThemeOverrides(overrides: ChartThemeOverrides): void;
   setSymbol(symbol: ChartSymbol): void;
   setTimeframe(timeframe: Timeframe): void;

@@ -6,6 +6,7 @@ import {
 import type {
   AdjustMode,
   ChartDataCapabilities,
+  ChartDisplayMode,
   ChartFeature,
   ChartLocale,
   IntradayDayCount,
@@ -44,7 +45,9 @@ export function createToolbarModel(
 export interface TopToolbar {
   readonly element: HTMLDivElement;
   readonly intradayDaysElement?: HTMLSelectElement;
-  bind(actions: WorkspaceUiActions): () => void;
+  bind(actions: WorkspaceUiActions & {
+    setDisplayMode?(mode: ChartDisplayMode): void;
+  }): () => void;
   render(viewModel: WorkspaceViewModel): void;
 }
 
@@ -318,6 +321,13 @@ export function createTopToolbar(
     bottomToggle.dataset.testid = "bottom-panel-toggle";
     iconButton(bottomToggle, labels.bottomPanel, "▤");
   }
+  const dataTableToggle = features.has("data-table") ? document.createElement("button") : undefined;
+  if (dataTableToggle) {
+    dataTableToggle.type = "button";
+    dataTableToggle.dataset.testid = "data-table-toggle";
+    dataTableToggle.textContent = labels.dataTable;
+    dataTableToggle.setAttribute("aria-label", labels.dataTable);
+  }
 
   const actionGroup = document.createElement("div");
   actionGroup.className = "sc-toolbar-group sc-toolbar-actions";
@@ -333,6 +343,7 @@ export function createTopToolbar(
   if (scale) secondaryControls.push(scale);
   if (settings) secondaryControls.push(settings);
   if (bottomToggle) secondaryControls.push(bottomToggle);
+  if (dataTableToggle) secondaryControls.push(dataTableToggle);
   const more = advanced && secondaryControls.length > 0 ? document.createElement("div") : undefined;
   const moreToggle = more ? document.createElement("button") : undefined;
   const moreMenu = more ? document.createElement("div") : undefined;
@@ -669,6 +680,14 @@ export function createTopToolbar(
         };
         bottomToggle.addEventListener("click", click);
         cleanup.push(() => bottomToggle.removeEventListener("click", click));
+      }
+      if (dataTableToggle) {
+        const click = () => {
+          actions.setDisplayMode?.("table");
+          closeMore();
+        };
+        dataTableToggle.addEventListener("click", click);
+        cleanup.push(() => dataTableToggle.removeEventListener("click", click));
       }
       if (more && moreToggle) {
         const click = () => {

@@ -17,7 +17,7 @@ if (missing.length > 0) {
   process.exit(2);
 }
 
-const version = "1.0.0-rc.45";
+const version = "1.0.0-rc.46";
 const artifactName = `simoncharts-charts-${version}.tgz`;
 const candidatePath = path.resolve("dist", "packages", artifactName);
 const expectedDigests = {

@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.45.tgz
+npm install ./simoncharts-charts-1.0.0-rc.46.tgz
 ```
 
 ## Embed the default chart
@@ -195,6 +195,32 @@ if (await chart.dataReady()) {
   chart.setVisibleRange({ from: rangeStartEpochMs, to: rangeEndEpochMs });
 }
 ```
+
+## Switch to the native data table
+
+The advanced `data-table` feature adds the same transient view switch to the More menu
+and the chart context menu. Hosts can use it programmatically in either embedded or
+advanced mode:
+
+```ts
+chart.setDisplayMode("table");
+console.log(chart.getDisplayMode()); // "table"
+
+const unsubscribe = chart.subscribeEvents((event) => {
+  if (event.type === "display-mode-changed") console.log(event.mode);
+});
+
+chart.setDisplayMode("chart");
+unsubscribe();
+```
+
+The table reads the current rendered main-series model, so transformed series such as
+Heikin Ashi and Renko show the values actually plotted. It adds visible Study outputs and
+ready visible comparisons, keeps newest rows first, and creates cell text only for each
+250-row scroll batch. Entering the table cancels transient chart interaction and pinned
+execution detail; returning restores the Canvas view without changing selection, Drawing,
+Study, or market data. Display mode is not stored in `ChartLayoutV3` or browser
+persistence, and the SDK does not expose a second row-data API.
 
 ## Compare symbols
 
@@ -626,4 +652,7 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.45 adds sparse main-series visual overrides and per-output Study visual overrides over the existing renderer. Series styles remain isolated by type and persist through Layout V3 and preferences; Study styles and visibility use the existing Study API and calculation outputs without a second renderer or recalculation on style-only changes. rc.45 preserves rc.44 and every earlier RC contract.
+Current rc.46 adds the transient native Data Table View over the existing rendered series,
+Study outputs, and comparison snapshots. The public display-mode switch does not add a
+second market-data or persistence model, and the advanced More/context-menu entry shares
+that same action. rc.46 preserves rc.45 and every earlier RC contract.

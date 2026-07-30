@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ChartActionId,
+  ChartDisplayMode,
   ChartIndicator,
   ChartOptions,
   ChartSeriesVisualOverrides,
@@ -11,6 +12,7 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   controllerOptions: undefined as undefined | Record<string, unknown>,
+  viewModel: undefined as undefined | Record<string, unknown>,
   createChartController: vi.fn(),
   createChartEngineRuntime: vi.fn(),
   createComparisonCoordinator: vi.fn(),
@@ -35,9 +37,17 @@ const mocks = vi.hoisted(() => ({
     zoomIn: vi.fn(),
     zoomOut: vi.fn(),
     fitContent: vi.fn(),
+    setDataTableActive: vi.fn(),
     getPanes: vi.fn(() => []),
     setPaneAutoScale: vi.fn(),
-    resetToLatest: vi.fn()
+    resetToLatest: vi.fn(),
+    getDataTableSnapshot: vi.fn(() => ({ status: "ready" as const, columns: [], rows: [] })),
+    clearTransientInteraction: vi.fn(),
+    clearCrosshair: vi.fn()
+  },
+  shell: {
+    setDisplayMode: vi.fn(),
+    renderDataTable: vi.fn()
   }
 }));
 
@@ -83,7 +93,9 @@ vi.mock("../ui/workspaceShell", () => ({
     chartRegion: {},
     render: vi.fn(),
     renderDataWindow: vi.fn(),
+    renderDataTable: mocks.shell.renderDataTable,
     renderExecutionTooltip: vi.fn(),
+    setDisplayMode: mocks.shell.setDisplayMode,
     bind: () => vi.fn(),
     destroy: vi.fn()
   })
@@ -190,6 +202,7 @@ describe("createChart rc.44 time-scale and action API", () => {
         calculationStatus: { type: "idle" },
         search: { query: "", loading: false, results: [] }
       };
+      mocks.viewModel = viewModel;
       return {
         getViewModel: () => viewModel,
         getState: () => structuredClone(state),
@@ -415,6 +428,88 @@ describe("createChart rc.44 time-scale and action API", () => {
     expect(mocks.runtime.zoomOut).toHaveBeenCalledOnce();
     expect(mocks.runtime.fitContent).toHaveBeenCalledOnce();
     expect(() => chart.executeActionById("unknown" as ChartActionId)).toThrow();
+  });
+
+  it("switches chart/table mode atomically without persisting or duplicating events", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    );
+    const events: Array<{ type: string; mode?: ChartDisplayMode }> = [];
+    chart.subscribeEvents((event) => events.push(event));
+
+    const layout = chart.exportLayout();
+    expect(chart.getDisplayMode()).toBe("chart");
+    chart.setDisplayMode("table");
+    expect(chart.getDisplayMode()).toBe("table");
+    expect(mocks.runtime.setDataTableActive).toHaveBeenLastCalledWith(true);
+    expect(mocks.runtime.clearTransientInteraction).toHaveBeenCalledOnce();
+    expect(mocks.shell.setDisplayMode).toHaveBeenLastCalledWith("table");
+    expect(mocks.shell.renderDataTable).toHaveBeenLastCalledWith({
+      columns: [],
+      rows: [],
+      status: "ready"
+    });
+    expect(chart.exportLayout()).toEqual(layout);
+    expect(chart.exportLayout()).not.toHaveProperty("displayMode");
+    expect(events).toContainEqual({
+      type: "display-mode-changed",
+      mode: "table"
+    });
+
+    const eventCount = events.length;
+    chart.setDisplayMode("table");
+    expect(events).toHaveLength(eventCount);
+    expect(() => chart.setDisplayMode("invalid" as ChartDisplayMode)).toThrow();
+    expect(chart.getDisplayMode()).toBe("table");
+
+    chart.setDisplayMode("chart");
+    expect(chart.getDisplayMode()).toBe("chart");
+    expect(mocks.runtime.setDataTableActive).toHaveBeenLastCalledWith(false);
+    expect(mocks.shell.setDisplayMode).toHaveBeenLastCalledWith("chart");
+  });
+
+  it("clears stale table rows with an explicit loading state", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    );
+    chart.setDisplayMode("table");
+    const viewModel = mocks.viewModel as {
+      state: ChartState;
+      status: { type: string };
+      calculationStatus: { type: string };
+    };
+    viewModel.state.loading = true;
+    const onViewModelChanged = mocks.controllerOptions?.onViewModelChanged as
+      | ((value: typeof viewModel, revision: number) => void)
+      | undefined;
+    onViewModelChanged?.(viewModel, 2);
+
+    expect(mocks.shell.renderDataTable).toHaveBeenLastCalledWith({
+      columns: [],
+      rows: [],
+      status: "loading"
+    });
+  });
+
+  it("keeps a reentrant display-mode listener on the latest requested mode", () => {
+    const chart = createChart(
+      new FakeElement() as unknown as HTMLElement,
+      options()
+    );
+    const modes: ChartDisplayMode[] = [];
+    chart.subscribeEvents((event) => {
+      if (event.type !== "display-mode-changed") return;
+      modes.push(event.mode);
+      if (event.mode === "table") chart.setDisplayMode("chart");
+    });
+
+    chart.setDisplayMode("table");
+
+    expect(modes).toEqual(["table", "chart"]);
+    expect(chart.getDisplayMode()).toBe("chart");
+    expect(mocks.shell.setDisplayMode).toHaveBeenLastCalledWith("chart");
   });
 
   it("round-trips rc.45 series and study visual overrides through public handles", () => {

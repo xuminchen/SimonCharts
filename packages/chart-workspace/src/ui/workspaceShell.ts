@@ -1,6 +1,7 @@
 import { createEngineCapabilityManifest } from "@simoncharts/chart-engine";
 import type {
   ChartFeature,
+  ChartDisplayMode,
   ChartLocale,
   ChartReplaySpeed,
   ChartTheme
@@ -14,9 +15,11 @@ import type {
   DataWindowSnapshot,
   ExecutionTooltipSnapshot
 } from "../runtime/chartEngineRuntime";
+import type { DataTableSnapshot } from "../runtime/dataTable";
 import { formatPrice } from "../runtime/priceFormatter";
 import { formatShanghaiTime } from "../runtime/shanghaiTimeFormatter";
 import { createBottomPanel } from "./bottomPanel";
+import { createDataTableView } from "./dataTable";
 import { createDrawingPalette } from "./drawingPalette";
 import { createErrorPanel } from "./errorPanel";
 import { labelsFor } from "./localization";
@@ -29,7 +32,10 @@ export interface WorkspaceShellOptions {
   readonly studyTitleFor?: (config: Readonly<IndicatorConfig>) => string;
 }
 
-type ShellUiActions = WorkspaceUiActions & { resetToLatest?(): void };
+type ShellUiActions = WorkspaceUiActions & {
+  resetToLatest?(): void;
+  setDisplayMode?(mode: ChartDisplayMode): void;
+};
 
 export interface WorkspaceShell {
   readonly root: HTMLDivElement;
@@ -39,7 +45,9 @@ export interface WorkspaceShell {
   bind(actions: ShellUiActions): () => void;
   render(viewModel: WorkspaceViewModel): void;
   renderDataWindow(snapshot: DataWindowSnapshot | undefined): void;
+  renderDataTable(snapshot: Readonly<DataTableSnapshot>): void;
   renderExecutionTooltip(snapshot: ExecutionTooltipSnapshot | undefined): void;
+  setDisplayMode(mode: ChartDisplayMode): void;
   destroy(): void;
 }
 
@@ -54,6 +62,7 @@ const toolbarFeatures = new Set<ChartFeature>([
   "drawing-history",
   "settings",
   "bottom-panel",
+  "data-table",
   "replay"
 ]);
 
@@ -74,6 +83,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
   root.dataset.state = "loading";
   root.dataset.theme = options.theme;
   root.dataset.variant = advanced ? "advanced" : "embedded";
+  root.dataset.displayMode = "chart";
   root.lang = options.locale;
 
   const hasToolbar = [...options.features].some((feature) => toolbarFeatures.has(feature));
@@ -162,7 +172,9 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
   }
 
   const errorPanel = createErrorPanel();
+  const dataTable = createDataTableView(labels);
   chartRegion.append(staticCanvas, overlayCanvas);
+  chartRegion.append(dataTable.element);
   if (executionTooltip) chartRegion.append(executionTooltip);
   if (watermark) chartRegion.append(watermark);
   if (chartHeader) chartRegion.append(chartHeader);
@@ -315,6 +327,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
       const unbindToolbar = toolbar?.bind(actions);
       const unbindDrawingPalette = drawingPalette?.bind(actions);
       const unbindBottomPanel = bottomPanel?.bind(actions);
+      const unbindDataTable = dataTable.bind(() => actions.setDisplayMode?.("chart"));
       const unbindErrorPanel = errorPanel.bind(() => actions.retry(), () => actions.retryHistory());
       const toggleReplay = () => {
         if (currentViewModel?.replay.status === "playing") actions.pauseReplay();
@@ -384,6 +397,9 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
           addReset();
           addMenuButton(currentViewModel.gridVisible ? labels.hideGrid : labels.showGrid, () => actions.setGridVisible(!currentViewModel!.gridVisible));
           addMenuButton(labels.dataWindow, () => actions.setBottomPanel({ ...currentViewModel!.bottomPanel, activeTab: "data", collapsed: false }));
+          if (options.features.has("data-table")) {
+            addMenuButton(labels.dataTable, () => actions.setDisplayMode?.("table"));
+          }
         } else if (kind === "price") {
           for (const mode of ["linear", "log", "percentage"] as const) {
             addMenuButton(labels.priceScaleModes[mode], () => actions.setPriceScaleMode(mode), currentViewModel.priceScaleMode === mode);
@@ -428,6 +444,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
         unbindToolbar?.();
         unbindDrawingPalette?.();
         unbindBottomPanel?.();
+        unbindDataTable();
         unbindErrorPanel();
         replayPlay?.removeEventListener("click", toggleReplay);
         replayStep?.removeEventListener("click", stepReplay);
@@ -502,6 +519,20 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
       currentDataWindow = snapshot === undefined ? undefined : structuredClone(snapshot);
       paintDataWindow(currentDataWindow);
     },
+    renderDataTable(snapshot) {
+      dataTable.render(snapshot);
+    },
+    setDisplayMode(mode) {
+      const activeElement = root.ownerDocument.activeElement;
+      const focusInside = activeElement !== null && root.contains(activeElement);
+      const focusInTable = activeElement !== null && dataTable.element.contains(activeElement);
+      root.dataset.displayMode = mode;
+      dataTable.setVisible(mode === "table");
+      if (mode === "table" && focusInside) dataTable.focus();
+      else if (mode === "chart" && focusInTable) {
+        overlayCanvas.focus({ preventScroll: true });
+      }
+    },
     renderExecutionTooltip(snapshot) {
       if (!executionTooltip) return;
       if (!snapshot) {
@@ -555,6 +586,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
       if (destroyed) return;
       destroyed = true;
       for (const dispose of cleanup.splice(0)) dispose();
+      dataTable.destroy();
     }
   };
 }

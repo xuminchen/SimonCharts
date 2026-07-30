@@ -53,6 +53,11 @@ export interface ChartLabels {
   readonly objects: string;
   readonly properties: string;
   readonly dataWindow: string;
+  readonly dataTable: string;
+  readonly chartView: string;
+  readonly dataTableLoading: string;
+  readonly dataTableBlocked: string;
+  readonly noData: string;
   readonly resetView: string;
   readonly showGrid: string;
   readonly hideGrid: string;
@@ -252,6 +257,11 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
       objects: "Objects",
       properties: "Properties",
       dataWindow: "Data window",
+      dataTable: "Data table",
+      chartView: "Chart view",
+      dataTableLoading: "Loading data",
+      dataTableBlocked: "Data unavailable",
+      noData: "No data",
       resetView: "Reset view",
       showGrid: "Show grid",
       hideGrid: "Hide grid",
@@ -306,6 +316,11 @@ export function labelsFor(locale: ChartLocale): ChartLabels {
     objects: "对象",
     properties: "属性",
     dataWindow: "数据窗口",
+    dataTable: "数据表",
+    chartView: "图表视图",
+    dataTableLoading: "正在加载数据",
+    dataTableBlocked: "数据不可用",
+    noData: "暂无数据",
     resetView: "复位视图",
     showGrid: "显示网格",
     hideGrid: "隐藏网格",

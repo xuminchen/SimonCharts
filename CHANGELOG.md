@@ -1,5 +1,14 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.46 - 2026-07-30
+
+- Added transient `ChartDisplayMode`, `getDisplayMode()`, `setDisplayMode()`, and `display-mode-changed`, with the advanced More menu and chart context menu sharing the same native Data Table action.
+- Built table rows from the current rendered main-series model, visible Study outputs, and ready visible comparisons; HLC Area preserves its plotted H/L/C values and no market data is requested, filled, or constructed.
+- Kept newest rows first and made 20,000-row, 32-column snapshots plus the first 8,000 formatted cells bounded through cached formatters and lazy 250-row DOM batches.
+- Cleared pointer, Drawing, crosshair, and execution-tooltip interaction before hiding Canvas, transferred keyboard focus safely, released retained table rows on destroy, and kept display mode outside Layout V3 and browser persistence.
+- Added public-contract, runtime, performance, accessibility, Chrome, and Edge coverage without changing chart-engine or adding a dependency.
+- Published the immutable eight-file package after `78 files / 1,331 tests`, combined Chrome `159/159`, Charts `23 files / 320 tests`, Charts Chrome/Edge `108/108` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer checks. SHA-256: `b646d4b4100c16960270d0add84999c983cbcc1b2f8a089c6055f34d8b4b2093`; SHA-512: `91d1c3a330ac1adecf8c9a646009ab7ecc49bf0c0dcff917858071219d17e8d4e67590989b7bc8ec233c9108ca801ed3ee5dd4b90286feecbaba234dc0acd432`. Final adversarial review found no remaining P0/P1/P2, and TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.45 - 2026-07-30
 
 - Added sparse, type-specific `ChartSeriesVisualOverrides` through initial options, runtime get/set APIs, Layout V3, and browser preferences.

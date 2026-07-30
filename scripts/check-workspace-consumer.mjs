@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 
 const projectRoot = process.cwd();
 const packageName = "@simoncharts/charts";
-const expectedVersion = "1.0.0-rc.45";
+const expectedVersion = "1.0.0-rc.46";
 const suppliedTarball = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
 let tempRoot;
 

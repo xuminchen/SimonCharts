@@ -10,6 +10,7 @@ import type {
   ChartEventListener,
   ChartDrawing,
   ChartDrawingTool,
+  ChartDisplayMode,
   ChartEntity,
   ChartEntityId,
   ChartEntityInput,
@@ -117,6 +118,7 @@ const validFeatures = new Set<ChartFeature>([
   "drawing-history",
   "settings",
   "bottom-panel",
+  "data-table",
   "replay",
   "executions"
 ]);
@@ -140,6 +142,13 @@ function resolvedTheme(theme: unknown): ChartTheme {
 
 function resolvedLocale(locale: unknown): ChartLocale {
   return locale === "en-US" || locale === "zh-CN" ? locale : "zh-CN";
+}
+
+function parseDisplayMode(value: unknown): ChartDisplayMode {
+  if (value !== "chart" && value !== "table") {
+    throw new TypeError("Chart display mode must be chart or table");
+  }
+  return value;
 }
 
 function validExecutionTime(value: unknown): value is number {
@@ -428,6 +437,7 @@ export function createChart(
   applyWorkspaceThemeOverrides(shell.root, themeOverrides);
   container.append(shell.root);
   let destroyed = false;
+  let displayMode: ChartDisplayMode = "chart";
   const stateListeners = new Set<ChartStateListener>();
   const eventListeners = new Set<ChartEventListener>();
   const crosshairListeners = new Set<ChartCrosshairListener>();
@@ -645,6 +655,7 @@ export function createChart(
     });
     return Object.freeze({
       getState: () => structuredClone(state),
+      getDisplayMode: () => displayMode,
       getTheme: () => theme,
       getThemeOverrides: () => structuredClone(themeOverrides),
       getVisibleRange: () => undefined,
@@ -687,6 +698,12 @@ export function createChart(
       removeEntity: () => false,
       exportLayout: () => structuredClone(layout),
       setTheme: () => undefined,
+      setDisplayMode: (value: ChartDisplayMode) => {
+        const next = parseDisplayMode(value);
+        if (destroyed || next === displayMode) return;
+        displayMode = next;
+        shell.setDisplayMode(next);
+      },
       setThemeOverrides: () => undefined,
       setSymbol: () => undefined,
       setTimeframe: () => undefined,
@@ -966,6 +983,7 @@ export function createChart(
     reloadPage: (cursor) => dataCoordinator.reloadPage(cursor)
   });
   let activePricePrecision = options.initialSymbol.pricePrecision;
+  let renderCurrentDataTable = (): void => undefined;
   const runtime = createChartEngineRuntime({
     staticCanvas: shell.staticCanvas,
     overlayCanvas: shell.overlayCanvas,
@@ -1004,6 +1022,7 @@ export function createChart(
     },
     onExecutionTooltipChanged: (snapshot) => shell.renderExecutionTooltip(snapshot),
     onExecutionClicked: (executions) => emitEvent({ type: "execution-clicked", executions }),
+    onDataTableChanged: () => renderCurrentDataTable(),
     onDrawingsChanged: (drawings, selectedDrawingIds) => {
       if (selectedDrawingIds.length > 0) selectedStudyId = undefined;
       controller?.handleDrawingsChanged(drawings, selectedDrawingIds);
@@ -1188,6 +1207,7 @@ export function createChart(
         emitEvent({ type: "replay-changed", replay: structuredClone(viewModel.replay) });
         if (destroyed || latestViewModelRevision !== revision) return;
       }
+      renderCurrentDataTable();
       shell.render(viewModel);
       emitEntityChanges(viewModel);
       if (destroyed || latestViewModelRevision !== revision) return;
@@ -1208,7 +1228,31 @@ export function createChart(
       }
     }
   });
-  const unbind = shell.bind(controller);
+  renderCurrentDataTable = (): void => {
+    if (displayMode !== "table" || controller === undefined) return;
+    const viewModel = controller.getViewModel();
+    shell.renderDataTable(
+      viewModel.status.type === "blocked"
+        ? { status: "blocked", columns: [], rows: [] }
+        : viewModel.state.loading ||
+          viewModel.calculationStatus.type === "calculating"
+          ? { status: "loading", columns: [], rows: [] }
+        : runtime.getDataTableSnapshot()
+    );
+  };
+  const setDisplayMode = (value: ChartDisplayMode): void => {
+    const next = parseDisplayMode(value);
+    if (destroyed || next === displayMode) return;
+    displayMode = next;
+    runtime.setDataTableActive(next === "table");
+    if (next === "table") {
+      runtime.clearTransientInteraction();
+      renderCurrentDataTable();
+    }
+    shell.setDisplayMode(next);
+    emitEvent({ type: "display-mode-changed", mode: next });
+  };
+  const unbind = shell.bind({ ...controller, setDisplayMode });
   lastNotifiedLayout = JSON.stringify(
     layoutSnapshot(controller.getViewModel(), studyDefinitions, runtime.getPaneLayouts())
   );
@@ -1483,6 +1527,7 @@ export function createChart(
 
   return Object.freeze({
     getState: () => controller!.getState(),
+    getDisplayMode: () => displayMode,
     getTheme: () => theme,
     getThemeOverrides: () => structuredClone(themeOverrides),
     getVisibleRange: () => controller!.getVisibleRange(),
@@ -1684,6 +1729,7 @@ export function createChart(
       shell.root.dataset.theme = value;
       runtime.refreshTheme();
     },
+    setDisplayMode,
     setThemeOverrides: (value: ChartThemeOverrides) => {
       if (value === undefined) throw new TypeError("Chart theme overrides must be an object");
       const parsed = parseThemeOverrides(value);
