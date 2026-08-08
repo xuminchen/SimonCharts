@@ -7,6 +7,7 @@ import { getTimeAxisLabels } from "../timeAxisLabels";
 const badgePadding = 6;
 const badgeVerticalPadding = 4;
 const crosshairDash = [4, 4];
+const barFocusOpacity = 0.06;
 
 export function createCrosshairLayer(): ChartLayer {
   return {
@@ -65,6 +66,7 @@ export function createCrosshairLayer(): ChartLayer {
       context.save();
 
       try {
+        drawBarFocus(context, state, crosshair.index, x);
         context.strokeStyle = theme.colors.crosshair;
         context.lineWidth = theme.lineWidths.crosshair;
         context.setLineDash(crosshairDash);
@@ -103,6 +105,44 @@ export function createCrosshairLayer(): ChartLayer {
       }
     }
   };
+}
+
+function drawBarFocus(
+  context: CanvasRenderingContext2D,
+  state: RenderState,
+  index: number,
+  x: number
+): void {
+  const { layout, series, theme, viewport } = state;
+  const { plotArea, volumeArea } = layout;
+  if (volumeArea.width <= 0 || volumeArea.height <= 0) return;
+
+  const candle = series.candles[index];
+  const barWidth = Math.max(
+    1,
+    state.timeCoordinates?.barWidth ?? viewport.candleWidth * 0.7
+  );
+  const left = Math.max(plotArea.x, x - barWidth / 2);
+  const right = Math.min(plotArea.x + plotArea.width, x + barWidth / 2);
+  const width = Math.max(0, right - left);
+  const volumeBottom = volumeArea.y + volumeArea.height;
+
+  context.globalAlpha = barFocusOpacity;
+  context.fillStyle = theme.colors.crosshair;
+  context.fillRect(left, plotArea.y, width, Math.max(0, volumeBottom - plotArea.y));
+
+  let maxVolume = 0;
+  const from = Math.max(0, viewport.visibleRange.from);
+  const to = Math.min(series.candles.length - 1, viewport.visibleRange.to);
+  for (let visibleIndex = from; visibleIndex <= to; visibleIndex += 1) {
+    maxVolume = Math.max(maxVolume, series.candles[visibleIndex].volume);
+  }
+  const height = maxVolume > 0 ? (candle.volume / maxVolume) * volumeArea.height : 0;
+  context.globalAlpha = 1;
+  context.fillStyle = candle.close >= candle.open
+    ? theme.colors.bullishCandle
+    : theme.colors.bearishCandle;
+  context.fillRect(left, volumeBottom - height, width, height);
 }
 
 function drawPriceBadge(

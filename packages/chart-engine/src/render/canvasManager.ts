@@ -5,7 +5,7 @@ const LEFT_AXIS_WIDTH = 64;
 const BOTTOM_AXIS_HEIGHT = 28;
 const CHART_HEADER_HEIGHT = 34;
 const PRICE_VOLUME_GAP = 8;
-const VOLUME_HEIGHT_RATIO = 0.22;
+const VOLUME_HEIGHT_RATIO = 0.16;
 
 export function resizeCanvas(
   canvas: HTMLCanvasElement,

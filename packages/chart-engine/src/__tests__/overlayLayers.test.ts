@@ -25,10 +25,13 @@ interface DrawCall {
 
 class FakeCanvasContext {
   calls: DrawCall[] = [];
+  fillRectAlphas: number[] = [];
+  private alphaStack: number[] = [];
 
   fillStyle = "";
   strokeStyle = "";
   lineWidth = 1;
+  globalAlpha = 1;
   font = "";
   textAlign = "start";
   textBaseline = "alphabetic";
@@ -50,6 +53,7 @@ class FakeCanvasContext {
   }
 
   fillRect(x: number, y: number, width: number, height: number): void {
+    this.fillRectAlphas.push(this.globalAlpha);
     this.record("fillRect", x, y, width, height, this.fillStyle);
   }
 
@@ -70,10 +74,12 @@ class FakeCanvasContext {
   }
 
   save(): void {
+    this.alphaStack.push(this.globalAlpha);
     this.record("save");
   }
 
   restore(): void {
+    this.globalAlpha = this.alphaStack.pop() ?? 1;
     this.record("restore");
   }
 
@@ -301,6 +307,8 @@ describe("overlay layers", () => {
     expect(callsNamed(renderContext, "stroke")).toEqual([
       { name: "stroke", args: ["#64748b", 1] }
     ]);
+    expect((renderContext.context as unknown as FakeCanvasContext).fillRectAlphas.slice(0, 2))
+      .toEqual([0.06, 1]);
   });
 
   it("uses the active study pane geometry and scale for its crosshair guide and badge", () => {
@@ -473,15 +481,12 @@ describe("overlay layers", () => {
       "Low       10",
       "Close     15",
       "Change    +3 (+25.00%)",
-      "Amplitude 60.00%",
-      "Position  83.3%",
-      "Volume    90",
-      "Turnover  1,350"
+      "Volume    90"
     ]);
     expect(text).not.toContain("Open      999");
   });
 
-  it("renders the Chinese K-line tooltip with compact volume and turnover", () => {
+  it("renders the Chinese K-line tooltip with compact volume", () => {
     const series = createSeries();
     series.candles[1] = {
       time: 2,
@@ -517,10 +522,7 @@ describe("overlay layers", () => {
       "低    26.05",
       "收    28.04",
       "涨跌  +2.55 (+10.00%)",
-      "振幅  7.64%",
-      "位置  100.0%",
-      "量    32.25万",
-      "额    8.94亿"
+      "量    32.25万"
     ]);
   });
 
@@ -540,10 +542,7 @@ describe("overlay layers", () => {
       "低    10.0000",
       "收    15.0000",
       "涨跌  +3.0000 (+25.00%)",
-      "振幅  60.00%",
-      "位置  83.3%",
-      "量    90",
-      "额    1,350"
+      "量    90"
     ]);
   });
 
@@ -564,7 +563,7 @@ describe("overlay layers", () => {
     const renderContext = createRenderContext(createState({ crosshair: createCrosshair() }));
 
     expect(() => createTooltipLayer().render(renderContext)).not.toThrow();
-    expect(callsNamed(renderContext, "fillText")).toHaveLength(10);
+    expect(callsNamed(renderContext, "fillText")).toHaveLength(7);
   });
 
   it("draws no tooltip when crosshair is absent", () => {

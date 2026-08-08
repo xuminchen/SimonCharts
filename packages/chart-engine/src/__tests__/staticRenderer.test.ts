@@ -30,10 +30,13 @@ interface DrawCall {
 class FakeCanvasContext {
   calls: DrawCall[] = [];
   fillRectStyles: string[] = [];
+  fillRectAlphas: number[] = [];
+  private alphaStack: number[] = [];
 
   fillStyle = "";
   strokeStyle = "";
   lineWidth = 1;
+  globalAlpha = 1;
   font = "";
   textAlign = "start";
   textBaseline = "alphabetic";
@@ -56,6 +59,7 @@ class FakeCanvasContext {
 
   fillRect(x: number, y: number, width: number, height: number): void {
     this.fillRectStyles.push(this.fillStyle);
+    this.fillRectAlphas.push(this.globalAlpha);
     this.record("fillRect", x, y, width, height);
   }
 
@@ -64,10 +68,12 @@ class FakeCanvasContext {
   }
 
   save(): void {
+    this.alphaStack.push(this.globalAlpha);
     this.record("save");
   }
 
   restore(): void {
+    this.globalAlpha = this.alphaStack.pop() ?? 1;
     this.record("restore");
   }
 
@@ -858,6 +864,12 @@ describe("static renderer", () => {
       "#16a34a",
       "#16a34a"
     ]);
+    expect((renderContext.context as unknown as FakeCanvasContext).fillRectAlphas).toEqual([
+      0.62,
+      0.62,
+      0.62
+    ]);
+    expect((renderContext.context as unknown as FakeCanvasContext).globalAlpha).toBe(1);
     for (const call of callsNamed(renderContext, "fillRect")) {
       const y = Number(call.args[1]);
       const height = Number(call.args[3]);

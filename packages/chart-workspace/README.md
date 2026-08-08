@@ -7,7 +7,7 @@ The host owns authentication, routes, market-data rights, symbols, immutable sna
 ## Install
 
 ```bash
-npm install ./simoncharts-charts-1.0.0-rc.49.tgz
+npm install ./simoncharts-charts-1.0.0-rc.50.tgz
 ```
 
 ## Embed the default chart
@@ -716,7 +716,8 @@ Accepted rc.22 adds the production multi-day intraday presentation contract: equ
 
 Accepted rc.23 keeps the official pre-window close as the preferred intraday direction reference. When shorter real history does not contain that close, the line color alone falls back to comparing the last close with the first real candle's open; the price axis remains raw and no candle or percentage baseline is fabricated.
 
-Current rc.49 adds strict Rich Study Inputs and identity-free Study Preset V1 through the existing
-parser, checkpoint, Entity, Layout V3, native Study panel, event, and readiness paths. It adds no
-dependency, renderer, persistence store, or layout schema; rc.49 preserves rc.48 and every earlier
-RC contract.
+Current rc.50 refines the existing K-line presentation without changing public contracts: volume
+uses a smaller, quieter region; crosshair hover focuses the active candle and volume bar; OHLC and
+the compact tooltip use a clearer information hierarchy; and one persistent timeframe indicator
+glides between shortcuts and the More trigger. It adds no dependency, data model, renderer, or
+persistence state; rc.50 preserves rc.49 and every earlier RC contract.

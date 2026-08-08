@@ -104,25 +104,25 @@ describe("canvas manager render contracts", () => {
         x: 0,
         y: 34,
         width: 0,
-        height: 85
+        height: 92
       },
       plotArea: {
         x: 0,
         y: 34,
         width: 256,
-        height: 85
+        height: 92
       },
       priceAxisArea: {
         x: 256,
         y: 34,
         width: 64,
-        height: 85
+        height: 92
       },
       volumeArea: {
         x: 0,
-        y: 127,
+        y: 134,
         width: 256,
-        height: 25
+        height: 18
       },
       timeAxisArea: {
         x: 0,
@@ -137,10 +137,10 @@ describe("canvas manager render contracts", () => {
     const layout = createChartLayout(320, 180, { leftPriceAxis: true });
 
     expect(layout.leftAxisWidth).toBe(64);
-    expect(layout.leftPriceAxisArea).toEqual({ x: 0, y: 34, width: 64, height: 85 });
-    expect(layout.plotArea).toEqual({ x: 64, y: 34, width: 192, height: 85 });
-    expect(layout.priceAxisArea).toEqual({ x: 256, y: 34, width: 64, height: 85 });
-    expect(layout.volumeArea).toEqual({ x: 64, y: 127, width: 192, height: 25 });
+    expect(layout.leftPriceAxisArea).toEqual({ x: 0, y: 34, width: 64, height: 92 });
+    expect(layout.plotArea).toEqual({ x: 64, y: 34, width: 192, height: 92 });
+    expect(layout.priceAxisArea).toEqual({ x: 256, y: 34, width: 64, height: 92 });
+    expect(layout.volumeArea).toEqual({ x: 64, y: 134, width: 192, height: 18 });
     expect(layout.timeAxisArea).toEqual({ x: 64, y: 152, width: 192, height: 28 });
   });
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## @simoncharts/charts 1.0.0-rc.50 - 2026-08-08
+
+- Reduced the ordinary K-line volume region from 22% to 16% and rendered static volume bars at 62% opacity, while reusing the overlay Canvas to focus only the active candle band and volume bar.
+- Kept header OHLC values neutral, reserved directional color for price movement, and condensed the default hover panel to time, OHLC, change, and volume without removing the full data window.
+- Replaced per-button timeframe selection backgrounds with one persistent shared indicator that slides across shortcuts and the More trigger, recomputes after resize, and respects reduced motion.
+- Added focused engine and workspace coverage for volume geometry, overlay focus, tooltip rows, one-node indicator reuse, shortcut/More alignment, resize, and `prefers-reduced-motion`; no public API, dependency, second timeframe state, or static-canvas hover repaint was added.
+- Accepted the exact 8-file, 160,851-byte immutable package after `79 files / 1,372 tests`, combined Chrome `167/167`, Charts `23 files / 350 tests`, Charts Chrome/Edge `116/116` per browser, and packed JavaScript/TypeScript Chrome/Edge consumer execution; SHA-256 is `145b2155097301282929a328bd3aa9db05a3d920406017f0a7696945a8fb7a6e`, SHA-512 is `adfe06f6013f52951ecab3858c24815b32d00f40c0ed29ef4d0a75da555ffba26c3f2fc0a7646a803d79034ac4741870698f158fac78e0d212a7ec574c72cc5f`. TradingReviewSystem was not modified.
+
 ## @simoncharts/charts 1.0.0-rc.49 - 2026-07-30
 
 - Added strict Rich Study Inputs for number, boolean, string, select, and Candle source values while preserving omitted-`type` numeric definitions.

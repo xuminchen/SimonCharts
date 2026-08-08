@@ -124,9 +124,6 @@ function createTooltipLines(
   const previousClose = previousCandle?.close ?? candle.open;
   const change = candle.close - previousClose;
   const changePercent = previousClose === 0 ? 0 : (change / previousClose) * 100;
-  const amplitude = candle.low === 0 ? 0 : ((candle.high - candle.low) / candle.low) * 100;
-  const range = candle.high - candle.low;
-  const position = range === 0 ? 0 : ((candle.close - candle.low) / range) * 100;
   const directionColor = change > 0 ? risingColor : change < 0 ? fallingColor : undefined;
   const signedChange = `${change > 0 ? "+" : ""}${formatNumber(change, locale, formatting.formatPrice)}`;
   const signedPercent = `${changePercent > 0 ? "+" : ""}${changePercent.toFixed(2)}%`;
@@ -139,10 +136,7 @@ function createTooltipLines(
       { text: `低    ${formatNumber(candle.low, locale, formatting.formatPrice)}` },
       { text: `收    ${formatNumber(candle.close, locale, formatting.formatPrice)}` },
       { text: `涨跌  ${signedChange} (${signedPercent})`, color: directionColor },
-      { text: `振幅  ${amplitude.toFixed(2)}%` },
-      { text: `位置  ${position.toFixed(1)}%` },
-      { text: `量    ${formatCompact(candle.volume, locale)}` },
-      { text: `额    ${formatCompact(candle.turnover, locale)}` }
+      { text: `量    ${formatCompact(candle.volume, locale)}` }
     ];
   }
 
@@ -153,10 +147,7 @@ function createTooltipLines(
     { text: `Low       ${formatNumber(candle.low, locale, formatting.formatPrice)}` },
     { text: `Close     ${formatNumber(candle.close, locale, formatting.formatPrice)}` },
     { text: `Change    ${signedChange} (${signedPercent})`, color: directionColor },
-    { text: `Amplitude ${amplitude.toFixed(2)}%` },
-    { text: `Position  ${position.toFixed(1)}%` },
-    { text: `Volume    ${formatCompact(candle.volume, locale)}` },
-    { text: `Turnover  ${formatCompact(candle.turnover, locale)}` }
+    { text: `Volume    ${formatCompact(candle.volume, locale)}` }
   ];
 }
 

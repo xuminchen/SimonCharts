@@ -147,6 +147,7 @@ export function createTopToolbar(
   }
 
   const timeframeHost = features.has("timeframes") ? document.createElement("div") : undefined;
+  const timeframeIndicator = timeframeHost ? document.createElement("span") : undefined;
   const intradayDays = timeframeHost ? document.createElement("select") : undefined;
   const timeframeMore = advanced && timeframeHost ? document.createElement("div") : undefined;
   const timeframeMoreToggle = timeframeMore ? document.createElement("button") : undefined;
@@ -168,8 +169,12 @@ export function createTopToolbar(
     }
     return button;
   };
-  if (timeframeHost) {
+  if (timeframeHost && timeframeIndicator) {
     timeframeHost.className = "sc-toolbar-group sc-timeframes";
+    timeframeIndicator.className = "sc-timeframe-indicator";
+    timeframeIndicator.setAttribute("aria-hidden", "true");
+    timeframeIndicator.hidden = true;
+    timeframeHost.append(timeframeIndicator);
     if (intradayDays) {
       intradayDays.className = "sc-intraday-days";
       intradayDays.dataset.testid = "intraday-days-select";
@@ -426,6 +431,33 @@ export function createTopToolbar(
     }
   };
 
+  const syncTimeframeIndicator = (): void => {
+    if (!timeframeHost || !timeframeIndicator) return;
+    const shortcut = timeframeHost.querySelector<HTMLButtonElement>(
+      ':scope > button[aria-pressed="true"]:not([hidden])'
+    );
+    const target = shortcut ?? (
+      timeframeMore?.dataset.selected === "true" && !timeframeMoreToggle?.hidden
+        ? timeframeMoreToggle
+        : undefined
+    );
+    if (!target) {
+      timeframeIndicator.hidden = true;
+      return;
+    }
+    const hostRect = timeframeHost.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    if (targetRect.width <= 0) {
+      timeframeIndicator.hidden = true;
+      return;
+    }
+    const x = targetRect.left - hostRect.left + timeframeHost.scrollLeft;
+    timeframeIndicator.style.setProperty("--sc-timeframe-indicator-x", `${x}px`);
+    timeframeIndicator.style.width = `${targetRect.width}px`;
+    timeframeIndicator.hidden = false;
+    timeframeIndicator.dataset.ready = "true";
+  };
+
   const renderTimeframeSelection = (viewModel: WorkspaceViewModel): void => {
     for (const button of timeframeHost?.querySelectorAll<HTMLButtonElement>("[data-timeframe]") ?? []) {
       const pressed = button.dataset.chartView === "intraday"
@@ -449,7 +481,7 @@ export function createTopToolbar(
       button.setAttribute("aria-label", actionLabel);
       button.setAttribute("aria-checked", String(favorite));
     }
-    if (timeframeMoreToggle && timeframeMoreMenu) {
+    if (timeframeMore && timeframeMoreToggle && timeframeMoreMenu) {
       const active = viewModel.state.view === "intraday" ? "intraday" : viewModel.state.timeframe;
       const shortcut = timeframeHost?.querySelector<HTMLButtonElement>(
         `:scope > [data-timeframe-shortcut][data-favorite-timeframe="${active}"]`
@@ -458,7 +490,9 @@ export function createTopToolbar(
       const selectedLabel = selected?.textContent ?? undefined;
       timeframeMoreToggle.textContent = selectedLabel === undefined ? labels.more : `${selectedLabel}⌄`;
       timeframeMoreToggle.setAttribute("aria-label", selectedLabel ?? labels.more);
+      timeframeMore.dataset.selected = String(shortcut === null);
     }
+    syncTimeframeIndicator();
   };
   const closeTimeframeMore = (): void => {
     if (!timeframeMore || !timeframeMoreToggle || !timeframeMoreMenu) return;
@@ -537,6 +571,12 @@ export function createTopToolbar(
     ...(intradayDays === undefined ? {} : { intradayDaysElement: intradayDays }),
     bind(actions) {
       const cleanup: Array<() => void> = [];
+      const ResizeObserverConstructor = element.ownerDocument.defaultView?.ResizeObserver;
+      if (timeframeHost && ResizeObserverConstructor) {
+        const observer = new ResizeObserverConstructor(syncTimeframeIndicator);
+        observer.observe(timeframeHost);
+        cleanup.push(() => observer.disconnect());
+      }
       if (timeframeHost) {
         const click = (event: Event) => {
           const target = event.target as HTMLElement;

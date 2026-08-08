@@ -154,7 +154,7 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
   }
   const legend = chartHeader ? document.createElement("div") : undefined;
   const legendValues = legend
-    ? (["high", "open", "low", "close"] as const).map((field) => {
+    ? (["open", "high", "low", "close"] as const).map((field) => {
         const value = document.createElement("span");
         value.dataset.field = field;
         legend.append(value);
@@ -290,17 +290,13 @@ export function createWorkspaceShell(options: WorkspaceShellOptions): WorkspaceS
     if (legend) {
       const intradaySummary = snapshot?.intradaySummary;
       const values = intradaySummary ?? snapshot?.candle;
-      const previousClose = intradaySummary?.previousClose
-        ?? (snapshot === undefined ? undefined : snapshot.candle.close - snapshot.change);
       const names = options.locale === "zh-CN"
         ? { high: "高", open: "开", low: "低", close: "收" }
         : { high: "H", open: "O", low: "L", close: "C" };
       for (const [field, element] of legendValues) {
         const value = values?.[field];
         element.textContent = `${names[field]} ${value === undefined ? "--" : price(value, snapshot?.pricePrecision)}`;
-        element.dataset.direction = value === undefined || previousClose === undefined || value === previousClose
-          ? "flat"
-          : value > previousClose ? "up" : "down";
+        delete element.dataset.direction;
       }
       if (legendChange) {
         const timeframe = currentViewModel?.state.view === "timeframe";

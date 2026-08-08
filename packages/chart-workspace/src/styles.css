@@ -159,10 +159,41 @@
 .sc-timeframe-more,
 .sc-series-type { position: relative; }
 .sc-symbol-search input { width: 86px; color: var(--sc-muted); }
-.sc-timeframes { flex: 1 1 auto; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.sc-timeframes { position: relative; flex: 1 1 auto; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .sc-top-toolbar[data-variant="advanced"] .sc-timeframes { overflow: visible; }
 .sc-timeframes::-webkit-scrollbar { display: none; }
-.sc-timeframes > button { flex: 0 0 auto; }
+.sc-timeframes > button { position: relative; z-index: 1; flex: 0 0 auto; }
+.sc-timeframe-more-toggle { position: relative; z-index: 1; }
+.sc-timeframe-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 0;
+  height: 28px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--sc-text) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sc-text) 5%, transparent);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--sc-text) 6%, transparent);
+  transform: translate3d(var(--sc-timeframe-indicator-x, 0), -50%, 0);
+}
+.sc-timeframe-indicator[data-ready="true"] {
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sc-timeframes > button,
+.sc-timeframe-more-toggle {
+  border-radius: 999px;
+  transition: color 160ms ease;
+}
+.sc-top-toolbar .sc-timeframes > button[aria-pressed="true"] {
+  color: var(--sc-text);
+  background: transparent;
+  border-color: transparent;
+}
+.sc-top-toolbar .sc-timeframe-more[data-selected="true"] > .sc-timeframe-more-toggle {
+  color: var(--sc-text);
+  background: transparent;
+}
 .sc-timeframe-more { flex: 0 0 auto; }
 .sc-toolbar-actions { flex: 0 0 auto; }
 .sc-indicator-manager { display: flex; align-items: center; }
@@ -468,6 +499,12 @@
 .sc-chart-legend span[hidden] { display: none; }
 .sc-chart-legend span[data-direction="up"] { color: var(--sc-up); }
 .sc-chart-legend span[data-direction="down"] { color: var(--sc-down); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-timeframe-indicator[data-ready="true"],
+  .sc-timeframes > button,
+  .sc-timeframe-more-toggle { transition: none; }
+}
 
 .sc-drawing-palette-host { position: relative; z-index: 12; min-height: 0; width: 44px; border-right: 1px solid var(--sc-border); background: var(--sc-bg); }
 .sc-drawing-palette { position: relative; width: 43px; height: 100%; padding: 5px 4px; color: var(--sc-text); background: var(--sc-bg); }

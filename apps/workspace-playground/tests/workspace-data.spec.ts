@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function requestLog(page: Page) {
   return page.evaluate(() => window.__workspaceRequests ?? []);
@@ -23,6 +23,58 @@ async function chooseSeriesType(page: Page, type: string) {
   await page.locator(`[data-series-type="${type}"]`).click();
   await expect(trigger).toHaveAttribute("data-value", type);
 }
+
+async function expectTimeframeIndicatorAligned(page: Page, control: Locator) {
+  await expect.poll(async () => {
+    const [indicatorBox, controlBox] = await Promise.all([
+      page.locator(".sc-timeframe-indicator").boundingBox(),
+      control.boundingBox()
+    ]);
+    if (!indicatorBox || !controlBox) return Number.POSITIVE_INFINITY;
+    return Math.max(
+      Math.abs(indicatorBox.x - controlBox.x),
+      Math.abs(indicatorBox.width - controlBox.width)
+    );
+  }).toBeLessThanOrEqual(1);
+}
+
+test("glides one shared timeframe indicator between active controls", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('.sc-workspace[data-state="ready"]')).toBeVisible();
+  const indicator = page.locator(".sc-timeframe-indicator");
+  const daily = page.getByRole("button", { name: "日", exact: true });
+  await expect(indicator).toHaveCount(1);
+  await expect(indicator).toHaveAttribute("data-ready", "true");
+  await expect(indicator).toBeVisible();
+  await expectTimeframeIndicatorAligned(page, daily);
+  expect(await indicator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return style.transitionProperty.includes("transform") && style.transitionDuration !== "0s";
+  })).toBe(true);
+  await indicator.evaluate((element) => {
+    (window as Window & { __timeframeIndicator?: Element }).__timeframeIndicator = element;
+  });
+
+  const fifteenMinutes = page.getByRole("button", { name: "15分", exact: true });
+  await fifteenMinutes.click();
+  await expect(fifteenMinutes).toHaveAttribute("aria-pressed", "true");
+  await expectTimeframeIndicatorAligned(page, fifteenMinutes);
+  expect(await indicator.evaluate((element) =>
+    (window as Window & { __timeframeIndicator?: Element }).__timeframeIndicator === element
+  )).toBe(true);
+
+  const more = page.locator(".sc-timeframe-more-toggle");
+  await more.click();
+  await page.getByRole("menuitemradio", { name: "月", exact: true }).click();
+  await expect(more).toContainText("月");
+  await expectTimeframeIndicatorAligned(page, more);
+  await page.setViewportSize({ width: 760, height: 640 });
+  await expectTimeframeIndicatorAligned(page, more);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(() => indicator.evaluate((element) =>
+    getComputedStyle(element).transitionDuration
+  )).toBe("0s");
+});
 
 test("routes complete market controls through the workspace controller", async ({ page }) => {
   await page.goto("/");
@@ -207,7 +259,12 @@ test("switches between one and nine real intraday days without restarting the 1-
   const days = page.getByTestId("intraday-days-select");
   await expect(days).toBeVisible();
   await expect(days.locator("xpath=..")).toContainText("分时图");
-  await expect(page.getByTestId("chart-ohlc-legend")).toContainText(/高 .*开 .*低 .*收 /);
+  const ohlcLegend = page.getByTestId("chart-ohlc-legend");
+  await expect(ohlcLegend).toContainText(/开 .*高 .*低 .*收 /);
+  await expect(ohlcLegend.locator('[data-field="open"]')).not.toHaveAttribute("data-direction");
+  await expect(ohlcLegend.locator('[data-field="high"]')).not.toHaveAttribute("data-direction");
+  await expect(ohlcLegend.locator('[data-field="low"]')).not.toHaveAttribute("data-direction");
+  await expect(ohlcLegend.locator('[data-field="close"]')).not.toHaveAttribute("data-direction");
   await expect(days.locator("option")).toHaveText([
     "1日", "2日", "3日", "4日", "5日", "6日", "7日", "8日", "9日"
   ]);
